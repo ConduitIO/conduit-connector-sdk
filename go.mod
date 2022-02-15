@@ -3,7 +3,7 @@ module github.com/conduitio/connector-plugin-sdk
 go 1.17
 
 require (
-	github.com/conduitio/conduit-plugin v0.0.0-20220204185132-cba955ffea66
+	github.com/conduitio/connector-plugin v0.0.0-20220215124418-565125202e8d
 	github.com/jpillora/backoff v1.0.0
 	github.com/rs/zerolog v1.26.1
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
@@ -19,7 +19,7 @@ require (
 	github.com/mattn/go-isatty v0.0.10 // indirect
 	github.com/mitchellh/go-testing-interface v1.0.0 // indirect
 	github.com/oklog/run v1.0.0 // indirect
-	go.buf.build/library/go-grpc/conduitio/conduit-plugin v1.4.5 // indirect
+	go.buf.build/library/go-grpc/conduitio/connector-plugin v1.4.1 // indirect
 	golang.org/x/net v0.0.0-20211108170745-6635138e15ea // indirect
 	golang.org/x/sys v0.0.0-20211107104306-e0b2ad06fe42 // indirect
 	golang.org/x/text v0.3.7 // indirect
