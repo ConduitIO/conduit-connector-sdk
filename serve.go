@@ -22,6 +22,16 @@ import (
 	"github.com/conduitio/connector-plugin/cpluginv1/server"
 )
 
+// Serve starts the plugin and takes care of its whole lifecycle by blocking
+// until the plugin can safely stop running. Any fixable errors will be output
+// to os.Stderr and the process will exit with a status code of 1. Serve will
+// panic for unexpected conditions where a user's fix is unknown.
+//
+// It is essential that nothing gets written to stdout or stderr before this
+// function is called, as the first output is used to perform the initial
+// handshake.
+//
+// Plugins should call Serve in their main() functions.
 func Serve(
 	specFactory func() Specification,
 	sourceFactory func() Source,

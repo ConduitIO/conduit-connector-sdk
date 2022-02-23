@@ -37,7 +37,9 @@ type Source interface {
 
 	// Open is called after Configure to signal the plugin it can prepare to
 	// start producing records. If needed, the plugin should open connections in
-	// this function.
+	// this function. The position parameter will contain the position of the
+	// last record that was successfully processed. The Source should therefore
+	// start producing records after this position.
 	Open(context.Context, Position) error
 
 	// Read returns a new Record and is supposed to block until there is either
@@ -71,6 +73,9 @@ type Source interface {
 	mustEmbedUnimplementedSource()
 }
 
+// NewSourcePlugin takes a Source and wraps it into an adapter that converts it
+// into a cpluginv1.SourcePlugin. If the parameter is nil it will wrap
+// UnimplementedSource instead.
 func NewSourcePlugin(impl Source) cpluginv1.SourcePlugin {
 	if impl == nil {
 		// prevent nil pointers
@@ -193,7 +198,8 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cpluginv1.Sourc
 				return fmt.Errorf("ack stream error: %w", err)
 			}
 			err = a.impl.Ack(ctx, req.AckPosition)
-			if err != nil {
+			// implementing Ack is optional
+			if err != nil && !errors.Is(err, ErrUnimplemented) {
 				return fmt.Errorf("ack plugin error: %w", err)
 			}
 

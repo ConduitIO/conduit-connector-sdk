@@ -21,6 +21,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// Logger returns an instance of a logger that can be used for leveled and
+// structured logging in a plugin. The logger will respect the log level
+// configured in Conduit.
 func Logger(ctx context.Context) *zerolog.Logger {
 	return zerolog.Ctx(ctx)
 }

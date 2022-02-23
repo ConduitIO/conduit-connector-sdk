@@ -52,6 +52,8 @@ type Parameter struct {
 	Description string
 }
 
+// NewSpecifierPlugin takes a Specification and wraps it into an adapter that
+// converts it into a cpluginv1.SpecifierPlugin.
 func NewSpecifierPlugin(specs Specification) cpluginv1.SpecifierPlugin {
 	return &specifierPluginAdapter{specs: specs}
 }

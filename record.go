@@ -40,23 +40,36 @@ type Record struct {
 	Payload Data
 }
 
+// Position is a unique identifier for a record. It is the responsibility of the
+// Source to choose and assign record positions, it can freely choose a format
+// that makes sense and contains everything needed to restart a pipeline at a
+// certain position.
 type Position []byte
 
+// Data is a structure that contains some bytes. The only structs implementing
+// Data are RawData and StructuredData.
 type Data interface {
 	isData()
 	Bytes() []byte
 }
 
+// RawData contains unstructured data in form of a byte slice.
 type RawData []byte
 
 func (RawData) isData() {}
+
+// Bytes simply casts RawData to a byte slice.
 func (d RawData) Bytes() []byte {
 	return d
 }
 
+// StructuredData contains data in form of a map with string keys and arbitrary
+// values.
 type StructuredData map[string]interface{}
 
 func (StructuredData) isData() {}
+
+// Bytes returns the JSON encoding of the map.
 func (d StructuredData) Bytes() []byte {
 	b, err := json.Marshal(d)
 	if err != nil {
