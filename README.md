@@ -22,11 +22,18 @@ Add the connector plugin SDK dependency:
 go get github.com/conduitio/connector-plugin-sdk
 ```
 
-You need to create two structs, one that implements `sdk.Source` and another that implements `sdk.Destination`. Apart
-from that, you need to create three constructor functions where each returns a `sdk.Source`, `sdk.Destination` and
-`sdk.Specification` respectively.
+With this you can start implementing the connector plugin. To implement a source (a plugin that reads from a 3rd party
+resource and sends data to Conduit) create a struct that implements
+[`sdk.Source`](https://pkg.go.dev/github.com/conduitio/connector-plugin-sdk#Source). To implement a destination (a
+plugin that receives data from Conduit and writes it to a 3rd party resource) create a struct that implements
+[`sdk.Destination`](https://pkg.go.dev/github.com/conduitio/connector-plugin-sdk#Destination). You can implement both to
+make a plugin that can be used both as a source or a destination.
 
-The plugin also needs an entrypoint that only calls `sdk.Serve`.
+Apart from the source and/or destination you should create constructor functions that return a `sdk.Source`,
+`sdk.Destination` and `sdk.Specification` respectively.
+
+The last part is the entrypoint, it needs to call `sdk.Serve` and pass in the constructor functions mentioned before. If
+the plugin does not implement a source or destination you should pass in `nil` instead.
 
 ```go
 package main

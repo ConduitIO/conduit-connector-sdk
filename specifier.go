@@ -36,8 +36,8 @@ type Specification struct {
 	Version string
 	// Author declares the entity that created or maintains this plugin.
 	Author string
-	// DestinationParams and SourceParams is a map of named Parameters that describe
-	// how to configure a the plugin's Destination or Source.
+	// DestinationParams and SourceParams is a map of named Parameters that
+	// describe how to configure the plugin's Destination or Source.
 	DestinationParams map[string]Parameter
 	SourceParams      map[string]Parameter
 }
