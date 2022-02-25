@@ -52,7 +52,7 @@ go build path/to/main.go
 ```
 
 You will get a compiled binary which Conduit can use as a plugin. To run your plugin as part of a Conduit pipeline you
-can create a connector and specify the path to the compiled plugin binary in the field `plugin`.
+can create a connector using the connectors API, and specify the path to the compiled plugin binary in the field `plugin`.
 
 Here is an example request to `POST /v1/connectors` (find more about the [Conduit API](https://github.com/conduitio/conduit#api)):
 
