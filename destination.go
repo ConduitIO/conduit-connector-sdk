@@ -72,7 +72,7 @@ type Destination interface {
 
 	// Flush signals the plugin it should flush any cached records and call all
 	// outstanding AckFunc functions. This function needs to be implemented only
-	// if the struct also implements WriteAsync. No more calls to WriteAsync
+	// if the struct implements WriteAsync. No more calls to WriteAsync
 	// will be issued after Flush is called.
 	Flush(context.Context) error
 
