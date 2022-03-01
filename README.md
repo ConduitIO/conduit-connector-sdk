@@ -1,13 +1,13 @@
-# Conduit Connector Plugin SDK
+# Conduit Plugin SDK
 
-[![License](https://img.shields.io/badge/license-Apache%202-blue)](https://github.com/ConduitIO/connector-plugin-sdk/blob/main/LICENSE.md)
-[![Build](https://github.com/ConduitIO/connector-plugin-sdk/actions/workflows/build.yml/badge.svg)](https://github.com/ConduitIO/connector-plugin-sdk/actions/workflows/build.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/conduitio/connector-plugin-sdk)](https://goreportcard.com/report/github.com/conduitio/connector-plugin-sdk)
-[![Go Reference](https://pkg.go.dev/badge/github.com/conduitio/connector-plugin-sdk.svg)](https://pkg.go.dev/github.com/conduitio/connector-plugin-sdk)
+[![License](https://img.shields.io/badge/license-Apache%202-blue)](https://github.com/ConduitIO/conduit-plugin-sdk/blob/main/LICENSE.md)
+[![Build](https://github.com/ConduitIO/conduit-plugin-sdk/actions/workflows/build.yml/badge.svg)](https://github.com/ConduitIO/conduit-plugin-sdk/actions/workflows/build.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/conduitio/conduit-plugin-sdk)](https://goreportcard.com/report/github.com/conduitio/conduit-plugin-sdk)
+[![Go Reference](https://pkg.go.dev/badge/github.com/conduitio/conduit-plugin-sdk.svg)](https://pkg.go.dev/github.com/conduitio/conduit-plugin-sdk)
 
 This repository contains the Go software development kit for implementing a connector plugin for
 [Conduit](https://github.com/conduitio/conduit). If you want to implement a connector plugin in another language please
-have a look at the [connector plugin protocol](https://github.com/conduitio/connector-plugin).
+have a look at the [plugin protocol](https://github.com/conduitio/conduit-plugin-protocol).
 
 ## Quickstart
 
@@ -16,17 +16,17 @@ Create a new folder and initialize a fresh go module:
 go mod init example.com/conduit-plugin-demo
 ```
 
-Add the connector plugin SDK dependency:
+Add the plugin SDK dependency:
 
 ```
-go get github.com/conduitio/connector-plugin-sdk
+go get github.com/conduitio/conduit-plugin-sdk
 ```
 
-With this you can start implementing the connector plugin. To implement a source (a plugin that reads from a 3rd party
+With this you can start implementing the connector. To implement a source (a plugin that reads from a 3rd party
 resource and sends data to Conduit) create a struct that implements
-[`sdk.Source`](https://pkg.go.dev/github.com/conduitio/connector-plugin-sdk#Source). To implement a destination (a
+[`sdk.Source`](https://pkg.go.dev/github.com/conduitio/conduit-plugin-sdk#Source). To implement a destination (a
 plugin that receives data from Conduit and writes it to a 3rd party resource) create a struct that implements
-[`sdk.Destination`](https://pkg.go.dev/github.com/conduitio/connector-plugin-sdk#Destination). You can implement both to
+[`sdk.Destination`](https://pkg.go.dev/github.com/conduitio/conduit-plugin-sdk#Destination). You can implement both to
 make a plugin that can be used both as a source or a destination.
 
 Apart from the source and/or destination you should create constructor functions that return a `sdk.Source`,
@@ -40,7 +40,7 @@ package main
 
 import (
 	demo "example.com/conduit-plugin-demo"
-	sdk "github.com/conduitio/connector-plugin-sdk"
+	sdk "github.com/conduitio/conduit-plugin-sdk"
 )
 
 func main() {
