@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/conduitio/connector-plugin/cpluginv1"
-	"github.com/conduitio/connector-plugin/cpluginv1/server"
+	"github.com/conduitio/conduit-plugin-protocol/cpluginv1"
+	"github.com/conduitio/conduit-plugin-protocol/cpluginv1/server"
 )
 
 // Serve starts the plugin and takes care of its whole lifecycle by blocking
