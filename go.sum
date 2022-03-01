@@ -14,8 +14,8 @@ github.com/cncf/xds/go v0.0.0-20210312221358-fbca930ec8ed/go.mod h1:eXthEFrGJvWH
 github.com/cncf/xds/go v0.0.0-20210805033703-aa0b78936158/go.mod h1:eXthEFrGJvWHgFFCl3hGmgk+/aYT6PnTQLykKQRLhEs=
 github.com/cncf/xds/go v0.0.0-20210922020428-25de7278fc84/go.mod h1:eXthEFrGJvWHgFFCl3hGmgk+/aYT6PnTQLykKQRLhEs=
 github.com/cncf/xds/go v0.0.0-20211011173535-cb28da3451f1/go.mod h1:eXthEFrGJvWHgFFCl3hGmgk+/aYT6PnTQLykKQRLhEs=
-github.com/conduitio/connector-plugin v0.0.0-20220215124418-565125202e8d h1:ofLsuHphZ/ut/n9VlkwgxSec2D+2Y/BGs/w3gMx6RIQ=
-github.com/conduitio/connector-plugin v0.0.0-20220215124418-565125202e8d/go.mod h1:3cdnVWjxcce0ODrbJA+Jo9GrLHelEDBMioFvpRc3Nr8=
+github.com/conduitio/conduit-plugin-protocol v0.0.0-20220301130721-cbefccd064ea h1:zMNMOEp+c9m+44a9yKiXPW3nNNlG5ecO021ZVNRawPs=
+github.com/conduitio/conduit-plugin-protocol v0.0.0-20220301130721-cbefccd064ea/go.mod h1:TXQ/yzTnDTTl0CoaVCr378cUdEicMkkVatGWifsgMG4=
 github.com/coreos/go-systemd/v22 v22.3.2/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
@@ -108,8 +108,8 @@ github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9de
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
 github.com/yuin/goldmark v1.4.0/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
-go.buf.build/library/go-grpc/conduitio/connector-plugin v1.4.1 h1:sj6hBdhSc50rRAPWfgAyPSGmhIudV1u3Bz1ScfVtxSA=
-go.buf.build/library/go-grpc/conduitio/connector-plugin v1.4.1/go.mod h1:sIRr/Y9Hfmxw9UPBIkPhLMYYbZjxIh/VE9nZzDkCgEw=
+go.buf.build/library/go-grpc/conduitio/conduit-plugin-protocol v1.4.1 h1:mBh/7IwNKpc1V32yZwfl+9SDDYtN9pLL60gRDvQm/Wo=
+go.buf.build/library/go-grpc/conduitio/conduit-plugin-protocol v1.4.1/go.mod h1:uYVquADEPx9dsf8OXPsY+6AX60U0LfG+PC4PghdYr3I=
 go.opentelemetry.io/proto/otlp v0.7.0/go.mod h1:PqfVotwruBrMGOCsRd/89rSnXhoiJIqeYNgFYFoEGnI=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20190510104115-cbcb75029529/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
