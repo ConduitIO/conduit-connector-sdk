@@ -30,9 +30,11 @@ import (
 // Source fetches records from 3rd party resources and sends them to Conduit.
 // All implementations must embed UnimplementedSource for forward compatibility.
 type Source interface {
-	// Configure is the first function to be called in a plugin. It provides the
-	// plugin with the configuration that needs to be validated and stored. In
-	// case the configuration is not valid it should return an error.
+	// Configure is the first function to be called in a connector. It provides the
+	// connector with the configuration that needs to be validated and stored.
+	// In case the configuration is not valid it should return an error.
+	// Testing if your connector can reach the configured data source should be
+	// done in Open, not in Configure.
 	Configure(context.Context, map[string]string) error
 
 	// Open is called after Configure to signal the plugin it can prepare to
