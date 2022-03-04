@@ -19,21 +19,35 @@ import "context"
 // UnimplementedDestination should be embedded to have forward compatible implementations.
 type UnimplementedDestination struct{}
 
+// Configure needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Configure(context.Context, map[string]string) error {
 	return ErrUnimplemented
 }
+
+// Open needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Open(context.Context) error {
 	return ErrUnimplemented
 }
+
+// Write needs to be overridden in the actual implementation, unless WriteAsync
+// is implemented.
 func (UnimplementedDestination) Write(context.Context, Record) error {
 	return ErrUnimplemented
 }
+
+// WriteAsync needs to be overridden in the actual implementation, unless Write
+// is implemented.
 func (UnimplementedDestination) WriteAsync(context.Context, Record, AckFunc) error {
 	return ErrUnimplemented
 }
+
+// Flush needs to be overridden in the actual implementation if WriteAsync is
+// implemented, otherwise it is optional.
 func (UnimplementedDestination) Flush(context.Context) error {
 	return ErrUnimplemented
 }
+
+// Teardown needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Teardown(context.Context) error {
 	return ErrUnimplemented
 }
@@ -42,18 +56,28 @@ func (UnimplementedDestination) mustEmbedUnimplementedDestination() {}
 // UnimplementedSource should be embedded to have forward compatible implementations.
 type UnimplementedSource struct{}
 
+// Configure needs to be overridden in the actual implementation.
 func (UnimplementedSource) Configure(context.Context, map[string]string) error {
 	return ErrUnimplemented
 }
+
+// Open needs to be overridden in the actual implementation.
 func (UnimplementedSource) Open(context.Context, Position) error {
 	return ErrUnimplemented
 }
+
+// Read needs to be overridden in the actual implementation.
 func (UnimplementedSource) Read(context.Context) (Record, error) {
 	return Record{}, ErrUnimplemented
 }
+
+// Ack should be overridden if acks need to be forwarded to the source,
+// otherwise it is optional.
 func (UnimplementedSource) Ack(context.Context, Position) error {
 	return ErrUnimplemented
 }
+
+// Teardown needs to be overridden in the actual implementation.
 func (UnimplementedSource) Teardown(context.Context) error {
 	return ErrUnimplemented
 }

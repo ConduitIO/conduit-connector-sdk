@@ -30,15 +30,19 @@ import (
 // Source fetches records from 3rd party resources and sends them to Conduit.
 // All implementations must embed UnimplementedSource for forward compatibility.
 type Source interface {
-	// Configure is the first function to be called in a plugin. It provides the
-	// plugin with the configuration that needs to be validated and stored. In
-	// case the configuration is not valid it should return an error.
+	// Configure is the first function to be called in a connector. It provides the
+	// connector with the configuration that needs to be validated and stored.
+	// In case the configuration is not valid it should return an error.
+	// Testing if your connector can reach the configured data source should be
+	// done in Open, not in Configure.
 	Configure(context.Context, map[string]string) error
 
 	// Open is called after Configure to signal the plugin it can prepare to
 	// start producing records. If needed, the plugin should open connections in
-	// this function. The context passed to Open will be cancelled once the
-	// plugin receives a stop signal from Conduit.
+	// this function. The position parameter will contain the position of the
+	// last record that was successfully processed, Source should therefore
+	// start producing records after this position. The context passed to Open
+	// will be cancelled once the plugin receives a stop signal from Conduit.
 	Open(context.Context, Position) error
 
 	// Read returns a new Record and is supposed to block until there is either
@@ -72,6 +76,9 @@ type Source interface {
 	mustEmbedUnimplementedSource()
 }
 
+// NewSourcePlugin takes a Source and wraps it into an adapter that converts it
+// into a cpluginv1.SourcePlugin. If the parameter is nil it will wrap
+// UnimplementedSource instead.
 func NewSourcePlugin(impl Source) cpluginv1.SourcePlugin {
 	if impl == nil {
 		// prevent nil pointers
@@ -196,7 +203,8 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cpluginv1.Sourc
 				return fmt.Errorf("ack stream error: %w", err)
 			}
 			err = a.impl.Ack(ctx, req.AckPosition)
-			if err != nil {
+			// implementing Ack is optional
+			if err != nil && !errors.Is(err, ErrUnimplemented) {
 				return fmt.Errorf("ack plugin error: %w", err)
 			}
 

@@ -35,9 +35,11 @@ import (
 // Use WriteAsync if the plugin will cache records and write them to the 3rd
 // party resource in batches, otherwise use Write.
 type Destination interface {
-	// Configure is the first function to be called in a plugin. It provides the
-	// plugin with the configuration that needs to be validated and stored. In
-	// case the configuration is not valid it should return an error.
+	// Configure is the first function to be called in a connector. It provides the
+	// connector with the configuration that needs to be validated and stored.
+	// In case the configuration is not valid it should return an error.
+	// Testing if your connector can reach the configured data source should be
+	// done in Open, not in Configure.
 	Configure(context.Context, map[string]string) error
 
 	// Open is called after Configure to signal the plugin it can prepare to
@@ -71,8 +73,9 @@ type Destination interface {
 	Write(context.Context, Record) error
 
 	// Flush signals the plugin it should flush any cached records and call all
-	// outstanding AckFunc functions. No more calls to Write will be issued
-	// after Flush is called.
+	// outstanding AckFunc functions. This function needs to be implemented only
+	// if the struct implements WriteAsync. No more calls to WriteAsync
+	// will be issued after Flush is called.
 	Flush(context.Context) error
 
 	// Teardown signals to the plugin that all records were written and there
@@ -83,8 +86,17 @@ type Destination interface {
 	mustEmbedUnimplementedDestination()
 }
 
+// AckFunc is a function that forwards the acknowledgment to Conduit. It returns
+// an error in case the forwarding failed, otherwise it returns nil. If nil is
+// passed to this function the record is assumed to be successfully processed,
+// otherwise the parameter should contain an error describing why a record
+// failed to be processed. If an error is returned from AckFunc it should be
+// regarded as fatal and all processing should be stopped as soon as possible.
 type AckFunc func(error) error
 
+// NewDestinationPlugin takes a Destination and wraps it into an adapter that
+// converts it into a cpluginv1.DestinationPlugin. If the parameter is nil it
+// will wrap UnimplementedDestination instead.
 func NewDestinationPlugin(impl Destination) cpluginv1.DestinationPlugin {
 	if impl == nil {
 		// prevent nil pointers
@@ -96,6 +108,7 @@ func NewDestinationPlugin(impl Destination) cpluginv1.DestinationPlugin {
 type destinationPluginAdapter struct {
 	impl       Destination
 	wgAckFuncs sync.WaitGroup
+	isAsync    bool
 }
 
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.DestinationConfigureRequest) (cpluginv1.DestinationConfigureResponse, error) {
@@ -123,6 +136,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 		}
 		// WriteAsync is implemented, overwrite writeFunc as we don't need the
 		// fallback logic anymore
+		a.isAsync = true
 		writeFunc = a.writeAsync
 		return err
 	}
@@ -214,7 +228,10 @@ func (a *destinationPluginAdapter) waitForAcks(ctx context.Context) error {
 func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.DestinationStopRequest) (cpluginv1.DestinationStopResponse, error) {
 	// flush cached records
 	err := a.impl.Flush(ctx)
-	if err != nil {
+	if err != nil &&
+		// only propagate error if we are sure the plugin is writing records
+		// asynchronously or if it's some other error than ErrUnimplemented
+		(a.isAsync || !errors.Is(err, ErrUnimplemented)) {
 		return cpluginv1.DestinationStopResponse{}, err
 	}
 
