@@ -4,7 +4,9 @@ go 1.17
 
 require (
 	github.com/conduitio/conduit-connector-protocol v0.0.0-20220302182649-4f4c215c2b83
+	github.com/golang/mock v1.6.0
 	github.com/jpillora/backoff v1.0.0
+	github.com/matryer/is v1.4.0
 	github.com/rs/zerolog v1.26.1
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
 )
