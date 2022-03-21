@@ -45,7 +45,6 @@ func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {
 	// even if we cancel the context afterwards, the context in Open should stay open
 	cancel()
 	is.NoErr(gotCtx.Err()) // expected context to be open
-
 }
 
 func TestSourcePluginAdapter_Start_ClosedContext(t *testing.T) {
