@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:generate mockgen -destination=mock_source.go -self_package=github.com/conduitio/conduit-connector-sdk -package=sdk -write_package_comment=false . Source
+
 package sdk
 
 import (
@@ -107,8 +109,25 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.Sourc
 }
 
 func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceStartRequest) (cpluginv1.SourceStartResponse, error) {
-	ctx, a.openCancel = context.WithCancel(ctx)
-	err := a.impl.Open(ctx, req.Position)
+	// create a new context, so we can control when it's canceled
+	ctxOpen := context.Background()
+	ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
+
+	startDone := make(chan struct{})
+	defer close(startDone)
+	go func() {
+		// for duration of the Start call we propagate the cancellation of ctx to
+		// ctxOpen, after Start returns we decouple the context and let it live
+		// until the plugin should stop running
+		select {
+		case <-ctx.Done():
+			a.openCancel()
+		case <-startDone:
+			// start finished before ctx was canceled, leave context open
+		}
+	}()
+
+	err := a.impl.Open(ctxOpen, req.Position)
 	return cpluginv1.SourceStartResponse{}, err
 }
 
