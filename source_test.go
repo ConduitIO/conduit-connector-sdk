@@ -17,6 +17,7 @@ package sdk
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/golang/mock/gomock"
@@ -58,7 +59,13 @@ func TestSourcePluginAdapter_Start_ClosedContext(t *testing.T) {
 	src.EXPECT().Open(gomock.Any(), Position(nil)).
 		DoAndReturn(func(ctx context.Context, _ Position) error {
 			gotCtx = ctx // assign to gotCtx so it can be inspected
-			return ctx.Err()
+			select {
+			case <-ctx.Done():
+				return ctx.Err() // that's expected
+			case <-time.After(time.Millisecond * 10):
+				is.Fail() // didn't see context getting closed in time
+				return nil
+			}
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
