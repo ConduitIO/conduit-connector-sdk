@@ -6,6 +6,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/conduitio/conduit-commons v0.4.0
 	github.com/conduitio/conduit-connector-protocol v0.8.0
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/goccy/go-json v0.10.3
 	github.com/golangci/golangci-lint v1.61.0
 	github.com/google/go-cmp v0.6.0
@@ -62,7 +63,6 @@ require (
 	github.com/ckaznocha/intrange v0.2.0 // indirect
 	github.com/curioswitch/go-reassign v0.2.0 // indirect
 	github.com/daixiang0/gci v0.13.5 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/denis-tingaikin/go-header v0.5.0 // indirect
 	github.com/ettle/strcase v0.2.0 // indirect
 	github.com/fatih/color v1.17.0 // indirect
