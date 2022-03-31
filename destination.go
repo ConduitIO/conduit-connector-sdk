@@ -137,7 +137,7 @@ func (a *destinationPluginAdapter) Start(ctx context.Context, req cpluginv1.Dest
 		}
 	}()
 
-	err := a.impl.Open(ctx)
+	err := a.impl.Open(ctxOpen)
 	return cpluginv1.DestinationStartResponse{}, err
 }
 
