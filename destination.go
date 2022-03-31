@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
+	"github.com/conduitio/conduit-connector-sdk/internal"
 )
 
 // Destination receives records from Conduit and writes them to 3rd party
@@ -109,6 +110,7 @@ type destinationPluginAdapter struct {
 	impl       Destination
 	wgAckFuncs sync.WaitGroup
 	isAsync    bool
+	openCancel context.CancelFunc
 }
 
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.DestinationConfigureRequest) (cpluginv1.DestinationConfigureResponse, error) {
@@ -117,6 +119,24 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.
 }
 
 func (a *destinationPluginAdapter) Start(ctx context.Context, req cpluginv1.DestinationStartRequest) (cpluginv1.DestinationStartResponse, error) {
+	// detach context, so we can control when it's canceled
+	ctxOpen := internal.DetachContext(ctx)
+	ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
+
+	startDone := make(chan struct{})
+	defer close(startDone)
+	go func() {
+		// for duration of the Start call we propagate the cancellation of ctx to
+		// ctxOpen, after Start returns we decouple the context and let it live
+		// until the plugin should stop running
+		select {
+		case <-ctx.Done():
+			a.openCancel()
+		case <-startDone:
+			// start finished before ctx was canceled, leave context open
+		}
+	}()
+
 	err := a.impl.Open(ctx)
 	return cpluginv1.DestinationStartResponse{}, err
 }
@@ -127,15 +147,18 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 	// on what the destination supports. If it supports async writes it will be
 	// replaced with writeAsync, if not it will be replaced with write.
 	writeFunc = func(ctx context.Context, r Record, stream cpluginv1.DestinationRunStream) error {
+		Logger(ctx).Trace().Msg("determining write mode")
 		err := a.writeAsync(ctx, r, stream)
 		if errors.Is(err, ErrUnimplemented) {
 			// WriteAsync is not implemented, fallback to Write and overwrite
 			// writeFunc, so we don't try WriteAsync again.
+			Logger(ctx).Trace().Msg("using sync write mode")
 			writeFunc = a.write
 			return a.write(ctx, r, stream)
 		}
 		// WriteAsync is implemented, overwrite writeFunc as we don't need the
 		// fallback logic anymore
+		Logger(ctx).Trace().Msg("using async write mode")
 		a.isAsync = true
 		writeFunc = a.writeAsync
 		return err
@@ -235,6 +258,8 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 		return cpluginv1.DestinationStopResponse{}, err
 	}
 
+	// cancel context in Open
+	a.openCancel()
 	return cpluginv1.DestinationStopResponse{}, nil
 }
 

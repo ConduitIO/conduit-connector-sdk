@@ -22,6 +22,7 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/golang/mock/gomock"
 	"github.com/matryer/is"
+	"github.com/rs/zerolog"
 )
 
 func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {
@@ -74,4 +75,26 @@ func TestSourcePluginAdapter_Start_ClosedContext(t *testing.T) {
 	is.True(err != nil)
 	is.Equal(err, ctx.Err())
 	is.Equal(gotCtx.Err(), context.Canceled)
+}
+
+func TestSourcePluginAdapter_Start_Logger(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	src := NewMockSource(ctrl)
+
+	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	wantLogger := zerolog.New(zerolog.NewTestWriter(t))
+
+	src.EXPECT().Open(gomock.Any(), Position(nil)).
+		DoAndReturn(func(ctx context.Context, _ Position) error {
+			gotLogger := Logger(ctx)
+			is.True(gotLogger != nil)
+			is.Equal(*gotLogger, wantLogger)
+			return nil
+		})
+
+	ctx := wantLogger.WithContext(context.Background())
+
+	_, err := srcPlugin.Start(ctx, cpluginv1.SourceStartRequest{})
+	is.NoErr(err)
 }
