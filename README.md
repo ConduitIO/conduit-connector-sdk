@@ -91,8 +91,8 @@ Developers should use [`sdk.Logger`](https://pkg.go.dev/github.com/conduitio/con
 [`*zerolog.Logger`](https://pkg.go.dev/github.com/rs/zerolog#Logger) instance. It can be used to emit structured and leveled
 log messages that will be included in Conduit logs.
 
-Keep in mind that logging in the hot path (e.g. reading or writing a record) can have a negative impact on performance, that's why
-we encourage you to keep those to a minimum and to use the level "trace" for such logs.
+Keep in mind that logging in the hot path (e.g. reading or writing a record) can have a negative impact on performance and should
+be avoided. If you _really_ want to add a log message in the hot path please use the "trace" level.
 
 **Q: Do I need to worry about ordering?**
 
