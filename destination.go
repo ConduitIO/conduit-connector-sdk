@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
+	"github.com/conduitio/conduit-connector-sdk/internal"
 )
 
 // Destination receives records from Conduit and writes them to 3rd party
@@ -109,6 +110,11 @@ type destinationPluginAdapter struct {
 	impl       Destination
 	wgAckFuncs sync.WaitGroup
 	isAsync    bool
+
+	// runDone will be closed after Run stops running.
+	runDone chan struct{}
+
+	openCancel context.CancelFunc
 }
 
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.DestinationConfigureRequest) (cpluginv1.DestinationConfigureResponse, error) {
@@ -117,25 +123,49 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.
 }
 
 func (a *destinationPluginAdapter) Start(ctx context.Context, req cpluginv1.DestinationStartRequest) (cpluginv1.DestinationStartResponse, error) {
-	err := a.impl.Open(ctx)
+	// detach context, so we can control when it's canceled
+	ctxOpen := internal.DetachContext(ctx)
+	ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
+
+	startDone := make(chan struct{})
+	defer close(startDone)
+	go func() {
+		// for duration of the Start call we propagate the cancellation of ctx to
+		// ctxOpen, after Start returns we decouple the context and let it live
+		// until the plugin should stop running
+		select {
+		case <-ctx.Done():
+			a.openCancel()
+		case <-startDone:
+			// start finished before ctx was canceled, leave context open
+		}
+	}()
+
+	err := a.impl.Open(ctxOpen)
 	return cpluginv1.DestinationStartResponse{}, err
 }
 
 func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.DestinationRunStream) error {
+	a.runDone = make(chan struct{})
+	defer close(a.runDone)
+
 	var writeFunc func(context.Context, Record, cpluginv1.DestinationRunStream) error
 	// writeFunc will overwrite itself the first time it is called, depending
 	// on what the destination supports. If it supports async writes it will be
 	// replaced with writeAsync, if not it will be replaced with write.
 	writeFunc = func(ctx context.Context, r Record, stream cpluginv1.DestinationRunStream) error {
+		Logger(ctx).Trace().Msg("determining write mode")
 		err := a.writeAsync(ctx, r, stream)
 		if errors.Is(err, ErrUnimplemented) {
 			// WriteAsync is not implemented, fallback to Write and overwrite
 			// writeFunc, so we don't try WriteAsync again.
+			Logger(ctx).Trace().Msg("using sync write mode")
 			writeFunc = a.write
 			return a.write(ctx, r, stream)
 		}
 		// WriteAsync is implemented, overwrite writeFunc as we don't need the
 		// fallback logic anymore
+		Logger(ctx).Trace().Msg("using async write mode")
 		a.isAsync = true
 		writeFunc = a.writeAsync
 		return err
@@ -147,11 +177,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 			if err == io.EOF {
 				// stream is closed
 				// wait for all acks to be sent back to Conduit
-				err = a.waitForAcks(ctx)
-				if err != nil {
-					return err
-				}
-				return nil
+				return a.waitForAcks(ctx)
 			}
 			return fmt.Errorf("write stream error: %w", err)
 		}
@@ -214,18 +240,33 @@ func (a *destinationPluginAdapter) waitForAcks(ctx context.Context) error {
 		a.wgAckFuncs.Wait()
 		close(ackFuncsDone)
 	}()
+	return a.waitForClose(ctx, ackFuncsDone)
+}
 
+func (a *destinationPluginAdapter) waitForClose(ctx context.Context, stop chan struct{}) error {
 	select {
-	case <-ackFuncsDone:
+	case <-stop:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(time.Minute): // TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
-		return errors.New("stop timeout reached")
 	}
 }
 
 func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.DestinationStopRequest) (cpluginv1.DestinationStopResponse, error) {
+	// last thing we do is cancel context in Open
+	defer a.openCancel()
+
+	// ensure that stop doesn't take longer than 1 minute
+	waitCtx, cancel := context.WithTimeout(ctx, time.Minute) // TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
+	defer cancel()
+
+	// wait for all acks to be sent back to Conduit
+	waitErr := a.waitForAcks(waitCtx)
+	if waitErr != nil {
+		// just log error and continue to flush at least the processed records
+		Logger(ctx).Warn().Err(waitErr).Msg("failed to wait for all acks to be sent back to Conduit")
+	}
+
 	// flush cached records
 	err := a.impl.Flush(ctx)
 	if err != nil &&
@@ -235,17 +276,20 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 		return cpluginv1.DestinationStopResponse{}, err
 	}
 
-	return cpluginv1.DestinationStopResponse{}, nil
+	if waitErr != nil {
+		// signal to Conduit that stop didn't go as planned
+		return cpluginv1.DestinationStopResponse{}, waitErr
+	}
+
+	// everything went as expected, let's cancel the context in Open and
+	// wait for Run to stop gracefully
+	a.openCancel()
+	err = a.waitForClose(ctx, a.runDone)
+	return cpluginv1.DestinationStopResponse{}, err
 }
 
 func (a *destinationPluginAdapter) Teardown(ctx context.Context, req cpluginv1.DestinationTeardownRequest) (cpluginv1.DestinationTeardownResponse, error) {
-	// wait for all acks to be sent back to Conduit
-	err := a.waitForAcks(ctx)
-	if err != nil {
-		return cpluginv1.DestinationTeardownResponse{}, err
-	}
-
-	err = a.impl.Teardown(ctx)
+	err := a.impl.Teardown(ctx)
 	if err != nil {
 		return cpluginv1.DestinationTeardownResponse{}, err
 	}
