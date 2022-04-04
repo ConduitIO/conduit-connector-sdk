@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
+	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/jpillora/backoff"
 	"gopkg.in/tomb.v2"
 )
@@ -109,8 +110,8 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.Sourc
 }
 
 func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceStartRequest) (cpluginv1.SourceStartResponse, error) {
-	// create a new context, so we can control when it's canceled
-	ctxOpen := context.Background()
+	// detach context, so we can control when it's canceled
+	ctxOpen := internal.DetachContext(ctx)
 	ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
 
 	startDone := make(chan struct{})
