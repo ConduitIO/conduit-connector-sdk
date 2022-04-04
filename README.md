@@ -79,13 +79,13 @@ Here is an example request to `POST /v1/connectors` (find more about the [Condui
 
 ## FAQ
 
-- Is there a standard format for errors?
+**Q: Is there a standard format for errors?**
 
 Conduit doesn't expect any specific error format. We still encourage developers to follow the conventional [error message
 formatting](https://github.com/golang/go/wiki/CodeReviewComments#error-strings) and include enough contextual information to make
 debugging as easy as possible (e.g. stack trace, information about the value that caused the error, internal state).
 
-- Is there a standard format for logging?
+**Q: Is there a standard format for logging?**
 
 Developers should use [`sdk.Logger`](https://pkg.go.dev/github.com/conduitio/conduit-connector-sdk#Logger) to retrieve a
 [`*zerolog.Logger`](https://pkg.go.dev/github.com/rs/zerolog#Logger) instance. It can be used to emit structured and leveled
@@ -94,7 +94,7 @@ log messages that will be included in Conduit logs.
 Keep in mind that logging in the hot path (e.g. reading or writing a record) can have a negative impact on performance, that's why
 we encourage you to keep those to a minimum and to use the level "trace" for such logs.
 
-- Do I need to worry about ordering?
+**Q: Do I need to worry about ordering?**
 
 In case of the destination connector you do not have to worry about ordering. Conduit will supply records one by one in the order
 they were produced in the source.
