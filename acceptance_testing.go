@@ -88,10 +88,10 @@ func (a acceptanceTest) Test(t *testing.T) {
 			if a.config.BeforeTest != nil {
 				a.config.BeforeTest(t, testName)
 			}
-			av.Method(i).Call([]reflect.Value{reflect.ValueOf(t)})
 			if a.config.AfterTest != nil {
-				a.config.AfterTest(t, testName)
+				t.Cleanup(func() { a.config.AfterTest(t, testName) })
 			}
+			av.Method(i).Call([]reflect.Value{reflect.ValueOf(t)})
 		})
 	}
 }
@@ -129,6 +129,8 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 
 	// -- specifics -------------------
 
+	// TODO assert parameter format (camel case, dots allowed)
+
 	semverRegex := regexp.MustCompile(`v([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` +
 		`(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?` +
 		`(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?`)
@@ -143,6 +145,10 @@ func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 
 	source := a.config.SourceFactory()
 	err := source.Configure(ctx, a.config.SourceConfig)
+	is.NoErr(err)
+
+	// calling Teardown after Configure is valid and happens when connector is created
+	err = source.Teardown(ctx)
 	is.NoErr(err)
 }
 
@@ -165,23 +171,12 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 				source := a.config.SourceFactory()
 				err := source.Configure(ctx, srcCfg)
 				is.True(err != nil)
+
+				err = source.Teardown(ctx)
+				is.NoErr(err)
 			})
 		}
 	}
-}
-
-func (a acceptanceTest) TestSource_Teardown_AfterConfigure(t *testing.T) {
-	a.hasSourceFactory(t)
-	is := is.New(t)
-	ctx := context.Background()
-
-	source := a.config.SourceFactory()
-	err := source.Configure(ctx, a.config.SourceConfig)
-	is.NoErr(err)
-
-	// calling Teardown after Configure is valid and happens when connector is created
-	err = source.Teardown(ctx)
-	is.NoErr(err)
 }
 
 func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
@@ -198,7 +193,7 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 
 	readCtx, cancel := context.WithTimeout(ctx, time.Second*5) // TODO should we lower timeout?
 	defer cancel()
-	r, err := source.Read(ctx)
+	r, err := source.Read(readCtx)
 	is.Equal(r, Record{}) // record should be empty
 	is.Equal(err, readCtx.Err())
 }
@@ -209,12 +204,8 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	is := is.New(t)
 	ctx := context.Background()
 
-	dest := a.config.DestinationFactory()
-	err := dest.Configure(ctx, a.config.DestinationConfig)
-	is.NoErr(err)
-
 	source := a.config.SourceFactory()
-	err = source.Configure(ctx, a.config.SourceConfig)
+	err := source.Configure(ctx, a.config.SourceConfig)
 	is.NoErr(err)
 
 	err = source.Open(ctx, nil) // listen from beginning
@@ -222,6 +213,10 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 	// writing something to the destination should result in the same record
 	// being produced by the source
+	dest := a.config.DestinationFactory()
+	err = dest.Configure(ctx, a.config.DestinationConfig)
+	is.NoErr(err)
+
 	err = dest.Open(ctx)
 	is.NoErr(err)
 
@@ -236,13 +231,17 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	err = dest.Write(ctx, want)
 	is.NoErr(err)
 
+	// TODO flush is an optional method, accept ErrUnimplemented
+	err = dest.Flush(ctx)
+	is.NoErr(err)
+
 	err = dest.Teardown(ctx)
 	is.NoErr(err)
 
 	// now try to read from the source
-	ctxRead, cancel := context.WithTimeout(ctx, time.Second*5)
+	readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
-	got, err := source.Read(ctxRead)
+	got, err := source.Read(readCtx)
 	is.NoErr(err)
 
 	want.Position = got.Position   // position can't be determined in advance
