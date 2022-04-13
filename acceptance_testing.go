@@ -16,6 +16,8 @@ package sdk
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
@@ -34,14 +36,39 @@ import (
 //       sdk.AcceptanceTest(t, sdk.AcceptanceTestConfig{...})
 //   }
 //
-func AcceptanceTest(t *testing.T, cfg AcceptanceTestConfig) {
-	acceptanceTest{config: cfg}.Test(t)
+func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
+	acceptanceTest{driver: driver}.Test(t)
 }
 
-type AcceptanceTestConfig struct {
-	SpecFactory        func() Specification
-	SourceFactory      func() Source
-	DestinationFactory func() Destination
+type AcceptanceTestDriver interface {
+	// Connector is the connector to be tested.
+	Connector() Connector
+
+	// SourceConfig should be a valid config for a source connector, reading
+	// from the same location as the destination will write to.
+	SourceConfig() map[string]string
+	// DestinationConfig should be a valid config for a destination connector,
+	// writing to the same location as the source will read from.
+	DestinationConfig() map[string]string
+
+	BeforeTest(*testing.T, string)
+	AfterTest(*testing.T, string)
+
+	// Skip lets the caller define if any tests should be skipped.
+	Skip(string) (bool, string)
+
+	// SourceReadExpectation returns a slice of records the source is expected to
+	// return.
+	SourceReadExpectation(t *testing.T) []Record
+}
+
+type DefaultAcceptanceTestDriver struct {
+	Config DefaultAcceptanceTestDriverConfig
+}
+
+type DefaultAcceptanceTestDriverConfig struct {
+	// Connector is the connector to be tested.
+	Connector Connector
 
 	// SourceConfig should be a valid config for a source connector, reading
 	// from the same location as the destination will write to.
@@ -50,8 +77,8 @@ type AcceptanceTestConfig struct {
 	// writing to the same location as the source will read from.
 	DestinationConfig map[string]string
 
-	BeforeTest func(*testing.T, string)
-	AfterTest  func(*testing.T, string)
+	BeforeTest func(t *testing.T, testName string)
+	AfterTest  func(t *testing.T, testName string)
 
 	// Skip lets the caller define if any tests should be skipped (useful for
 	// skipping destination/source tests if the connector only implements one
@@ -59,21 +86,95 @@ type AcceptanceTestConfig struct {
 	Skip []string
 }
 
+func (d DefaultAcceptanceTestDriver) Connector() Connector {
+	return d.Config.Connector
+}
+
+func (d DefaultAcceptanceTestDriver) SourceConfig() map[string]string {
+	return d.Config.SourceConfig
+}
+
+func (d DefaultAcceptanceTestDriver) DestinationConfig() map[string]string {
+	return d.Config.DestinationConfig
+}
+
+func (d DefaultAcceptanceTestDriver) BeforeTest(t *testing.T, testName string) {
+	if d.Config.BeforeTest != nil {
+		d.Config.BeforeTest(t, testName)
+	}
+}
+
+func (d DefaultAcceptanceTestDriver) AfterTest(t *testing.T, testName string) {
+	if d.Config.AfterTest != nil {
+		d.Config.AfterTest(t, testName)
+	}
+}
+
+func (d DefaultAcceptanceTestDriver) Skip(testName string) (bool, string) {
+	var skipRegexs []*regexp.Regexp
+	for _, skipRegex := range d.Config.Skip {
+		r := regexp.MustCompile(skipRegex)
+		skipRegexs = append(skipRegexs, r)
+	}
+
+	for _, skipRegex := range skipRegexs {
+		if skipRegex.MatchString(testName) {
+			return true, fmt.Sprintf("caller requested to skip tests that match the regex %q", skipRegex.String())
+		}
+	}
+
+	return false, ""
+}
+
+// SourceReadExpectation by default opens the destination and writes a record to
+// the destination. It is expected that the destination is writing to the same
+// location the source is reading from. If the connector does not implement a
+// destination the function will fail the test.
+func (d DefaultAcceptanceTestDriver) SourceReadExpectation(t *testing.T) []Record {
+	if d.Connector().NewDestination == nil {
+		t.Fatal("connector is missing the field NewDestination, either implement the destination or overwrite the driver method SourceReadExpectation")
+	}
+
+	is := is.New(t)
+	ctx := context.Background()
+
+	// writing something to the destination should result in the same record
+	// being produced by the source
+	dest := d.Connector().NewDestination()
+	err := dest.Configure(ctx, d.DestinationConfig())
+	is.NoErr(err)
+
+	err = dest.Open(ctx)
+	is.NoErr(err)
+
+	want := Record{
+		Position:  Position("foo"), // TODO figure out how to set position
+		Metadata:  nil,             // TODO metadata
+		CreatedAt: time.Now(),
+		Key:       RawData("bar"),
+		Payload:   RawData("baz"),
+	}
+
+	// TODO detect if we should write async
+	err = dest.Write(ctx, want)
+	is.NoErr(err)
+
+	// TODO flush is an optional method, accept ErrUnimplemented
+	err = dest.Flush(ctx)
+	is.NoErr(err)
+
+	err = dest.Teardown(ctx)
+	is.NoErr(err)
+
+	return []Record{want}
+}
+
 type acceptanceTest struct {
-	config AcceptanceTestConfig
+	driver AcceptanceTestDriver
 }
 
 // Test runs all acceptance tests.
 func (a acceptanceTest) Test(t *testing.T) {
-	var skipRegexs []*regexp.Regexp
-	for _, skipRegex := range a.config.Skip {
-		r, err := regexp.Compile(skipRegex)
-		if err != nil {
-			t.Fatalf("could not compile skip regex %q: %v", skipRegex, err)
-		}
-		skipRegexs = append(skipRegexs, r)
-	}
-
 	av := reflect.ValueOf(a)
 	at := av.Type()
 
@@ -84,23 +185,30 @@ func (a acceptanceTest) Test(t *testing.T) {
 			continue
 		}
 		t.Run(testName, func(t *testing.T) {
-			a.skip(t, skipRegexs) // skip test if caller requested it
-			if a.config.BeforeTest != nil {
-				a.config.BeforeTest(t, testName)
+			if skip, reason := a.driver.Skip(testName); skip {
+				// skip test if caller requested it
+				t.Skip(reason)
 			}
-			if a.config.AfterTest != nil {
-				t.Cleanup(func() { a.config.AfterTest(t, testName) })
-			}
+
+			a.driver.BeforeTest(t, testName)
+			t.Cleanup(func() { a.driver.AfterTest(t, testName) })
+
 			av.Method(i).Call([]reflect.Value{reflect.ValueOf(t)})
 		})
 	}
 }
 
+func (a acceptanceTest) TestSpecifier_Exists(t *testing.T) {
+	if a.driver.Connector().NewSpecification == nil {
+		t.Fatal("connector is missing the field NewSpecification - connector specifications are required")
+	}
+}
+
 func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
-	a.hasSpecFactory(t)
+	a.skipIfNoSpecification(t)
 	is := is.NewRelaxed(t) // allow multiple failures for this test
 
-	spec := a.config.SpecFactory()
+	spec := a.driver.Connector().NewSpecification()
 
 	// -- general ---------------------
 
@@ -139,12 +247,12 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 }
 
 func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
-	a.hasSourceFactory(t)
+	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
 
-	source := a.config.SourceFactory()
-	err := source.Configure(ctx, a.config.SourceConfig)
+	source := a.driver.Connector().NewSource()
+	err := source.Configure(ctx, a.driver.SourceConfig())
 	is.NoErr(err)
 
 	// calling Teardown after Configure is valid and happens when connector is created
@@ -153,22 +261,22 @@ func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 }
 
 func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
-	a.hasSpecFactory(t)
-	a.hasSourceFactory(t)
+	a.skipIfNoSpecification(t)
+	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
 
-	spec := a.config.SpecFactory()
+	spec := a.driver.Connector().NewSpecification()
 	for name, p := range spec.SourceParams {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
-				srcCfg := a.cloneConfig(a.config.SourceConfig)
+				srcCfg := a.cloneConfig(a.driver.SourceConfig())
 				delete(srcCfg, name)
 
-				is.Equal(len(srcCfg)+1, len(a.config.SourceConfig)) // source config does not contain required parameter, please check the test setup
+				is.Equal(len(srcCfg)+1, len(a.driver.SourceConfig())) // source config does not contain required parameter, please check the test setup
 
-				source := a.config.SourceFactory()
+				source := a.driver.Connector().NewSource()
 				err := source.Configure(ctx, srcCfg)
 				is.True(err != nil)
 
@@ -179,102 +287,71 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	}
 }
 
-func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
-	a.hasSourceFactory(t)
-	is := is.New(t)
-	ctx := context.Background()
-
-	source := a.config.SourceFactory()
-	err := source.Configure(ctx, a.config.SourceConfig)
-	is.NoErr(err)
-
-	err = source.Open(ctx, nil)
-	is.NoErr(err)
-
-	readCtx, cancel := context.WithTimeout(ctx, time.Second*5) // TODO should we lower timeout?
-	defer cancel()
-	r, err := source.Read(readCtx)
-	is.Equal(r, Record{}) // record should be empty
-	is.Equal(err, readCtx.Err())
-}
-
 func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
-	a.hasSourceFactory(t)
-	a.hasDestinationFactory(t)
+	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
 
-	source := a.config.SourceFactory()
-	err := source.Configure(ctx, a.config.SourceConfig)
+	source := a.driver.Connector().NewSource()
+	err := source.Configure(ctx, a.driver.SourceConfig())
 	is.NoErr(err)
 
 	err = source.Open(ctx, nil) // listen from beginning
 	is.NoErr(err)
 
-	// writing something to the destination should result in the same record
-	// being produced by the source
-	dest := a.config.DestinationFactory()
-	err = dest.Configure(ctx, a.config.DestinationConfig)
-	is.NoErr(err)
-
-	err = dest.Open(ctx)
-	is.NoErr(err)
-
-	want := Record{
-		Position:  Position("foo"), // TODO figure out how to set position
-		Metadata:  nil,             // TODO metadata
-		CreatedAt: time.Now(),
-		Key:       nil, // TODO key
-		Payload:   RawData("baz"),
-	}
-	// TODO detect if we should write async
-	err = dest.Write(ctx, want)
-	is.NoErr(err)
-
-	// TODO flush is an optional method, accept ErrUnimplemented
-	err = dest.Flush(ctx)
-	is.NoErr(err)
-
-	err = dest.Teardown(ctx)
-	is.NoErr(err)
+	want := a.driver.SourceReadExpectation(t)
 
 	// now try to read from the source
 	readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
-	got, err := source.Read(readCtx)
-	is.NoErr(err)
 
-	want.Position = got.Position   // position can't be determined in advance
-	want.CreatedAt = got.CreatedAt // created at can't be determined in advance
-	is.Equal(want, got)
+	for i := 0; i < len(want); i++ {
+		got, err := source.Read(readCtx)
+		is.NoErr(err)
+
+		want[i].Position = got.Position   // position can't be determined in advance
+		want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
+		is.Equal(want[i], got)
+	}
 
 	err = source.Teardown(ctx)
 	is.NoErr(err)
 }
 
-func (a acceptanceTest) hasSpecFactory(t *testing.T) {
-	if a.config.SpecFactory == nil {
-		t.Fatalf("acceptance test config is missing the field SpecFactory")
+func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
+	a.skipIfNoSource(t)
+	is := is.New(t)
+	ctx := context.Background()
+
+	source := a.driver.Connector().NewSource()
+	err := source.Configure(ctx, a.driver.SourceConfig())
+	is.NoErr(err)
+
+	err = source.Open(ctx, nil)
+	is.NoErr(err)
+
+	readCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	r, err := source.Read(readCtx)
+	is.Equal(r, Record{}) // record should be empty
+	is.True(errors.Is(err, context.DeadlineExceeded))
+}
+
+func (a acceptanceTest) skipIfNoSpecification(t *testing.T) {
+	if a.driver.Connector().NewSpecification == nil {
+		t.Skip("connector is missing the field NewSpecification")
 	}
 }
 
-func (a acceptanceTest) hasSourceFactory(t *testing.T) {
-	if a.config.SourceFactory == nil {
-		t.Fatalf("acceptance test config is missing the field SourceFactory")
+func (a acceptanceTest) skipIfNoSource(t *testing.T) {
+	if a.driver.Connector().NewSource == nil {
+		t.Skip("connector is missing the field NewSource")
 	}
 }
 
-func (a acceptanceTest) hasDestinationFactory(t *testing.T) {
-	if a.config.DestinationFactory == nil {
-		t.Fatalf("acceptance test config is missing the field DestinationFactory")
-	}
-}
-
-func (a acceptanceTest) skip(t *testing.T, skipRegexs []*regexp.Regexp) {
-	for _, skipRegex := range skipRegexs {
-		if skipRegex.MatchString(t.Name()) {
-			t.Skipf("caller requested to skip tests that match the regex %q", skipRegex.String())
-		}
+func (a acceptanceTest) skipIfNoDestination(t *testing.T) {
+	if a.driver.Connector().NewDestination == nil {
+		t.Skip("connector is missing the field NewDestination")
 	}
 }
 

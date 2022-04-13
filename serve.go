@@ -15,6 +15,7 @@
 package sdk
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -32,38 +33,33 @@ import (
 // handshake.
 //
 // Plugins should call Serve in their main() functions.
-func Serve(
-	specFactory func() Specification,
-	sourceFactory func() Source,
-	destinationFactory func() Destination,
-) {
-	err := serve(specFactory, sourceFactory, destinationFactory)
+func Serve(c Connector) {
+	err := serve(c)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error running plugin: %+v", err)
 		os.Exit(1)
 	}
 }
 
-func serve(
-	specFactory func() Specification,
-	sourceFactory func() Source,
-	destinationFactory func() Destination,
-) error {
+func serve(c Connector) error {
 	err := initStandaloneModeLogger()
 	if err != nil {
 		return err
 	}
 
-	if sourceFactory == nil {
-		sourceFactory = func() Source { return nil }
+	if c.NewSpecification == nil {
+		return errors.New("Connector.NewSpecification is a required field")
 	}
-	if destinationFactory == nil {
-		destinationFactory = func() Destination { return nil }
+	if c.NewSource == nil {
+		c.NewSource = func() Source { return nil }
+	}
+	if c.NewDestination == nil {
+		c.NewDestination = func() Destination { return nil }
 	}
 
 	return server.Serve(
-		func() cpluginv1.SpecifierPlugin { return NewSpecifierPlugin(specFactory()) },
-		func() cpluginv1.SourcePlugin { return NewSourcePlugin(sourceFactory()) },
-		func() cpluginv1.DestinationPlugin { return NewDestinationPlugin(destinationFactory()) },
+		func() cpluginv1.SpecifierPlugin { return NewSpecifierPlugin(c.NewSpecification()) },
+		func() cpluginv1.SourcePlugin { return NewSourcePlugin(c.NewSource()) },
+		func() cpluginv1.DestinationPlugin { return NewDestinationPlugin(c.NewDestination()) },
 	)
 }
