@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,13 +34,19 @@ import (
 //
 //   func TestAcceptance(t *testing.T) {
 //       // set up test dependencies ...
-//       sdk.AcceptanceTest(t, sdk.AcceptanceTestConfig{...})
+//       sdk.AcceptanceTest(t, sdk.DefaultAcceptanceTestDriver{
+//           Config: sdk.DefaultAcceptanceTestDriverConfig{
+//               Connector: myConnector,
+//               SourceConfig: map[string]string{...},      // valid source config
+//               DestinationConfig: map[string]string{...}, // valid destination config
+//           },
+//       })
 //   }
-//
 func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 	acceptanceTest{driver: driver}.Test(t)
 }
 
+// AcceptanceTestDriver TODO
 type AcceptanceTestDriver interface {
 	// Connector is the connector to be tested.
 	Connector() Connector
@@ -54,18 +61,21 @@ type AcceptanceTestDriver interface {
 	BeforeTest(*testing.T, string)
 	AfterTest(*testing.T, string)
 
-	// Skip lets the caller define if any tests should be skipped.
-	Skip(string) (bool, string)
+	// Skip should return true and a reason if the test should be skipped,
+	// otherwise it should return false and an empty string.
+	Skip(testName string) (skip bool, reason string)
 
 	// SourceReadExpectation returns a slice of records the source is expected to
 	// return.
 	SourceReadExpectation(t *testing.T) []Record
 }
 
+// DefaultAcceptanceTestDriver TODO
 type DefaultAcceptanceTestDriver struct {
 	Config DefaultAcceptanceTestDriverConfig
 }
 
+// DefaultAcceptanceTestDriverConfig TODO
 type DefaultAcceptanceTestDriverConfig struct {
 	// Connector is the connector to be tested.
 	Connector Connector
@@ -147,26 +157,85 @@ func (d DefaultAcceptanceTestDriver) SourceReadExpectation(t *testing.T) []Recor
 	err = dest.Open(ctx)
 	is.NoErr(err)
 
-	want := Record{
-		Position:  Position("foo"), // TODO figure out how to set position
-		Metadata:  nil,             // TODO metadata
+	want := []Record{{
+		Position:  Position("foo1"), // position doesn't matter, as long as it's unique
+		Metadata:  nil,              // metadata is optional so don't enforce it to be written
 		CreatedAt: time.Now(),
-		Key:       RawData("bar"),
-		Payload:   RawData("baz"),
+		Key:       RawData("bar1"),
+		Payload:   RawData("baz1"),
+	}, {
+		Position:  Position("foo2"), // position doesn't matter, as long as it's unique
+		Metadata:  nil,              // metadata is optional so don't enforce it to be written
+		CreatedAt: time.Now(),
+		Key:       RawData("bar2"),
+		Payload:   RawData("baz2"),
+	}}
+
+	// try to write using WriteAsync and fallback to Write if it's not supported
+	err = d.writeAsync(ctx, dest, want...)
+	if errors.Is(err, ErrUnimplemented) {
+		err = d.write(ctx, dest, want...)
 	}
-
-	// TODO detect if we should write async
-	err = dest.Write(ctx, want)
-	is.NoErr(err)
-
-	// TODO flush is an optional method, accept ErrUnimplemented
-	err = dest.Flush(ctx)
 	is.NoErr(err)
 
 	err = dest.Teardown(ctx)
 	is.NoErr(err)
 
-	return []Record{want}
+	return want
+}
+
+// writeAsync writes records to destination using Destination.WriteAsync.
+func (d DefaultAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destination, records ...Record) error {
+	var waitForAck sync.WaitGroup
+	var ackErr error
+
+	for _, r := range records {
+		waitForAck.Add(1)
+		ack := func(err error) error {
+			defer waitForAck.Done()
+			if ackErr == nil { // only overwrite a nil error
+				ackErr = err
+			}
+			return nil
+		}
+		err := dest.WriteAsync(ctx, r, ack)
+		if err != nil {
+			return err
+		}
+	}
+
+	// flush to make sure the records get written to the destination
+	err := dest.Flush(ctx)
+	if err != nil && !errors.Is(err, ErrUnimplemented) {
+		return err
+	}
+
+	waitForAck.Wait()
+	if ackErr != nil {
+		return ackErr
+	}
+
+	// records were successfully written
+	return nil
+}
+
+// writeAsync writes records to destination using Destination.WriteAsync.
+func (d DefaultAcceptanceTestDriver) write(ctx context.Context, dest Destination, records ...Record) error {
+	for _, r := range records {
+		err := dest.Write(ctx, r)
+		if err != nil {
+			return err
+		}
+	}
+
+	// flush to make sure the records get written to the destination
+	err := dest.Flush(ctx)
+	if err != nil && !errors.Is(err, ErrUnimplemented) {
+		return err
+	}
+
+	// records were successfully written
+	return nil
 }
 
 type acceptanceTest struct {
@@ -301,16 +370,18 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 	want := a.driver.SourceReadExpectation(t)
 
-	// now try to read from the source
-	readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-	defer cancel()
-
 	for i := 0; i < len(want); i++ {
+		// now try to read from the source
+		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		defer cancel()
+
 		got, err := source.Read(readCtx)
 		is.NoErr(err)
 
 		want[i].Position = got.Position   // position can't be determined in advance
 		want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
+
+		// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
 		is.Equal(want[i], got)
 	}
 
