@@ -98,3 +98,21 @@ func TestSourcePluginAdapter_Start_Logger(t *testing.T) {
 	_, err := srcPlugin.Start(ctx, cpluginv1.SourceStartRequest{})
 	is.NoErr(err)
 }
+
+func TestSourcePluginAdapter_Teardown_Deadline(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	ctx := context.Background()
+
+	src := NewMockSource(ctrl)
+	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+
+	src.EXPECT().Teardown(gomock.Any()).
+		Do(func(ctx context.Context) {
+			_, ok := ctx.Deadline()
+			is.True(ok)
+		})
+
+	_, err := srcPlugin.Teardown(ctx, cpluginv1.SourceTeardownRequest{})
+	is.NoErr(err)
+}

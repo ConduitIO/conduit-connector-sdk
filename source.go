@@ -265,7 +265,8 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, req cpluginv1.SourceStop
 }
 
 func (a *sourcePluginAdapter) Teardown(ctx context.Context, req cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
-	// TODO add a timeout and kill plugin forcefully if needed (https://github.com/ConduitIO/conduit/issues/185)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	defer cancel()
 	if a.t != nil {
 		_ = a.t.Wait() // wait for Run to stop running
 	}
