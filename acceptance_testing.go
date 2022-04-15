@@ -506,6 +506,47 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	is.True(errors.Is(err, context.DeadlineExceeded))
 }
 
+func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
+	a.skipIfNoDestination(t)
+	is := is.New(t)
+	ctx := context.Background()
+
+	dest := a.driver.Connector().NewDestination()
+	err := dest.Configure(ctx, a.driver.DestinationConfig())
+	is.NoErr(err)
+
+	// calling Teardown after Configure is valid and happens when connector is created
+	err = dest.Teardown(ctx)
+	is.NoErr(err)
+}
+
+func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
+	a.skipIfNoSpecification(t)
+	a.skipIfNoDestination(t)
+	is := is.New(t)
+	ctx := context.Background()
+
+	spec := a.driver.Connector().NewSpecification()
+	for name, p := range spec.DestinationParams {
+		if p.Required {
+			// removing the required parameter from the config should provoke an error
+			t.Run(name, func(t *testing.T) {
+				srcCfg := a.cloneConfig(a.driver.DestinationConfig())
+				delete(srcCfg, name)
+
+				is.Equal(len(srcCfg)+1, len(a.driver.DestinationConfig())) // destination config does not contain required parameter, please check the test setup
+
+				dest := a.driver.Connector().NewSource()
+				err := dest.Configure(ctx, srcCfg)
+				is.True(err != nil)
+
+				err = dest.Teardown(ctx)
+				is.NoErr(err)
+			})
+		}
+	}
+}
+
 func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
