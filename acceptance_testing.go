@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/matryer/is"
+	"go.uber.org/goleak"
 )
 
 // AcceptanceTest is the acceptance test that all connector implementations
@@ -65,8 +66,12 @@ type AcceptanceTestDriver interface {
 	// otherwise it should return false and an empty string.
 	Skip(testName string) (skip bool, reason string)
 
-	// SourceReadExpectation returns a slice of records the source is expected to
-	// return.
+	// GoleakOptions will be applied to goleak.VerifyNone. Can be used to
+	// suppress false positive goroutine leaks.
+	GoleakOptions(testName string) []goleak.Option
+
+	// SourceReadExpectation returns a slice of records the source is expected
+	// to return.
 	SourceReadExpectation(t *testing.T) []Record
 }
 
@@ -89,6 +94,10 @@ type DefaultAcceptanceTestDriverConfig struct {
 
 	BeforeTest func(t *testing.T, testName string)
 	AfterTest  func(t *testing.T, testName string)
+
+	// GoleakOptions will be applied to goleak.VerifyNone. Can be used to
+	// suppress false positive goroutine leaks.
+	GoleakOptions []goleak.Option
 
 	// Skip lets the caller define if any tests should be skipped (useful for
 	// skipping destination/source tests if the connector only implements one
@@ -136,6 +145,10 @@ func (d DefaultAcceptanceTestDriver) Skip(testName string) (bool, string) {
 	return false, ""
 }
 
+func (d DefaultAcceptanceTestDriver) GoleakOptions(testName string) []goleak.Option {
+	return d.Config.GoleakOptions
+}
+
 // SourceReadExpectation by default opens the destination and writes a record to
 // the destination. It is expected that the destination is writing to the same
 // location the source is reading from. If the connector does not implement a
@@ -146,7 +159,8 @@ func (d DefaultAcceptanceTestDriver) SourceReadExpectation(t *testing.T) []Recor
 	}
 
 	is := is.New(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// writing something to the destination should result in the same record
 	// being produced by the source
@@ -178,7 +192,8 @@ func (d DefaultAcceptanceTestDriver) SourceReadExpectation(t *testing.T) []Recor
 	}
 	is.NoErr(err)
 
-	err = dest.Teardown(ctx)
+	cancel() // cancel context to simulate stop
+	err = dest.Teardown(context.Background())
 	is.NoErr(err)
 
 	return want
@@ -360,13 +375,22 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t.Name())...)
 
 	source := a.driver.Connector().NewSource()
+
 	err := source.Configure(ctx, a.driver.SourceConfig())
 	is.NoErr(err)
 
-	err = source.Open(ctx, nil) // listen from beginning
+	openCtx, cancelOpenCtx := context.WithCancel(ctx)
+	err = source.Open(openCtx, nil) // listen from beginning
 	is.NoErr(err)
+
+	defer func() {
+		cancelOpenCtx()
+		err = source.Teardown(ctx)
+		is.NoErr(err)
+	}()
 
 	want := a.driver.SourceReadExpectation(t)
 
@@ -384,22 +408,27 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 		// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
 		is.Equal(want[i], got)
 	}
-
-	err = source.Teardown(ctx)
-	is.NoErr(err)
 }
 
 func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t.Name())...)
 
 	source := a.driver.Connector().NewSource()
 	err := source.Configure(ctx, a.driver.SourceConfig())
 	is.NoErr(err)
 
-	err = source.Open(ctx, nil)
+	openCtx, cancelOpenCtx := context.WithCancel(ctx)
+	err = source.Open(openCtx, nil)
 	is.NoErr(err)
+
+	defer func() {
+		cancelOpenCtx()
+		err = source.Teardown(ctx)
+		is.NoErr(err)
+	}()
 
 	readCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
