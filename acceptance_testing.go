@@ -62,10 +62,6 @@ type AcceptanceTestDriver interface {
 	BeforeTest(*testing.T)
 	AfterTest(*testing.T)
 
-	// Skip should return true and a reason if the test should be skipped,
-	// otherwise it should return false and an empty string.
-	Skip(testName string) (skip bool, reason string)
-
 	// GoleakOptions will be applied to goleak.VerifyNone. Can be used to
 	// suppress false positive goroutine leaks.
 	GoleakOptions(testName string) []goleak.Option
@@ -73,6 +69,14 @@ type AcceptanceTestDriver interface {
 	// SourceReadExpectation returns a slice of records the source is expected
 	// to return.
 	SourceReadExpectation(t *testing.T) []Record
+
+	// DestinationWriteExpectation returns a slice of records that are written
+	// to the destination, used to verify the destination has done what we
+	// expect.
+	DestinationWriteExpectation(t *testing.T) []Record
+
+	// TODO SourceReadExpectation and DestinationWriteExpectation naming sucks,
+	//  we should rethink and come up with something better.
 }
 
 // DefaultAcceptanceTestDriver TODO
@@ -118,6 +122,9 @@ func (d DefaultAcceptanceTestDriver) DestinationConfig() map[string]string {
 }
 
 func (d DefaultAcceptanceTestDriver) BeforeTest(t *testing.T) {
+	// before test check if the test should be skipped
+	d.Skip(t)
+
 	if d.Config.BeforeTest != nil {
 		d.Config.BeforeTest(t)
 	}
@@ -129,7 +136,7 @@ func (d DefaultAcceptanceTestDriver) AfterTest(t *testing.T) {
 	}
 }
 
-func (d DefaultAcceptanceTestDriver) Skip(testName string) (bool, string) {
+func (d DefaultAcceptanceTestDriver) Skip(t *testing.T) {
 	var skipRegexs []*regexp.Regexp
 	for _, skipRegex := range d.Config.Skip {
 		r := regexp.MustCompile(skipRegex)
@@ -137,19 +144,17 @@ func (d DefaultAcceptanceTestDriver) Skip(testName string) (bool, string) {
 	}
 
 	for _, skipRegex := range skipRegexs {
-		if skipRegex.MatchString(testName) {
-			return true, fmt.Sprintf("caller requested to skip tests that match the regex %q", skipRegex.String())
+		if skipRegex.MatchString(t.Name()) {
+			t.Skip(fmt.Sprintf("caller requested to skip tests that match the regex %q", skipRegex.String()))
 		}
 	}
-
-	return false, ""
 }
 
 func (d DefaultAcceptanceTestDriver) GoleakOptions(testName string) []goleak.Option {
 	return d.Config.GoleakOptions
 }
 
-// SourceReadExpectation by default opens the destination and writes a record to
+// SourceReadExpectation by default opens the destination and writes records to
 // the destination. It is expected that the destination is writing to the same
 // location the source is reading from. If the connector does not implement a
 // destination the function will fail the test.
@@ -197,6 +202,49 @@ func (d DefaultAcceptanceTestDriver) SourceReadExpectation(t *testing.T) []Recor
 	is.NoErr(err)
 
 	return want
+}
+
+// DestinationWriteExpectation by default opens the source and reads all records
+// from the source. It is expected that the destination is writing to the same
+// location the source is reading from. If the connector does not implement a
+// source the function will fail the test.
+func (d DefaultAcceptanceTestDriver) DestinationWriteExpectation(t *testing.T) []Record {
+	if d.Connector().NewSource == nil {
+		t.Fatal("connector is missing the field NewSource, either implement the source or overwrite the driver method DestinationWriteExpectation")
+	}
+
+	is := is.New(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// writing something to the destination should result in the same record
+	// being produced by the source
+	src := d.Connector().NewSource()
+	err := src.Configure(ctx, d.SourceConfig())
+	is.NoErr(err)
+
+	err = src.Open(ctx, nil)
+	is.NoErr(err)
+
+	var got []Record
+	for {
+		// now try to read from the source
+		readCtx, cancel := context.WithTimeout(ctx, time.Second*5) // TODO timeout might need to be configurable
+		defer cancel()
+
+		r, err := src.Read(readCtx)
+		if err != nil && errors.Is(err, readCtx.Err()) {
+			break
+		}
+		is.NoErr(err)
+		got = append(got, r)
+	}
+
+	cancel() // cancel context to simulate stop
+	err = src.Teardown(context.Background())
+	is.NoErr(err)
+
+	return got
 }
 
 // writeAsync writes records to destination using Destination.WriteAsync.
@@ -269,11 +317,6 @@ func (a acceptanceTest) Test(t *testing.T) {
 			continue
 		}
 		t.Run(testName, func(t *testing.T) {
-			if skip, reason := a.driver.Skip(t.Name()); skip {
-				// skip test if caller requested it
-				t.Skip(reason)
-			}
-
 			a.driver.BeforeTest(t)
 			t.Cleanup(func() { a.driver.AfterTest(t) })
 
@@ -461,6 +504,114 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	r, err := source.Read(readCtx)
 	is.Equal(r, Record{}) // record should be empty
 	is.True(errors.Is(err, context.DeadlineExceeded))
+}
+
+func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
+	a.skipIfNoDestination(t)
+	is := is.New(t)
+	ctx := context.Background()
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t.Name())...)
+
+	dest := a.driver.Connector().NewDestination()
+	err := dest.Configure(ctx, a.driver.DestinationConfig())
+	is.NoErr(err)
+
+	openCtx, cancelOpenCtx := context.WithCancel(ctx)
+	err = dest.Open(openCtx)
+	is.NoErr(err)
+
+	defer func() {
+		cancelOpenCtx()
+		err = dest.Teardown(ctx)
+		is.NoErr(err)
+	}()
+
+	want := []Record{{
+		Position:  Position("foo1"), // position doesn't matter, as long as it's unique
+		Metadata:  nil,              // metadata is optional so don't enforce it to be written
+		CreatedAt: time.Now(),
+		Key:       RawData("bar1"),
+		Payload:   RawData("baz1"),
+	}, {
+		Position:  Position("foo2"), // position doesn't matter, as long as it's unique
+		Metadata:  nil,              // metadata is optional so don't enforce it to be written
+		CreatedAt: time.Now(),
+		Key:       RawData("bar2"),
+		Payload:   RawData("baz2"),
+	}}
+
+	var gotSynchronous []Record
+	var gotAsynchronous []Record
+
+	t.Run("synchronous", func(t *testing.T) {
+		is = is.New(t)
+		for i, r := range want {
+			writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+			defer cancel()
+			err = dest.Write(writeCtx, r)
+			if i == 0 && errors.Is(err, ErrUnimplemented) {
+				t.Skip("Write not implemented")
+			}
+			is.NoErr(err)
+		}
+
+		// Flush is optional, we allow it to be unimplemented
+		err = dest.Flush(ctx)
+		if !errors.Is(err, ErrUnimplemented) {
+			is.NoErr(err)
+		}
+
+		got := a.driver.DestinationWriteExpectation(t)
+		gotSynchronous = got
+		is.Equal(len(got), len(want)) // destination didn't write expected number of records
+		for i := range want {
+			want[i].Position = got[i].Position   // position can't be determined in advance
+			want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
+
+			is.Equal(want[i], got[i])
+		}
+	})
+	t.Run("asynchronous", func(t *testing.T) {
+		is = is.New(t)
+		var ackWg sync.WaitGroup
+		for i, r := range want {
+			writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+			defer cancel()
+
+			ackWg.Add(1)
+			err = dest.WriteAsync(writeCtx, r, func(err error) error {
+				defer ackWg.Done()
+				return err // TODO check error, but not here, we might not be in the right goroutine
+			})
+			if i == 0 && errors.Is(err, ErrUnimplemented) {
+				t.Skip("WriteAsync not implemented")
+			}
+			is.NoErr(err)
+		}
+
+		err = dest.Flush(ctx)
+		is.NoErr(err)
+
+		// wait for acks to get called
+		ackWg.Done()
+
+		got := a.driver.DestinationWriteExpectation(t)
+		// skip records retrieved by synchronous function (unlikely to happen, but let's be thorough)
+		got = got[len(gotSynchronous):]
+
+		gotAsynchronous = got
+
+		is.Equal(len(got), len(want)) // destination didn't write expected number of records
+		for i := range want {
+			want[i].Position = got[i].Position   // position can't be determined in advance
+			want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
+
+			is.Equal(want[i], got[i])
+		}
+	})
+
+	is.True((len(gotSynchronous) > 0) !=
+		(len(gotAsynchronous) > 0)) // either Write or WriteAsync should be implemented and working (not both)
 }
 
 func (a acceptanceTest) skipIfNoSpecification(t *testing.T) {
