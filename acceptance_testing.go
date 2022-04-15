@@ -59,8 +59,8 @@ type AcceptanceTestDriver interface {
 	// writing to the same location as the source will read from.
 	DestinationConfig() map[string]string
 
-	BeforeTest(*testing.T, string)
-	AfterTest(*testing.T, string)
+	BeforeTest(*testing.T)
+	AfterTest(*testing.T)
 
 	// Skip should return true and a reason if the test should be skipped,
 	// otherwise it should return false and an empty string.
@@ -92,8 +92,8 @@ type DefaultAcceptanceTestDriverConfig struct {
 	// writing to the same location as the source will read from.
 	DestinationConfig map[string]string
 
-	BeforeTest func(t *testing.T, testName string)
-	AfterTest  func(t *testing.T, testName string)
+	BeforeTest func(t *testing.T)
+	AfterTest  func(t *testing.T)
 
 	// GoleakOptions will be applied to goleak.VerifyNone. Can be used to
 	// suppress false positive goroutine leaks.
@@ -117,15 +117,15 @@ func (d DefaultAcceptanceTestDriver) DestinationConfig() map[string]string {
 	return d.Config.DestinationConfig
 }
 
-func (d DefaultAcceptanceTestDriver) BeforeTest(t *testing.T, testName string) {
+func (d DefaultAcceptanceTestDriver) BeforeTest(t *testing.T) {
 	if d.Config.BeforeTest != nil {
-		d.Config.BeforeTest(t, testName)
+		d.Config.BeforeTest(t)
 	}
 }
 
-func (d DefaultAcceptanceTestDriver) AfterTest(t *testing.T, testName string) {
+func (d DefaultAcceptanceTestDriver) AfterTest(t *testing.T) {
 	if d.Config.AfterTest != nil {
-		d.Config.AfterTest(t, testName)
+		d.Config.AfterTest(t)
 	}
 }
 
@@ -269,13 +269,13 @@ func (a acceptanceTest) Test(t *testing.T) {
 			continue
 		}
 		t.Run(testName, func(t *testing.T) {
-			if skip, reason := a.driver.Skip(testName); skip {
+			if skip, reason := a.driver.Skip(t.Name()); skip {
 				// skip test if caller requested it
 				t.Skip(reason)
 			}
 
-			a.driver.BeforeTest(t, testName)
-			t.Cleanup(func() { a.driver.AfterTest(t, testName) })
+			a.driver.BeforeTest(t)
+			t.Cleanup(func() { a.driver.AfterTest(t) })
 
 			av.Method(i).Call([]reflect.Value{reflect.ValueOf(t)})
 		})
@@ -377,6 +377,9 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	ctx := context.Background()
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t.Name())...)
 
+	// write expectation before source exists
+	want := a.driver.SourceReadExpectation(t)
+
 	source := a.driver.Connector().NewSource()
 
 	err := source.Configure(ctx, a.driver.SourceConfig())
@@ -392,22 +395,45 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 		is.NoErr(err)
 	}()
 
-	want := a.driver.SourceReadExpectation(t)
+	t.Run("snapshot", func(t *testing.T) {
+		is = is.New(t)
+		for i := 0; i < len(want); i++ {
+			// now try to read from the source
+			readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+			defer cancel()
 
-	for i := 0; i < len(want); i++ {
-		// now try to read from the source
-		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-		defer cancel()
+			got, err := source.Read(readCtx)
+			is.NoErr(err)
 
-		got, err := source.Read(readCtx)
-		is.NoErr(err)
+			want[i].Position = got.Position   // position can't be determined in advance
+			want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
 
-		want[i].Position = got.Position   // position can't be determined in advance
-		want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
+			// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
+			is.Equal(want[i], got)
+		}
+	})
 
-		// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
-		is.Equal(want[i], got)
-	}
+	// while connector is running write more data and make sure the connector
+	// detects it
+	want = a.driver.SourceReadExpectation(t)
+
+	t.Run("cdc", func(t *testing.T) {
+		is = is.New(t)
+		for i := 0; i < len(want); i++ {
+			// now try to read from the source
+			readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+			defer cancel()
+
+			got, err := source.Read(readCtx)
+			is.NoErr(err)
+
+			want[i].Position = got.Position   // position can't be determined in advance
+			want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
+
+			// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
+			is.Equal(want[i], got)
+		}
+	})
 }
 
 func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
