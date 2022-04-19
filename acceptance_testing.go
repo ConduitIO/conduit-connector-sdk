@@ -36,8 +36,8 @@ import (
 //
 //   func TestAcceptance(t *testing.T) {
 //       // set up test dependencies ...
-//       sdk.AcceptanceTest(t, sdk.DefaultAcceptanceTestDriver{
-//           Config: sdk.DefaultAcceptanceTestDriverConfig{
+//       sdk.AcceptanceTest(t, sdk.ConfigurableAcceptanceTestDriver{
+//           Config: sdk.ConfigurableAcceptanceTestDriverConfig{
 //               Connector: myConnector,
 //               SourceConfig: map[string]string{...},      // valid source config
 //               DestinationConfig: map[string]string{...}, // valid destination config
@@ -51,7 +51,11 @@ func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 	}.Test(t)
 }
 
-// AcceptanceTestDriver TODO
+// AcceptanceTestDriver is the object that each test uses for fetching the
+// connector and its configurations. The SDK provides a default implementation
+// ConfigurableAcceptanceTestDriver that should fit most use cases. In case more
+// flexibility is needed you can create your own driver, include the default
+// driver in the struct and override methods as needed.
 type AcceptanceTestDriver interface {
 	// Connector is the connector to be tested.
 	Connector() Connector
@@ -63,7 +67,9 @@ type AcceptanceTestDriver interface {
 	// writing to the same location as the source will read from.
 	DestinationConfig(*testing.T) map[string]string
 
+	// BeforeTest is executed before each acceptance test.
 	BeforeTest(*testing.T)
+	// AfterTest is executed after each acceptance test.
 	AfterTest(*testing.T)
 
 	// GoleakOptions will be applied to goleak.VerifyNone. Can be used to
@@ -85,13 +91,16 @@ type AcceptanceTestDriver interface {
 	Read(*testing.T, *[]Record)
 }
 
-// DefaultAcceptanceTestDriver TODO
-type DefaultAcceptanceTestDriver struct {
-	Config DefaultAcceptanceTestDriverConfig
+// ConfigurableAcceptanceTestDriver is the default implementation of
+// AcceptanceTestDriver. It provides a convenient way of configuring the driver
+// without the need of implementing a custom driver from scratch.
+type ConfigurableAcceptanceTestDriver struct {
+	Config ConfigurableAcceptanceTestDriverConfig
 }
 
-// DefaultAcceptanceTestDriverConfig TODO
-type DefaultAcceptanceTestDriverConfig struct {
+// ConfigurableAcceptanceTestDriverConfig contains the configuration for
+// ConfigurableAcceptanceTestDriver.
+type ConfigurableAcceptanceTestDriverConfig struct {
 	// Connector is the connector to be tested.
 	Connector Connector
 
@@ -102,8 +111,10 @@ type DefaultAcceptanceTestDriverConfig struct {
 	// writing to the same location as the source will read from.
 	DestinationConfig map[string]string
 
+	// BeforeTest is executed before each acceptance test.
 	BeforeTest func(t *testing.T)
-	AfterTest  func(t *testing.T)
+	// AfterTest is executed after each acceptance test.
+	AfterTest func(t *testing.T)
 
 	// GoleakOptions will be applied to goleak.VerifyNone. Can be used to
 	// suppress false positive goroutine leaks.
@@ -115,19 +126,19 @@ type DefaultAcceptanceTestDriverConfig struct {
 	Skip []string
 }
 
-func (d DefaultAcceptanceTestDriver) Connector() Connector {
+func (d ConfigurableAcceptanceTestDriver) Connector() Connector {
 	return d.Config.Connector
 }
 
-func (d DefaultAcceptanceTestDriver) SourceConfig(*testing.T) map[string]string {
+func (d ConfigurableAcceptanceTestDriver) SourceConfig(*testing.T) map[string]string {
 	return d.Config.SourceConfig
 }
 
-func (d DefaultAcceptanceTestDriver) DestinationConfig(*testing.T) map[string]string {
+func (d ConfigurableAcceptanceTestDriver) DestinationConfig(*testing.T) map[string]string {
 	return d.Config.DestinationConfig
 }
 
-func (d DefaultAcceptanceTestDriver) BeforeTest(t *testing.T) {
+func (d ConfigurableAcceptanceTestDriver) BeforeTest(t *testing.T) {
 	// before test check if the test should be skipped
 	d.Skip(t)
 
@@ -136,13 +147,13 @@ func (d DefaultAcceptanceTestDriver) BeforeTest(t *testing.T) {
 	}
 }
 
-func (d DefaultAcceptanceTestDriver) AfterTest(t *testing.T) {
+func (d ConfigurableAcceptanceTestDriver) AfterTest(t *testing.T) {
 	if d.Config.AfterTest != nil {
 		d.Config.AfterTest(t)
 	}
 }
 
-func (d DefaultAcceptanceTestDriver) Skip(t *testing.T) {
+func (d ConfigurableAcceptanceTestDriver) Skip(t *testing.T) {
 	var skipRegexs []*regexp.Regexp
 	for _, skipRegex := range d.Config.Skip {
 		r := regexp.MustCompile(skipRegex)
@@ -156,7 +167,7 @@ func (d DefaultAcceptanceTestDriver) Skip(t *testing.T) {
 	}
 }
 
-func (d DefaultAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.Option {
+func (d ConfigurableAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.Option {
 	return d.Config.GoleakOptions
 }
 
@@ -164,7 +175,7 @@ func (d DefaultAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.Option
 // destination. It is expected that the destination is writing to the same
 // location the source is reading from. If the connector does not implement a
 // destination the function will fail the test.
-func (d DefaultAcceptanceTestDriver) Write(t *testing.T, records *[]Record) {
+func (d ConfigurableAcceptanceTestDriver) Write(t *testing.T, records *[]Record) {
 	if d.Connector().NewDestination == nil {
 		t.Fatal("connector is missing the field NewDestination, either implement the destination or overwrite the driver method Write")
 	}
@@ -198,7 +209,7 @@ func (d DefaultAcceptanceTestDriver) Write(t *testing.T, records *[]Record) {
 // the source. It is expected that the destination is writing to the same
 // location the source is reading from. If the connector does not implement a
 // source the function will fail the test.
-func (d DefaultAcceptanceTestDriver) Read(t *testing.T, records *[]Record) {
+func (d ConfigurableAcceptanceTestDriver) Read(t *testing.T, records *[]Record) {
 	if d.Connector().NewSource == nil {
 		t.Fatal("connector is missing the field NewSource, either implement the source or overwrite the driver method Read")
 	}
@@ -239,7 +250,7 @@ func (d DefaultAcceptanceTestDriver) Read(t *testing.T, records *[]Record) {
 }
 
 // writeAsync writes records to destination using Destination.WriteAsync.
-func (d DefaultAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destination, records []Record) error {
+func (d ConfigurableAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destination, records []Record) error {
 	var waitForAck sync.WaitGroup
 	var ackErr error
 
@@ -275,7 +286,7 @@ func (d DefaultAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destin
 }
 
 // write writes records to destination using Destination.Write.
-func (d DefaultAcceptanceTestDriver) write(ctx context.Context, dest Destination, records []Record) error {
+func (d ConfigurableAcceptanceTestDriver) write(ctx context.Context, dest Destination, records []Record) error {
 	for _, r := range records {
 		err := dest.Write(ctx, r)
 		if err != nil {
