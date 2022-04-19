@@ -418,6 +418,13 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	ctx := context.Background()
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
+	positions := make(map[string]bool)
+	isUniquePosition := func(t *testing.T, p Position) {
+		is := is.New(t)
+		is.True(!positions[string(p)])
+		positions[string(p)] = true
+	}
+
 	// write expectation before source exists
 	want := a.generateRecords(10)
 	a.driver.Write(t, &want)
@@ -445,6 +452,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 			got, err := source.Read(readCtx)
 			is.NoErr(err)
+			isUniquePosition(t, got.Position)
 
 			want[i].Position = got.Position   // position can't be determined in advance
 			want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
@@ -470,6 +478,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 			got, err := source.Read(readCtx)
 			is.NoErr(err)
+			isUniquePosition(t, got.Position)
 
 			want[i].Position = got.Position   // position can't be determined in advance
 			want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
