@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"regexp"
 	"strings"
@@ -44,7 +45,10 @@ import (
 //       })
 //   }
 func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
-	acceptanceTest{driver: driver}.Test(t)
+	acceptanceTest{
+		driver: driver,
+		rand:   rand.New(rand.NewSource(time.Now().UnixNano())),
+	}.Test(t)
 }
 
 // AcceptanceTestDriver TODO
@@ -66,17 +70,19 @@ type AcceptanceTestDriver interface {
 	// suppress false positive goroutine leaks.
 	GoleakOptions(*testing.T) []goleak.Option
 
-	// SourceReadExpectation returns a slice of records the source is expected
-	// to return.
-	SourceReadExpectation(*testing.T) []Record
-
-	// DestinationWriteExpectation returns a slice of records that are written
-	// to the destination, used to verify the destination has done what we
-	// expect.
-	DestinationWriteExpectation(*testing.T) []Record
-
-	// TODO SourceReadExpectation and DestinationWriteExpectation naming sucks,
-	//  we should rethink and come up with something better.
+	// Write receives a slice of records that should be prepared in the 3rd
+	// party system so that the source will read them. The slice will be used to
+	// verify the source connector can successfully execute reads.
+	// It is discouraged for the driver to change the record slice, unless there
+	// is no way to write the records to the 3rd party system, then the slice
+	// should be modified to reflect the expected records a source should read.
+	Write(*testing.T, *[]Record)
+	// Read should populate the slice with the records that were written to the
+	// destination. The slice will be used to verify the destination has
+	// successfully executed writes.
+	// The capacity of the slice is equal to the number of records that the test
+	// expects to have been written to the destination.
+	Read(*testing.T, *[]Record)
 }
 
 // DefaultAcceptanceTestDriver TODO
@@ -154,13 +160,13 @@ func (d DefaultAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.Option
 	return d.Config.GoleakOptions
 }
 
-// SourceReadExpectation by default opens the destination and writes records to
-// the destination. It is expected that the destination is writing to the same
+// Write by default opens the destination and writes records to the
+// destination. It is expected that the destination is writing to the same
 // location the source is reading from. If the connector does not implement a
 // destination the function will fail the test.
-func (d DefaultAcceptanceTestDriver) SourceReadExpectation(t *testing.T) []Record {
+func (d DefaultAcceptanceTestDriver) Write(t *testing.T, records *[]Record) {
 	if d.Connector().NewDestination == nil {
-		t.Fatal("connector is missing the field NewDestination, either implement the destination or overwrite the driver method SourceReadExpectation")
+		t.Fatal("connector is missing the field NewDestination, either implement the destination or overwrite the driver method Write")
 	}
 
 	is := is.New(t)
@@ -176,41 +182,25 @@ func (d DefaultAcceptanceTestDriver) SourceReadExpectation(t *testing.T) []Recor
 	err = dest.Open(ctx)
 	is.NoErr(err)
 
-	want := []Record{{
-		Position:  Position("foo1"), // position doesn't matter, as long as it's unique
-		Metadata:  nil,              // metadata is optional so don't enforce it to be written
-		CreatedAt: time.Now(),
-		Key:       RawData("bar1"),
-		Payload:   RawData("baz1"),
-	}, {
-		Position:  Position("foo2"), // position doesn't matter, as long as it's unique
-		Metadata:  nil,              // metadata is optional so don't enforce it to be written
-		CreatedAt: time.Now(),
-		Key:       RawData("bar2"),
-		Payload:   RawData("baz2"),
-	}}
-
 	// try to write using WriteAsync and fallback to Write if it's not supported
-	err = d.writeAsync(ctx, dest, want...)
+	err = d.writeAsync(ctx, dest, *records)
 	if errors.Is(err, ErrUnimplemented) {
-		err = d.write(ctx, dest, want...)
+		err = d.write(ctx, dest, *records)
 	}
 	is.NoErr(err)
 
 	cancel() // cancel context to simulate stop
 	err = dest.Teardown(context.Background())
 	is.NoErr(err)
-
-	return want
 }
 
-// DestinationWriteExpectation by default opens the source and reads all records
-// from the source. It is expected that the destination is writing to the same
+// Read by default opens the source and reads all records from
+// the source. It is expected that the destination is writing to the same
 // location the source is reading from. If the connector does not implement a
 // source the function will fail the test.
-func (d DefaultAcceptanceTestDriver) DestinationWriteExpectation(t *testing.T) []Record {
+func (d DefaultAcceptanceTestDriver) Read(t *testing.T, records *[]Record) {
 	if d.Connector().NewSource == nil {
-		t.Fatal("connector is missing the field NewSource, either implement the source or overwrite the driver method DestinationWriteExpectation")
+		t.Fatal("connector is missing the field NewSource, either implement the source or overwrite the driver method Read")
 	}
 
 	is := is.New(t)
@@ -226,29 +216,30 @@ func (d DefaultAcceptanceTestDriver) DestinationWriteExpectation(t *testing.T) [
 	err = src.Open(ctx, nil)
 	is.NoErr(err)
 
-	var got []Record
-	for {
+	for i := 0; i < cap(*records); i++ {
 		// now try to read from the source
-		readCtx, cancel := context.WithTimeout(ctx, time.Second*5) // TODO timeout might need to be configurable
-		defer cancel()
+		readCtx, readCancel := context.WithTimeout(ctx, time.Second*5)
+		defer readCancel()
 
 		r, err := src.Read(readCtx)
-		if err != nil && errors.Is(err, readCtx.Err()) {
-			break
-		}
 		is.NoErr(err)
-		got = append(got, r)
+		*records = append(*records, r)
 	}
+
+	// try another read, there should be nothing so timeout after 1 second
+	readCtx, readCancel := context.WithTimeout(ctx, time.Second)
+	defer readCancel()
+	_, err = src.Read(readCtx)
+
+	is.True(errors.Is(err, context.DeadlineExceeded))
 
 	cancel() // cancel context to simulate stop
 	err = src.Teardown(context.Background())
 	is.NoErr(err)
-
-	return got
 }
 
 // writeAsync writes records to destination using Destination.WriteAsync.
-func (d DefaultAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destination, records ...Record) error {
+func (d DefaultAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destination, records []Record) error {
 	var waitForAck sync.WaitGroup
 	var ackErr error
 
@@ -269,10 +260,11 @@ func (d DefaultAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destin
 
 	// flush to make sure the records get written to the destination
 	err := dest.Flush(ctx)
-	if err != nil && !errors.Is(err, ErrUnimplemented) {
+	if err != nil {
 		return err
 	}
 
+	// TODO create timeout for wait to prevent deadlock for badly written connectors
 	waitForAck.Wait()
 	if ackErr != nil {
 		return ackErr
@@ -282,8 +274,8 @@ func (d DefaultAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destin
 	return nil
 }
 
-// writeAsync writes records to destination using Destination.WriteAsync.
-func (d DefaultAcceptanceTestDriver) write(ctx context.Context, dest Destination, records ...Record) error {
+// write writes records to destination using Destination.Write.
+func (d DefaultAcceptanceTestDriver) write(ctx context.Context, dest Destination, records []Record) error {
 	for _, r := range records {
 		err := dest.Write(ctx, r)
 		if err != nil {
@@ -291,7 +283,8 @@ func (d DefaultAcceptanceTestDriver) write(ctx context.Context, dest Destination
 		}
 	}
 
-	// flush to make sure the records get written to the destination
+	// flush to make sure the records get written to the destination, but allow
+	// it to be unimplemented
 	err := dest.Flush(ctx)
 	if err != nil && !errors.Is(err, ErrUnimplemented) {
 		return err
@@ -303,6 +296,7 @@ func (d DefaultAcceptanceTestDriver) write(ctx context.Context, dest Destination
 
 type acceptanceTest struct {
 	driver AcceptanceTestDriver
+	rand   *rand.Rand
 }
 
 // Test runs all acceptance tests.
@@ -396,11 +390,12 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	ctx := context.Background()
 
 	spec := a.driver.Connector().NewSpecification()
+	origCfg := a.driver.SourceConfig(t)
+
 	for name, p := range spec.SourceParams {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
-				origCfg := a.driver.SourceConfig(t)
 				haveCfg := a.cloneConfig(origCfg)
 				delete(haveCfg, name)
 
@@ -424,10 +419,10 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	// write expectation before source exists
-	want := a.driver.SourceReadExpectation(t)
+	want := a.generateRecords(10)
+	a.driver.Write(t, &want)
 
 	source := a.driver.Connector().NewSource()
-
 	err := source.Configure(ctx, a.driver.SourceConfig(t))
 	is.NoErr(err)
 
@@ -455,13 +450,16 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 			want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
 
 			// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
+			// TODO ensure position is unique
+			// TODO ensure we check metadata and mark it as successful or skipped if it's not (don't fail test because of metadata)
 			is.Equal(want[i], got)
 		}
 	})
 
 	// while connector is running write more data and make sure the connector
 	// detects it
-	want = a.driver.SourceReadExpectation(t)
+	want = a.generateRecords(20)
+	a.driver.Write(t, &want)
 
 	t.Run("cdc", func(t *testing.T) {
 		is = is.New(t)
@@ -477,6 +475,8 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 			want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
 
 			// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
+			// TODO ensure position is unique
+			// TODO ensure we check metadata and mark it as successful or skipped if it's not (don't fail test because of metadata)
 			is.Equal(want[i], got)
 		}
 	})
@@ -531,11 +531,12 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	ctx := context.Background()
 
 	spec := a.driver.Connector().NewSpecification()
+	origCfg := a.driver.DestinationConfig(t)
+
 	for name, p := range spec.DestinationParams {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
-				origCfg := a.driver.DestinationConfig(t)
 				haveCfg := a.cloneConfig(origCfg)
 				delete(haveCfg, name)
 
@@ -572,20 +573,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 		is.NoErr(err)
 	}()
 
-	want := []Record{{
-		Position:  Position("foo1"), // position doesn't matter, as long as it's unique
-		Metadata:  nil,              // metadata is optional so don't enforce it to be written
-		CreatedAt: time.Now(),
-		Key:       RawData("bar1"),
-		Payload:   RawData("baz1"),
-	}, {
-		Position:  Position("foo2"), // position doesn't matter, as long as it's unique
-		Metadata:  nil,              // metadata is optional so don't enforce it to be written
-		CreatedAt: time.Now(),
-		Key:       RawData("bar2"),
-		Payload:   RawData("baz2"),
-	}}
-
+	want := a.generateRecords(20)
 	var gotSynchronous []Record
 	var gotAsynchronous []Record
 
@@ -607,8 +595,10 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 			is.NoErr(err)
 		}
 
-		got := a.driver.DestinationWriteExpectation(t)
+		got := make([]Record, 0, len(want))
+		a.driver.Read(t, &got)
 		gotSynchronous = got
+
 		is.Equal(len(got), len(want)) // destination didn't write expected number of records
 		for i := range want {
 			want[i].Position = got[i].Position   // position can't be determined in advance
@@ -641,10 +631,10 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 		// wait for acks to get called
 		ackWg.Done()
 
-		got := a.driver.DestinationWriteExpectation(t)
+		got := make([]Record, 0, len(want))
+		a.driver.Read(t, &got)
 		// skip records retrieved by synchronous function (unlikely to happen, but let's be thorough)
 		got = got[len(gotSynchronous):]
-
 		gotAsynchronous = got
 
 		is.Equal(len(got), len(want)) // destination didn't write expected number of records
@@ -683,4 +673,48 @@ func (a acceptanceTest) cloneConfig(orig map[string]string) map[string]string {
 		cloned[k] = v
 	}
 	return cloned
+}
+
+func (a acceptanceTest) generateRecords(count int) []Record {
+	records := make([]Record, count)
+	for i := range records {
+		records[i] = a.generateRecord()
+	}
+	return records
+}
+
+func (a acceptanceTest) generateRecord() Record {
+	return Record{
+		Position:  Position(a.randString(32)), // position doesn't matter, as long as it's unique
+		Metadata:  nil,                        // TODO metadata is optional so don't enforce it to be written, still create it
+		CreatedAt: time.Unix(0, a.rand.Int63()),
+		Key:       RawData(a.randString(32)), // TODO try structured data as well
+		Payload:   RawData(a.randString(32)), // TODO try structured data as well
+	}
+}
+
+// randString generates a random string of length n.
+// (source: https://stackoverflow.com/a/31832326)
+func (a acceptanceTest) randString(n int) string {
+	const letterBytes = ` !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_abcdefghijklmnopqrstuvwxyz`
+	const (
+		letterIdxBits = 6                    // 6 bits to represent a letter index
+		letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
+		letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+	)
+	sb := strings.Builder{}
+	sb.Grow(n)
+	// src.Int63() generates 63 random bits, enough for letterIdxMax characters
+	for i, cache, remain := n-1, a.rand.Int63(), letterIdxMax; i >= 0; {
+		if remain == 0 {
+			cache, remain = a.rand.Int63(), letterIdxMax
+		}
+		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
+			sb.WriteByte(letterBytes[idx])
+			i--
+		}
+		cache >>= letterIdxBits
+		remain--
+	}
+	return sb.String()
 }
