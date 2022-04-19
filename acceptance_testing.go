@@ -54,26 +54,26 @@ type AcceptanceTestDriver interface {
 
 	// SourceConfig should be a valid config for a source connector, reading
 	// from the same location as the destination will write to.
-	SourceConfig() map[string]string
+	SourceConfig(*testing.T) map[string]string
 	// DestinationConfig should be a valid config for a destination connector,
 	// writing to the same location as the source will read from.
-	DestinationConfig() map[string]string
+	DestinationConfig(*testing.T) map[string]string
 
 	BeforeTest(*testing.T)
 	AfterTest(*testing.T)
 
 	// GoleakOptions will be applied to goleak.VerifyNone. Can be used to
 	// suppress false positive goroutine leaks.
-	GoleakOptions(testName string) []goleak.Option
+	GoleakOptions(*testing.T) []goleak.Option
 
 	// SourceReadExpectation returns a slice of records the source is expected
 	// to return.
-	SourceReadExpectation(t *testing.T) []Record
+	SourceReadExpectation(*testing.T) []Record
 
 	// DestinationWriteExpectation returns a slice of records that are written
 	// to the destination, used to verify the destination has done what we
 	// expect.
-	DestinationWriteExpectation(t *testing.T) []Record
+	DestinationWriteExpectation(*testing.T) []Record
 
 	// TODO SourceReadExpectation and DestinationWriteExpectation naming sucks,
 	//  we should rethink and come up with something better.
@@ -113,11 +113,11 @@ func (d DefaultAcceptanceTestDriver) Connector() Connector {
 	return d.Config.Connector
 }
 
-func (d DefaultAcceptanceTestDriver) SourceConfig() map[string]string {
+func (d DefaultAcceptanceTestDriver) SourceConfig(*testing.T) map[string]string {
 	return d.Config.SourceConfig
 }
 
-func (d DefaultAcceptanceTestDriver) DestinationConfig() map[string]string {
+func (d DefaultAcceptanceTestDriver) DestinationConfig(*testing.T) map[string]string {
 	return d.Config.DestinationConfig
 }
 
@@ -150,7 +150,7 @@ func (d DefaultAcceptanceTestDriver) Skip(t *testing.T) {
 	}
 }
 
-func (d DefaultAcceptanceTestDriver) GoleakOptions(testName string) []goleak.Option {
+func (d DefaultAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.Option {
 	return d.Config.GoleakOptions
 }
 
@@ -170,7 +170,7 @@ func (d DefaultAcceptanceTestDriver) SourceReadExpectation(t *testing.T) []Recor
 	// writing something to the destination should result in the same record
 	// being produced by the source
 	dest := d.Connector().NewDestination()
-	err := dest.Configure(ctx, d.DestinationConfig())
+	err := dest.Configure(ctx, d.DestinationConfig(t))
 	is.NoErr(err)
 
 	err = dest.Open(ctx)
@@ -220,7 +220,7 @@ func (d DefaultAcceptanceTestDriver) DestinationWriteExpectation(t *testing.T) [
 	// writing something to the destination should result in the same record
 	// being produced by the source
 	src := d.Connector().NewSource()
-	err := src.Configure(ctx, d.SourceConfig())
+	err := src.Configure(ctx, d.SourceConfig(t))
 	is.NoErr(err)
 
 	err = src.Open(ctx, nil)
@@ -334,6 +334,7 @@ func (a acceptanceTest) TestSpecifier_Exists(t *testing.T) {
 func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 	a.skipIfNoSpecification(t)
 	is := is.NewRelaxed(t) // allow multiple failures for this test
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	spec := a.driver.Connector().NewSpecification()
 
@@ -377,9 +378,10 @@ func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	source := a.driver.Connector().NewSource()
-	err := source.Configure(ctx, a.driver.SourceConfig())
+	err := source.Configure(ctx, a.driver.SourceConfig(t))
 	is.NoErr(err)
 
 	// calling Teardown after Configure is valid and happens when connector is created
@@ -398,13 +400,14 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
-				srcCfg := a.cloneConfig(a.driver.SourceConfig())
-				delete(srcCfg, name)
+				origCfg := a.driver.SourceConfig(t)
+				haveCfg := a.cloneConfig(origCfg)
+				delete(haveCfg, name)
 
-				is.Equal(len(srcCfg)+1, len(a.driver.SourceConfig())) // source config does not contain required parameter, please check the test setup
+				is.Equal(len(haveCfg)+1, len(origCfg)) // source config does not contain required parameter, please check the test setup
 
 				source := a.driver.Connector().NewSource()
-				err := source.Configure(ctx, srcCfg)
+				err := source.Configure(ctx, haveCfg)
 				is.True(err != nil)
 
 				err = source.Teardown(ctx)
@@ -418,14 +421,14 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t.Name())...)
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	// write expectation before source exists
 	want := a.driver.SourceReadExpectation(t)
 
 	source := a.driver.Connector().NewSource()
 
-	err := source.Configure(ctx, a.driver.SourceConfig())
+	err := source.Configure(ctx, a.driver.SourceConfig(t))
 	is.NoErr(err)
 
 	openCtx, cancelOpenCtx := context.WithCancel(ctx)
@@ -483,10 +486,10 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t.Name())...)
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	source := a.driver.Connector().NewSource()
-	err := source.Configure(ctx, a.driver.SourceConfig())
+	err := source.Configure(ctx, a.driver.SourceConfig(t))
 	is.NoErr(err)
 
 	openCtx, cancelOpenCtx := context.WithCancel(ctx)
@@ -510,9 +513,10 @@ func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
 	ctx := context.Background()
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	dest := a.driver.Connector().NewDestination()
-	err := dest.Configure(ctx, a.driver.DestinationConfig())
+	err := dest.Configure(ctx, a.driver.DestinationConfig(t))
 	is.NoErr(err)
 
 	// calling Teardown after Configure is valid and happens when connector is created
@@ -531,13 +535,14 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
-				srcCfg := a.cloneConfig(a.driver.DestinationConfig())
-				delete(srcCfg, name)
+				origCfg := a.driver.DestinationConfig(t)
+				haveCfg := a.cloneConfig(origCfg)
+				delete(haveCfg, name)
 
-				is.Equal(len(srcCfg)+1, len(a.driver.DestinationConfig())) // destination config does not contain required parameter, please check the test setup
+				is.Equal(len(haveCfg)+1, len(origCfg)) // destination config does not contain required parameter, please check the test setup
 
 				dest := a.driver.Connector().NewSource()
-				err := dest.Configure(ctx, srcCfg)
+				err := dest.Configure(ctx, haveCfg)
 				is.True(err != nil)
 
 				err = dest.Teardown(ctx)
@@ -551,10 +556,10 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
 	ctx := context.Background()
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t.Name())...)
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	dest := a.driver.Connector().NewDestination()
-	err := dest.Configure(ctx, a.driver.DestinationConfig())
+	err := dest.Configure(ctx, a.driver.DestinationConfig(t))
 	is.NoErr(err)
 
 	openCtx, cancelOpenCtx := context.WithCancel(ctx)
@@ -585,7 +590,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	var gotAsynchronous []Record
 
 	t.Run("synchronous", func(t *testing.T) {
-		is = is.New(t)
+		is := is.New(t)
 		for i, r := range want {
 			writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
@@ -613,7 +618,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 		}
 	})
 	t.Run("asynchronous", func(t *testing.T) {
-		is = is.New(t)
+		is := is.New(t)
 		var ackWg sync.WaitGroup
 		for i, r := range want {
 			writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
@@ -651,8 +656,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 		}
 	})
 
-	is.True((len(gotSynchronous) > 0) !=
-		(len(gotAsynchronous) > 0)) // either Write or WriteAsync should be implemented and working (not both)
+	is.True((len(gotSynchronous) > 0) != (len(gotAsynchronous) > 0)) // either Write or WriteAsync should be implemented and working (not both)
 }
 
 func (a acceptanceTest) skipIfNoSpecification(t *testing.T) {
