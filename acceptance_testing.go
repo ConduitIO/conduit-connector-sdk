@@ -360,22 +360,41 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 	is.True(spec.Author != "")                             // Specification.Author is missing
 	is.True(strings.TrimSpace(spec.Author) == spec.Author) // Specification.Author starts or ends with whitespace
 
-	// TODO connectors can also be only destinations or only sources
-	// TODO should we enforce that there is at least 1 parameter? what source wouldn't need any parameters?
-	is.True(spec.DestinationParams != nil)   // Specification.DestinationParams is missing
-	is.True(len(spec.DestinationParams) > 0) // Specification.DestinationParams is empty
+	isParamsCorrect := func(t *testing.T, params map[string]Parameter) {
+		is := is.NewRelaxed(t)
+		paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
 
-	is.True(spec.SourceParams != nil)   // Specification.SourceParams is missing
-	is.True(len(spec.SourceParams) > 0) // Specification.SourceParams is empty
+		for name, p := range params {
+			is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
+			is.True(p.Description != "")              // parameter description is empty
+		}
+	}
 
-	// -- specifics -------------------
+	t.Run("sourceParams", func(t *testing.T) {
+		a.skipIfNoSource(t)
+		is := is.NewRelaxed(t)
 
-	// TODO assert parameter format (camel case, dots allowed)
+		// TODO should we even enforce that there is at least 1 parameter? what source wouldn't need any parameters?
+		is.True(spec.SourceParams != nil)   // Specification.SourceParams is missing
+		is.True(len(spec.SourceParams) > 0) // Specification.SourceParams is empty
+
+		isParamsCorrect(t, spec.SourceParams)
+	})
+
+	t.Run("destinationParams", func(t *testing.T) {
+		a.skipIfNoDestination(t)
+		is := is.NewRelaxed(t)
+
+		// TODO should we even enforce that there is at least 1 parameter? what destination wouldn't need any parameters?
+		is.True(spec.DestinationParams != nil)   // Specification.DestinationParams is missing
+		is.True(len(spec.DestinationParams) > 0) // Specification.DestinationParams is empty
+
+		isParamsCorrect(t, spec.DestinationParams)
+	})
 
 	semverRegex := regexp.MustCompile(`v([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` +
 		`(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?` +
 		`(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?`)
-
 	is.True(semverRegex.MatchString(spec.Version)) // Specification.Version is not a valid semantic version (vX.Y.Z)
 }
 
@@ -503,7 +522,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	defer sourceCleanup()
 
 	t.Run("snapshot", func(t *testing.T) {
-		is = is.New(t)
+		is := is.New(t)
 		for i := 0; i < len(want); i++ {
 			// now try to read from the source
 			readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
@@ -529,7 +548,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	a.driver.Write(t, &want)
 
 	t.Run("cdc", func(t *testing.T) {
-		is = is.New(t)
+		is := is.New(t)
 		for i := 0; i < len(want); i++ {
 			// now try to read from the source
 			readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
@@ -599,7 +618,7 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 
 				is.Equal(len(haveCfg)+1, len(origCfg)) // destination config does not contain required parameter, please check the test setup
 
-				dest := a.driver.Connector().NewSource()
+				dest := a.driver.Connector().NewDestination()
 				err := dest.Configure(ctx, haveCfg)
 				is.True(err != nil)
 
