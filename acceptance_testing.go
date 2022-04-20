@@ -423,6 +423,65 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	}
 }
 
+func (a acceptanceTest) TestSource_Open_ResumeAtPosition(t *testing.T) {
+	a.skipIfNoSource(t)
+	is := is.New(t)
+	ctx := context.Background()
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
+	defer sourceCleanup()
+
+	// write expectations
+	want := a.generateRecords(10)
+	a.driver.Write(t, &want)
+
+	// read all records, but stop acking them after we read half of them
+	var lastPosition Position
+	var lastIndex int
+	for i := 0; i < len(want); i++ {
+		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		defer cancel()
+
+		got, err := source.Read(readCtx)
+		is.NoErr(err)
+
+		if i < len(want)/2 {
+			err = source.Ack(ctx, got.Position)
+			is.NoErr(err)
+			lastPosition = got.Position
+			lastIndex = i
+		}
+	}
+	sourceCleanup()
+
+	// At this point we have read all records but acked only half and stopped
+	// the connector. We should be able to resume from the last record that was
+	// not acked.
+
+	source, sourceCleanup = a.openSource(ctx, t, lastPosition) // listen from position
+	defer sourceCleanup()
+
+	for i := lastIndex + 1; i < len(want); i++ {
+		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		defer cancel()
+
+		got, err := source.Read(readCtx)
+		is.NoErr(err)
+
+		err = source.Ack(ctx, got.Position)
+		is.NoErr(err)
+
+		want[i].Position = got.Position   // position can't be determined in advance
+		want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
+
+		// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
+		// TODO ensure position is unique
+		// TODO ensure we check metadata and mark it as successful or skipped if it's not (don't fail test because of metadata)
+		is.Equal(want[i], got)
+	}
+}
+
 func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
@@ -440,19 +499,8 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	want := a.generateRecords(10)
 	a.driver.Write(t, &want)
 
-	source := a.driver.Connector().NewSource()
-	err := source.Configure(ctx, a.driver.SourceConfig(t))
-	is.NoErr(err)
-
-	openCtx, cancelOpenCtx := context.WithCancel(ctx)
-	err = source.Open(openCtx, nil) // listen from beginning
-	is.NoErr(err)
-
-	defer func() {
-		cancelOpenCtx()
-		err = source.Teardown(ctx)
-		is.NoErr(err)
-	}()
+	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
+	defer sourceCleanup()
 
 	t.Run("snapshot", func(t *testing.T) {
 		is = is.New(t)
@@ -508,19 +556,8 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	ctx := context.Background()
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
-	source := a.driver.Connector().NewSource()
-	err := source.Configure(ctx, a.driver.SourceConfig(t))
-	is.NoErr(err)
-
-	openCtx, cancelOpenCtx := context.WithCancel(ctx)
-	err = source.Open(openCtx, nil)
-	is.NoErr(err)
-
-	defer func() {
-		cancelOpenCtx()
-		err = source.Teardown(ctx)
-		is.NoErr(err)
-	}()
+	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
+	defer sourceCleanup()
 
 	readCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -579,19 +616,8 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	ctx := context.Background()
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
-	dest := a.driver.Connector().NewDestination()
-	err := dest.Configure(ctx, a.driver.DestinationConfig(t))
-	is.NoErr(err)
-
-	openCtx, cancelOpenCtx := context.WithCancel(ctx)
-	err = dest.Open(openCtx)
-	is.NoErr(err)
-
-	defer func() {
-		cancelOpenCtx()
-		err = dest.Teardown(ctx)
-		is.NoErr(err)
-	}()
+	dest, cleanup := a.openDestination(ctx, t)
+	defer cleanup()
 
 	want := a.generateRecords(20)
 	var gotSynchronous []Record
@@ -602,7 +628,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 		for i, r := range want {
 			writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
-			err = dest.Write(writeCtx, r)
+			err := dest.Write(writeCtx, r)
 			if i == 0 && errors.Is(err, ErrUnimplemented) {
 				t.Skip("Write not implemented")
 			}
@@ -610,7 +636,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 		}
 
 		// Flush is optional, we allow it to be unimplemented
-		err = dest.Flush(ctx)
+		err := dest.Flush(ctx)
 		if !errors.Is(err, ErrUnimplemented) {
 			is.NoErr(err)
 		}
@@ -635,7 +661,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 			defer cancel()
 
 			ackWg.Add(1)
-			err = dest.WriteAsync(writeCtx, r, func(err error) error {
+			err := dest.WriteAsync(writeCtx, r, func(err error) error {
 				defer ackWg.Done()
 				return err // TODO check error, but not here, we might not be in the right goroutine
 			})
@@ -645,10 +671,11 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 			is.NoErr(err)
 		}
 
-		err = dest.Flush(ctx)
+		err := dest.Flush(ctx)
 		is.NoErr(err)
 
 		// wait for acks to get called
+		// TODO timeout if it takes too long
 		ackWg.Done()
 
 		got := make([]Record, 0, len(want))
@@ -693,6 +720,54 @@ func (a acceptanceTest) cloneConfig(orig map[string]string) map[string]string {
 		cloned[k] = v
 	}
 	return cloned
+}
+
+func (a acceptanceTest) openSource(ctx context.Context, t *testing.T, pos Position) (source Source, cleanup func()) {
+	is := is.New(t)
+
+	source = a.driver.Connector().NewSource()
+	err := source.Configure(ctx, a.driver.SourceConfig(t))
+	is.NoErr(err)
+
+	openCtx, cancelOpenCtx := context.WithCancel(ctx)
+	err = source.Open(openCtx, pos)
+	is.NoErr(err)
+
+	// make sure connector is cleaned up only once
+	var cleanupOnce sync.Once
+	cleanup = func() {
+		cleanupOnce.Do(func() {
+			cancelOpenCtx()
+			err = source.Teardown(ctx)
+			is.NoErr(err)
+		})
+	}
+
+	return source, cleanup
+}
+
+func (a acceptanceTest) openDestination(ctx context.Context, t *testing.T) (dest Destination, cleanup func()) {
+	is := is.New(t)
+
+	dest = a.driver.Connector().NewDestination()
+	err := dest.Configure(ctx, a.driver.DestinationConfig(t))
+	is.NoErr(err)
+
+	openCtx, cancelOpenCtx := context.WithCancel(ctx)
+	err = dest.Open(openCtx)
+	is.NoErr(err)
+
+	// make sure connector is cleaned up only once
+	var cleanupOnce sync.Once
+	cleanup = func() {
+		cleanupOnce.Do(func() {
+			cancelOpenCtx()
+			err = dest.Teardown(ctx)
+			is.NoErr(err)
+		})
+	}
+
+	return dest, cleanup
 }
 
 func (a acceptanceTest) generateRecords(count int) []Record {
