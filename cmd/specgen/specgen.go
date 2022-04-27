@@ -404,6 +404,8 @@ func (p *paramsParser) parseTypeSpec(ts *ast.TypeSpec) (params map[string]sdk.Pa
 	switch v := ts.Type.(type) {
 	case *ast.StructType:
 		return p.parseStructType(v)
+	case *ast.SelectorExpr:
+		return p.parseSelectorExpr(v)
 	default:
 		return nil, fmt.Errorf("unexpected type: %T", ts.Type)
 	}

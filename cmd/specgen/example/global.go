@@ -21,7 +21,7 @@ import (
 )
 
 type GlobalConfig struct {
-	Internal internal.GlobalConfig
+	Internal Another
 	// GlobalString is an example parameter. This comment will be converted into
 	// the parameter description. Can be multiline too! Just write a godoc like
 	// you normally would.
@@ -30,6 +30,4 @@ type GlobalConfig struct {
 	GlobalDuration time.Duration `default:"1s"`
 }
 
-type Another struct {
-	MyFoo int
-}
+type Another internal.GlobalConfig
