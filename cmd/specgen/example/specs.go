@@ -14,8 +14,19 @@
 
 package example
 
+import (
+	"net/http"
+	"time"
+
+	"example.com/asdf/internal"
+)
+
 type GlobalConfig struct {
-	GlobalString string
+	// GlobalString is an example parameter. This comment will be converted into
+	// the parameter description. Can be multiline too! Just write a godoc like
+	// you normally would.
+	GlobalString   string `default:"foo" required:"true"`
+	GlobalDuration time.Duration
 }
 
 type SourceConfig struct {
@@ -24,23 +35,29 @@ type SourceConfig struct {
 	Nested struct {
 		MyFloat32 float32
 		MyFloat64 float64
-	}
+	} `name:"tagsWorkForNestedStructs"`
 }
 
 type DestinationConfig struct {
-	GlobalConfig
-	MyBool bool
+	G      internal.GlobalConfig
+	MyBool bool `name:"myBoolino"`
+
+	// this field is ignored because it is not exported
+	ignoreThis http.Client
 }
 
-// Specs contains the specifications.
+// Specs contains the specifications. This comment can describe the struct
+// itself and won't be included in the generated specifications.
+//
 //spec:summary This is a test summary.
-//spec:description This is a test description. It can be in multiple lines long
-// if needed.
+//spec:description
+// This is a test description. It can start in a new line and be distributed
+// across multiple lines. Standard Markdown syntax _can_ be used.
 //spec:author Example Inc.
 //spec:version v0.1.1
 type Specs struct {
 	//spec:sourceParams
 	SourceConfig
 	//spec:destinationParams
-	DestinationConfig
+	DestinationConfig DestinationConfig
 }

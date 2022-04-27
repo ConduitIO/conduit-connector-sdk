@@ -23,7 +23,9 @@ import (
 	"go/token"
 	"io/fs"
 	"os/exec"
+	"reflect"
 	"strings"
+	"unicode"
 
 	sdk "github.com/conduitio/conduit-connector-sdk"
 )
@@ -37,6 +39,10 @@ const (
 	KeywordAuthor            = "author"
 	KeywordDestinationParams = "destinationParams"
 	KeywordSourceParams      = "sourceParams"
+
+	TagParamName     = "name"
+	TagParamDefault  = "default"
+	TagParamRequired = "required"
 )
 
 var (
@@ -118,7 +124,7 @@ func (p *specificationParser) Parse() (sdk.Specification, error) {
 	var spec sdk.Specification
 	spec.Name = p.mod.Path
 
-	ts, err := p.findTypeSpec()
+	ts, err := p.findSpecgenType()
 	if err != nil {
 		return sdk.Specification{}, fmt.Errorf("error finding spec struct: %w", err)
 	}
@@ -144,11 +150,11 @@ func (p *specificationParser) Parse() (sdk.Specification, error) {
 	}
 
 	// parse source / destination params
-	_, err = p.parseParams(st, KeywordSourceParams)
+	spec.SourceParams, err = p.parseParams(st, KeywordSourceParams)
 	if err != nil { // TODO errNotFound is allowed
 		return sdk.Specification{}, fmt.Errorf("error parsing soruce parameters: %w", err)
 	}
-	_, err = p.parseParams(st, KeywordDestinationParams)
+	spec.DestinationParams, err = p.parseParams(st, KeywordDestinationParams)
 	if err != nil {
 		return sdk.Specification{}, fmt.Errorf("error parsing destination parameters: %w", err)
 	}
@@ -156,35 +162,10 @@ func (p *specificationParser) Parse() (sdk.Specification, error) {
 	return spec, nil
 }
 
-func (p *specificationParser) parseParams(st *ast.StructType, keyword string) (map[string]sdk.Parameter, error) {
-	var field *ast.Field
-	for _, f := range st.Fields.List {
-		_, err := p.parseCommentGroup(f.Doc, keyword)
-		if err == errNotFound {
-			continue
-		} else if err != nil {
-			return nil, err
-		}
-		if field != nil {
-			return nil, fmt.Errorf(
-				"found two fields with the comment %q, please make sure only one field has this comment",
-				p.formatCommentPrefix(keyword),
-			)
-		}
-		field = f
-	}
-	if field == nil {
-		return nil, errNotFound
-	}
-	// TODO traverse field recursively and build map
-
-	return nil, errors.New("unimplemented")
-}
-
-// findTypeSpec finds the declaration of the type that has specgen specific
+// findSpecgenType finds the declaration of the type that has specgen specific
 // comments. The comments that identified this TypeSpec can be found in the
 // field Doc.
-func (p *specificationParser) findTypeSpec() (*ast.TypeSpec, error) {
+func (p *specificationParser) findSpecgenType() (*ast.TypeSpec, error) {
 	var typeSpec *ast.TypeSpec
 	for _, f := range p.pkg.Files {
 		var lastErr error
@@ -281,18 +262,19 @@ func (p *specificationParser) parseCommentGroup(cg *ast.CommentGroup, keyword st
 loop:
 	for _, c := range cg.List {
 		switch {
-		case strings.HasPrefix(c.Text, keywordPrefix+" ") || c.Text == keywordPrefix:
+		case strings.HasPrefix(c.Text, "//"+keywordPrefix+" ") || c.Text == "//"+keywordPrefix:
 			if found {
 				// we already found another line with the keyword prefix, not expected
 				return "", fmt.Errorf("found two comment lines with prefix %q, please remove one and try again", keywordPrefix)
 			}
 			found = true
-			text := strings.TrimPrefix(c.Text, keywordPrefix)
+			text := strings.TrimPrefix(c.Text, "//")
+			text = strings.TrimPrefix(text, keywordPrefix)
 			text = strings.TrimSpace(text)
 			if _, err := buf.WriteString(text); err != nil {
 				panic(err) // according to the docs WriteString always returns a nil error
 			}
-		case strings.HasPrefix(c.Text, specPrefix):
+		case strings.HasPrefix(c.Text, "//"+specPrefix):
 			if found {
 				// we already found the comment we were looking for and
 				// encountered another spec comment, we are done parsing
@@ -309,9 +291,10 @@ loop:
 				text = strings.TrimSpace(text)
 			}
 
-			if _, err := buf.WriteString("\n" + text); err != nil {
-				panic(err) // according to the docs WriteString always returns a nil error
+			if buf.Len() > 0 {
+				_, _ = buf.WriteRune('\n') // according to the docs WriteRune always returns a nil error
 			}
+			_, _ = buf.WriteString(text) // according to the docs WriteString always returns a nil error
 		}
 	}
 	if !found {
@@ -324,5 +307,227 @@ loop:
 }
 
 func (*specificationParser) formatCommentPrefix(keyword string) string {
-	return fmt.Sprintf("//%s:%s", CommentPrefix, keyword)
+	return fmt.Sprintf("%s:%s", CommentPrefix, keyword)
+}
+
+func (p *specificationParser) parseParams(specgenStruct *ast.StructType, keyword string) (map[string]sdk.Parameter, error) {
+	var field *ast.Field
+	for _, f := range specgenStruct.Fields.List {
+		_, err := p.parseCommentGroup(f.Doc, keyword)
+		if err == errNotFound {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		if field != nil {
+			return nil, fmt.Errorf(
+				"found two fields with the comment %q, please make sure only one field has this comment",
+				p.formatCommentPrefix(keyword),
+			)
+		}
+		field = f
+	}
+	if field == nil {
+		return nil, errNotFound
+	}
+
+	return (*paramsParser)(p).parse(field)
+}
+
+// paramsParser groups functions that concern themselves with parsing source and
+// destination parameters.
+type paramsParser specificationParser
+
+// parse takes a field that represents a source or destination config and parses
+// the parameters by recursively traversing the type in that field.
+func (p *paramsParser) parse(f *ast.Field) (map[string]sdk.Parameter, error) {
+	ident, ok := f.Type.(*ast.Ident)
+	if !ok {
+		return nil, fmt.Errorf("error asserting (*ast.Field).Type: expected %T, got %T", &ast.Ident{}, f.Type)
+	}
+	params, err := p.parseIdent(ident)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing parameters: %w", err)
+	}
+	return params, nil
+}
+
+func (p *paramsParser) parseIdent(ident *ast.Ident) (params map[string]sdk.Parameter, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("[parseIdent] %w", err)
+		}
+	}()
+
+	switch v := ident.Obj.Decl.(type) {
+	case *ast.TypeSpec:
+		return p.parseTypeSpec(v)
+	default:
+		return nil, fmt.Errorf("unexpected type: %T", ident.Obj.Decl)
+	}
+}
+
+func (p *paramsParser) parseTypeSpec(ts *ast.TypeSpec) (params map[string]sdk.Parameter, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("[parseTypeSpec] %w", err)
+		}
+	}()
+
+	switch v := ts.Type.(type) {
+	case *ast.StructType:
+		return p.parseStructType(v)
+	default:
+		return nil, fmt.Errorf("unexpected type: %T", ts.Type)
+	}
+}
+
+func (p *paramsParser) parseStructType(st *ast.StructType) (params map[string]sdk.Parameter, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("[parseStructType] %w", err)
+		}
+	}()
+
+	for _, f := range st.Fields.List {
+		fieldParams, err := p.parseField(f)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing field %q: %w", f.Names[0].Name, err)
+		}
+		if params == nil {
+			params = fieldParams
+			continue
+		}
+		for k, v := range fieldParams {
+			if _, ok := params[k]; ok {
+				return nil, fmt.Errorf("parameter %q is defined twice", k)
+			}
+			params[k] = v
+		}
+	}
+	return params, nil
+}
+
+func (p *paramsParser) parseField(f *ast.Field) (params map[string]sdk.Parameter, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("[parseField] %w", err)
+		}
+	}()
+
+	if len(f.Names) == 1 && !f.Names[0].IsExported() {
+		return nil, nil // ignore unexported fields
+	}
+
+	switch v := f.Type.(type) {
+	case *ast.Ident:
+		// identifier (builtin type or type in same package)
+		if v.Obj == nil {
+			// builtin type, that's a parameter
+			name, param := p.parseSingleParameter(f)
+			return map[string]sdk.Parameter{name: param}, nil
+		}
+
+		params, err = p.parseIdent(v)
+		if err != nil {
+			return nil, err
+		}
+		return p.attachPrefix(f, params), nil
+	case *ast.StructType:
+		// nested type
+		params, err = p.parseStructType(v)
+		if err != nil {
+			return nil, err
+		}
+		return p.attachPrefix(f, params), nil
+	case *ast.SelectorExpr:
+		// TODO parse package if it's not available yet
+		fmt.Println("selector expr")
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unknown type: %T", f.Type)
+	}
+}
+
+func (p *paramsParser) attachPrefix(f *ast.Field, params map[string]sdk.Parameter) map[string]sdk.Parameter {
+	// attach prefix if a tag is present or if the field is named
+	prefix := p.getTag(f.Tag, TagParamName)
+	if prefix == "" && len(f.Names) > 0 {
+		prefix = p.formatFieldName(f.Names[0].Name)
+	}
+	if prefix == "" {
+		// no prefix to attach
+		return params
+	}
+
+	prefixedParams := make(map[string]sdk.Parameter)
+	for k, v := range params {
+		prefixedParams[prefix+"."+k] = v
+	}
+	return prefixedParams
+}
+
+func (p *paramsParser) parseSingleParameter(f *ast.Field) (name string, param sdk.Parameter) {
+	ident := f.Type.(*ast.Ident)
+
+	var fieldName string
+	if len(f.Names) == 1 {
+		fieldName = f.Names[0].Name
+	} else {
+		fieldName = ident.Name
+	}
+
+	name = p.getTag(f.Tag, TagParamName)
+	if name == "" {
+		// if there's no tag use the formatted field name
+		name = p.formatFieldName(fieldName)
+	}
+
+	// replace field name with parameter name in description so that the user
+	// can write normal go docs referencing the field name
+	desc := strings.Replace(f.Doc.Text(), fieldName, name, -1)
+
+	return name, sdk.Parameter{
+		Default:     p.getTag(f.Tag, TagParamDefault),
+		Required:    p.getTag(f.Tag, TagParamRequired) == "true",
+		Description: desc,
+	}
+}
+
+// formatFieldName formats the name to a camel case string that starts with a
+// lowercase letter. If the string starts with multiple uppercase letters, all
+// but the last character in the sequence will be converted into lowercase
+// letters (e.g. HTTPRequest -> httpRequest).
+func (p *paramsParser) formatFieldName(name string) string {
+	if name == "" {
+		return ""
+	}
+	foundLowercase := false
+	i := 0
+	newName := strings.Map(func(r rune) rune {
+		if foundLowercase {
+			return r
+		}
+		if unicode.IsLower(r) {
+			// short circuit
+			foundLowercase = true
+			return r
+		}
+		if i == 0 ||
+			(len(name) > i+1 && unicode.IsUpper(rune(name[i+1]))) {
+			r = unicode.ToLower(r)
+		}
+		i++
+		return r
+	}, name)
+	return newName
+}
+
+func (p *paramsParser) getTag(lit *ast.BasicLit, tag string) string {
+	if lit == nil {
+		return ""
+	}
+
+	st := reflect.StructTag(strings.Trim(lit.Value, "`"))
+	return st.Get(tag)
 }
