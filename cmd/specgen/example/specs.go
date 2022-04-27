@@ -18,15 +18,16 @@ import (
 	"net/http"
 	"time"
 
-	"example.com/asdf/internal"
+	internal "example.com/asdf/internal"
 )
 
 type GlobalConfig struct {
 	// GlobalString is an example parameter. This comment will be converted into
 	// the parameter description. Can be multiline too! Just write a godoc like
 	// you normally would.
-	GlobalString   string `default:"foo" required:"true"`
-	GlobalDuration time.Duration
+	GlobalString string `default:"foo" required:"true"`
+	// GlobalDuration demonstrates that time.Duration is also allowed.
+	GlobalDuration time.Duration `default:"1s"`
 }
 
 type SourceConfig struct {

@@ -58,7 +58,7 @@ func ParseSpecification(path string) (sdk.Specification, error) {
 	if err != nil {
 		return sdk.Specification{}, fmt.Errorf("error parsing package: %w", err)
 	}
-	return (&specificationParser{pkg: pkg, mod: mod}).Parse()
+	return (&specificationParser{mod: mod, imports: map[string]*ast.Package{}}).Parse(pkg)
 }
 
 type Module struct {
@@ -114,17 +114,18 @@ func ParsePackage(path string) (*ast.Package, error) {
 }
 
 type specificationParser struct {
-	pkg *ast.Package
-	mod Module
+	// pkg holds the current file that we are working on
+	file *ast.File
+	mod  Module
 
 	imports map[string]*ast.Package
 }
 
-func (p *specificationParser) Parse() (sdk.Specification, error) {
+func (p *specificationParser) Parse(pkg *ast.Package) (sdk.Specification, error) {
 	var spec sdk.Specification
 	spec.Name = p.mod.Path
 
-	ts, err := p.findSpecgenType()
+	ts, err := p.findSpecgenType(pkg)
 	if err != nil {
 		return sdk.Specification{}, fmt.Errorf("error finding spec struct: %w", err)
 	}
@@ -165,9 +166,9 @@ func (p *specificationParser) Parse() (sdk.Specification, error) {
 // findSpecgenType finds the declaration of the type that has specgen specific
 // comments. The comments that identified this TypeSpec can be found in the
 // field Doc.
-func (p *specificationParser) findSpecgenType() (*ast.TypeSpec, error) {
+func (p *specificationParser) findSpecgenType(pkg *ast.Package) (*ast.TypeSpec, error) {
 	var typeSpec *ast.TypeSpec
-	for _, f := range p.pkg.Files {
+	for _, f := range pkg.Files {
 		var lastErr error
 		ast.Inspect(f, func(n ast.Node) bool {
 			gd, ok := n.(*ast.GenDecl)
@@ -237,6 +238,7 @@ func (p *specificationParser) findSpecgenType() (*ast.TypeSpec, error) {
 				return false
 			}
 			typeSpec = ts
+			p.file = f
 			return true
 		})
 		if lastErr != nil {
@@ -424,7 +426,10 @@ func (p *paramsParser) parseField(f *ast.Field) (params map[string]sdk.Parameter
 		// identifier (builtin type or type in same package)
 		if v.Obj == nil {
 			// builtin type, that's a parameter
-			name, param := p.parseSingleParameter(f)
+			name, param, err := p.parseSingleParameter(f)
+			if err != nil {
+				return nil, err
+			}
 			return map[string]sdk.Parameter{name: param}, nil
 		}
 
@@ -441,12 +446,67 @@ func (p *paramsParser) parseField(f *ast.Field) (params map[string]sdk.Parameter
 		}
 		return p.attachPrefix(f, params), nil
 	case *ast.SelectorExpr:
-		// TODO parse package if it's not available yet
-		fmt.Println("selector expr")
-		return nil, nil
+		// imported type
+		imp, err := p.findImportSpec(v)
+		if err != nil {
+			return nil, err
+		}
+
+		impPath := strings.Trim(imp.Path.Value, `"`)
+		switch {
+		case impPath == "time" && v.Sel.Name == "Duration":
+			// we allow the duration type
+			name, param, err := p.parseSingleParameter(f)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]sdk.Parameter{name: param}, nil
+		default:
+			params, err = p.parseSelectorExpr(v)
+			if err != nil {
+				return nil, err
+			}
+			return p.attachPrefix(f, params), nil
+		}
 	default:
 		return nil, fmt.Errorf("unknown type: %T", f.Type)
 	}
+}
+
+func (p *paramsParser) parseSelectorExpr(se *ast.SelectorExpr) (params map[string]sdk.Parameter, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("[parseSelectorExpr] %w", err)
+		}
+	}()
+
+	imp, err := p.findImportSpec(se)
+	if err != nil {
+		return nil, err
+	}
+
+	impName := se.X.(*ast.Ident).Name
+	impPath := strings.Trim(imp.Path.Value, `"`)
+
+	if !strings.HasPrefix(impPath, p.mod.Path) {
+		// we only allow types declared in the same module
+		// edge case: could be in a submodule, but let's disregard that for now
+		return nil, fmt.Errorf("we do not support parameters of type %v.%v", impName, se.Sel.Name)
+	}
+
+	// TODO parse package
+	return nil, nil
+}
+
+func (p *paramsParser) findImportSpec(se *ast.SelectorExpr) (*ast.ImportSpec, error) {
+	impName := se.X.(*ast.Ident).Name
+	for _, i := range p.file.Imports {
+		if (i.Name != nil && i.Name.Name == impName) ||
+			strings.HasSuffix(strings.Trim(i.Path.Value, `"`), impName) {
+			return i, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find import %q", impName)
 }
 
 func (p *paramsParser) attachPrefix(f *ast.Field, params map[string]sdk.Parameter) map[string]sdk.Parameter {
@@ -467,14 +527,19 @@ func (p *paramsParser) attachPrefix(f *ast.Field, params map[string]sdk.Paramete
 	return prefixedParams
 }
 
-func (p *paramsParser) parseSingleParameter(f *ast.Field) (name string, param sdk.Parameter) {
-	ident := f.Type.(*ast.Ident)
-
+func (p *paramsParser) parseSingleParameter(f *ast.Field) (name string, param sdk.Parameter, err error) {
 	var fieldName string
 	if len(f.Names) == 1 {
 		fieldName = f.Names[0].Name
 	} else {
-		fieldName = ident.Name
+		switch v := f.Type.(type) {
+		case *ast.Ident:
+			fieldName = v.Name
+		case *ast.SelectorExpr:
+			fieldName = v.Sel.Name
+		default:
+			return "", sdk.Parameter{}, fmt.Errorf("unexpected type: %T", f.Type)
+		}
 	}
 
 	name = p.getTag(f.Tag, TagParamName)
@@ -491,7 +556,8 @@ func (p *paramsParser) parseSingleParameter(f *ast.Field) (name string, param sd
 		Default:     p.getTag(f.Tag, TagParamDefault),
 		Required:    p.getTag(f.Tag, TagParamRequired) == "true",
 		Description: desc,
-	}
+		// TODO parse param type once we add it to the SDK
+	}, nil
 }
 
 // formatFieldName formats the name to a camel case string that starts with a
