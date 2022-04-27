@@ -58,7 +58,7 @@ func ParseSpecification(path string) (sdk.Specification, error) {
 	if err != nil {
 		return sdk.Specification{}, fmt.Errorf("error parsing package: %w", err)
 	}
-	return (&specificationParser{mod: mod, imports: map[string]*ast.Package{}}).Parse(pkg)
+	return (&specificationParser{pkg: pkg, mod: mod, imports: map[string]*ast.Package{}}).Parse()
 }
 
 type Module struct {
@@ -114,18 +114,21 @@ func ParsePackage(path string) (*ast.Package, error) {
 }
 
 type specificationParser struct {
-	// pkg holds the current file that we are working on
+	// pkg holds the current package we are working with
+	pkg *ast.Package
+	// file holds the current file we are working with
 	file *ast.File
-	mod  Module
+
+	mod Module
 
 	imports map[string]*ast.Package
 }
 
-func (p *specificationParser) Parse(pkg *ast.Package) (sdk.Specification, error) {
+func (p *specificationParser) Parse() (sdk.Specification, error) {
 	var spec sdk.Specification
 	spec.Name = p.mod.Path
 
-	ts, err := p.findSpecgenType(pkg)
+	ts, err := p.findSpecgenType(p.pkg)
 	if err != nil {
 		return sdk.Specification{}, fmt.Errorf("error finding spec struct: %w", err)
 	}
@@ -361,6 +364,28 @@ func (p *paramsParser) parseIdent(ident *ast.Ident) (params map[string]sdk.Param
 		}
 	}()
 
+	if ident.Obj == nil {
+		// need to find the identifier in another file
+		ts, file, err := p.findType(p.pkg, ident.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		// change the type for simplicity
+		ident.Obj = &ast.Object{
+			Name: ident.Name,
+			Decl: ts,
+		}
+
+		// back up current file and replace it because we are now working with
+		// another file, we want to revert this once we are done parsing this type
+		backupFile := p.file
+		p.file = file
+		defer func() {
+			p.file = backupFile
+		}()
+	}
+
 	switch v := ident.Obj.Decl.(type) {
 	case *ast.TypeSpec:
 		return p.parseTypeSpec(v)
@@ -424,7 +449,7 @@ func (p *paramsParser) parseField(f *ast.Field) (params map[string]sdk.Parameter
 	switch v := f.Type.(type) {
 	case *ast.Ident:
 		// identifier (builtin type or type in same package)
-		if v.Obj == nil {
+		if p.isBuiltinType(v) {
 			// builtin type, that's a parameter
 			name, param, err := p.parseSingleParameter(f)
 			if err != nil {
@@ -485,17 +510,85 @@ func (p *paramsParser) parseSelectorExpr(se *ast.SelectorExpr) (params map[strin
 		return nil, err
 	}
 
-	impName := se.X.(*ast.Ident).Name
-	impPath := strings.Trim(imp.Path.Value, `"`)
-
-	if !strings.HasPrefix(impPath, p.mod.Path) {
-		// we only allow types declared in the same module
-		// edge case: could be in a submodule, but let's disregard that for now
-		return nil, fmt.Errorf("we do not support parameters of type %v.%v", impName, se.Sel.Name)
+	// first find package
+	pkg, err := p.findPackage(imp.Path.Value)
+	if err != nil {
+		return nil, err
 	}
 
-	// TODO parse package
-	return nil, nil
+	// now find requested type in that package
+	ts, file, err := p.findType(pkg, se.Sel.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	// back up current file and replace it because we are now working with
+	// another file, we want to revert this once we are done parsing this type
+	backupFile := p.file
+	backupPkg := p.pkg
+	p.file = file
+	p.pkg = pkg
+	defer func() {
+		p.file = backupFile
+		p.pkg = backupPkg
+	}()
+
+	return p.parseTypeSpec(ts)
+}
+
+func (p *paramsParser) findPackage(importPath string) (*ast.Package, error) {
+	// first cleanup string
+	importPath = strings.Trim(importPath, `"`)
+
+	if !strings.HasPrefix(importPath, p.mod.Path) {
+		// we only allow types declared in the same module
+		// edge case: could be in a submodule, but let's disregard that for now
+		return nil, fmt.Errorf("we do not support parameters from package %v (please use builtin types or time.Duration)", importPath)
+	}
+
+	if pkg, ok := p.imports[importPath]; ok {
+		// it's cached already
+		return pkg, nil
+	}
+
+	pkgDir := p.mod.Dir + strings.TrimPrefix(importPath, p.mod.Path)
+	pkg, err := ParsePackage(pkgDir)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse package dir %q: %w", pkgDir, err)
+	}
+
+	// cache it for future use
+	p.imports[importPath] = pkg
+	return pkg, nil
+}
+
+func (p *paramsParser) findType(pkg *ast.Package, typeName string) (*ast.TypeSpec, *ast.File, error) {
+	var file *ast.File
+	var found *ast.TypeSpec
+	for _, f := range pkg.Files {
+		ast.Inspect(f, func(node ast.Node) bool {
+			ts, ok := node.(*ast.TypeSpec)
+			if !ok {
+				return true
+			}
+			if ts.Name.Name != typeName {
+				return true
+			}
+
+			// found our type, store the file and type
+			file = f
+			found = ts
+			return false
+		})
+		if found != nil {
+			// already found the type
+			break
+		}
+	}
+	if found == nil {
+		return nil, nil, fmt.Errorf("could not find type %v in package %v", typeName, pkg.Name)
+	}
+	return found, file, nil
 }
 
 func (p *paramsParser) findImportSpec(se *ast.SelectorExpr) (*ast.ImportSpec, error) {
@@ -525,6 +618,18 @@ func (p *paramsParser) attachPrefix(f *ast.Field, params map[string]sdk.Paramete
 		prefixedParams[prefix+"."+k] = v
 	}
 	return prefixedParams
+}
+
+func (p *paramsParser) isBuiltinType(ident *ast.Ident) bool {
+	// TODO add support for maps and slices
+	switch ident.Name {
+	case "string", "bool",
+		"int8", "uint8", "byte", "int16", "uint16", "int32", "rune", "uint32", "int64", "uint64", "int", "uint",
+		"float32", "float64":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *paramsParser) parseSingleParameter(f *ast.Field) (name string, param sdk.Parameter, err error) {
@@ -568,6 +673,7 @@ func (p *paramsParser) formatFieldName(name string) string {
 	if name == "" {
 		return ""
 	}
+	nameRunes := []rune(name)
 	foundLowercase := false
 	i := 0
 	newName := strings.Map(func(r rune) rune {
@@ -580,7 +686,7 @@ func (p *paramsParser) formatFieldName(name string) string {
 			return r
 		}
 		if i == 0 ||
-			(len(name) > i+1 && unicode.IsUpper(rune(name[i+1]))) {
+			(len(nameRunes) > i+1 && unicode.IsUpper(nameRunes[i+1])) {
 			r = unicode.ToLower(r)
 		}
 		i++

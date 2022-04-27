@@ -16,22 +16,10 @@ package example
 
 import (
 	"net/http"
-	"time"
-
-	internal "example.com/asdf/internal"
 )
 
-type GlobalConfig struct {
-	// GlobalString is an example parameter. This comment will be converted into
-	// the parameter description. Can be multiline too! Just write a godoc like
-	// you normally would.
-	GlobalString string `default:"foo" required:"true"`
-	// GlobalDuration demonstrates that time.Duration is also allowed.
-	GlobalDuration time.Duration `default:"1s"`
-}
-
 type SourceConfig struct {
-	GlobalConfig
+	Asdf   GlobalConfig
 	MyInt  int
 	Nested struct {
 		MyFloat32 float32
@@ -40,7 +28,7 @@ type SourceConfig struct {
 }
 
 type DestinationConfig struct {
-	G      internal.GlobalConfig
+	GlobalConfig
 	MyBool bool `name:"myBoolino"`
 
 	// this field is ignored because it is not exported

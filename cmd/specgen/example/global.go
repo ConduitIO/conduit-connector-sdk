@@ -12,11 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package internal
+package example
 
-import "time"
+import (
+	"time"
+
+	"example.com/asdf/internal"
+)
 
 type GlobalConfig struct {
-	GlobalString    string
-	AnotherDuration time.Duration `required:"true"`
+	Internal internal.GlobalConfig
+	// GlobalString is an example parameter. This comment will be converted into
+	// the parameter description. Can be multiline too! Just write a godoc like
+	// you normally would.
+	GlobalString string `default:"foo" required:"true"`
+	// GlobalDuration demonstrates that time.Duration is also allowed.
+	GlobalDuration time.Duration `default:"1s"`
+}
+
+type Another struct {
+	MyFoo int
 }
