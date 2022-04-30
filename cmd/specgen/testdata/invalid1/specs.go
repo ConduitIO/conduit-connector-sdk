@@ -12,12 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package example_test
+package example
 
-import (
-	"testing"
-)
+import "net/http"
 
-func TestConfig(t *testing.T) {
-	// do nothing
+type SourceConfig struct {
+	// We don't support types imported from packages outside this module.
+	InvalidType http.Client
+}
+
+//spec:summary This is a basic summary.
+type Specs struct {
+	//spec:sourceParams
+	SourceConfig
 }

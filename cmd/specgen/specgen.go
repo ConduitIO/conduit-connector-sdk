@@ -345,16 +345,23 @@ type paramsParser specificationParser
 
 // parse takes a field that represents a source or destination config and parses
 // the parameters by recursively traversing the type in that field.
-func (p *paramsParser) parse(f *ast.Field) (map[string]sdk.Parameter, error) {
-	ident, ok := f.Type.(*ast.Ident)
-	if !ok {
-		return nil, fmt.Errorf("error asserting (*ast.Field).Type: expected %T, got %T", &ast.Ident{}, f.Type)
+func (p *paramsParser) parse(f *ast.Field) (params map[string]sdk.Parameter, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("error parsing parameters: %w", err)
+		}
+	}()
+
+	switch v := f.Type.(type) {
+	case *ast.Ident:
+		return p.parseIdent(v)
+	case *ast.StructType:
+		return p.parseStructType(v)
+	case *ast.SelectorExpr:
+		return p.parseSelectorExpr(v)
+	default:
+		return nil, fmt.Errorf("unknown type: %T", f.Type)
 	}
-	params, err := p.parseIdent(ident)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing parameters: %w", err)
-	}
-	return params, nil
 }
 
 func (p *paramsParser) parseIdent(ident *ast.Ident) (params map[string]sdk.Parameter, err error) {
@@ -658,6 +665,7 @@ func (p *paramsParser) parseSingleParameter(f *ast.Field) (name string, param sd
 	// replace field name with parameter name in description so that the user
 	// can write normal go docs referencing the field name
 	desc := strings.Replace(f.Doc.Text(), fieldName, name, -1)
+	desc = strings.TrimSuffix(desc, "\n")
 
 	return name, sdk.Parameter{
 		Default:     p.getTag(f.Tag, TagParamDefault),

@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package internal
+// go:build ignoreBuildTags
 
-import "time"
+package example
 
-type GlobalConfig struct {
-	GlobalString    string
-	AnotherDuration time.Duration `required:"true"`
-}
+import (
+	"example.com/test/internal"
+)
+
+// GlobalConfig is defined in another file. It is defined with an underlying
+// type that is in another package (should still work).
+type GlobalConfig internal.GlobalConfig

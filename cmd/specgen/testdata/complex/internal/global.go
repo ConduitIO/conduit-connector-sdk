@@ -12,22 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package example
+package internal
 
-import (
-	"time"
+import "time"
 
-	"example.com/asdf/internal"
-)
-
+// GlobalConfig is an internal struct that specgen still parses.
 type GlobalConfig struct {
-	Internal Another
-	// GlobalString is an example parameter. This comment will be converted into
-	// the parameter description. Can be multiline too! Just write a godoc like
-	// you normally would.
-	GlobalString string `default:"foo" required:"true"`
-	// GlobalDuration demonstrates that time.Duration is also allowed.
-	GlobalDuration time.Duration `default:"1s"`
+	// Duration does not have a name so the type name is used.
+	time.Duration `default:"1s" required:"true"`
 }
-
-type Another internal.GlobalConfig
