@@ -747,7 +747,6 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 
 		is.Equal(want[i], got[i])
 	}
-
 }
 
 func (a acceptanceTest) skipIfNoSpecification(t *testing.T) {
