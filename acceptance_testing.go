@@ -127,9 +127,9 @@ type ConfigurableAcceptanceTestDriverConfig struct {
 	// suppress false positive goroutine leaks.
 	GoleakOptions []goleak.Option
 
-	// Skip lets the caller define if any tests should be skipped (useful for
-	// skipping destination/source tests if the connector only implements one
-	// side of the connector)
+	// Skip is a slice of regular expressions used to identify tests that should
+	// be skipped. The full test name will be matched against all regular
+	// expressions and the test will be skipped if a match is found.
 	Skip []string
 }
 
