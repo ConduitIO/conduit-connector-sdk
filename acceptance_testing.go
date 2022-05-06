@@ -638,6 +638,32 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	}
 }
 
+func (a acceptanceTest) TestDestination_WriteOrWriteAsync(t *testing.T) {
+	a.skipIfNoDestination(t)
+	is := is.New(t)
+	ctx := context.Background()
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	dest, cleanup := a.openDestination(ctx, t)
+	defer cleanup()
+
+	writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+	defer cancel()
+	errWrite := dest.Write(writeCtx, a.generateRecord())
+
+	writeCtx, cancel = context.WithTimeout(ctx, time.Second*5)
+	defer cancel()
+	errWriteAsync := dest.WriteAsync(writeCtx, a.generateRecord(), func(err error) error { return nil })
+
+	is.True((errors.Is(errWrite, ErrUnimplemented)) != (errors.Is(errWriteAsync, ErrUnimplemented))) // either Write or WriteAsync should be implemented, not both
+
+	// Flush in case it's an async write and the connector expects this call
+	err := dest.Flush(ctx)
+	if !errors.Is(err, ErrUnimplemented) {
+		is.NoErr(err)
+	}
+}
+
 func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
@@ -648,80 +674,80 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	defer cleanup()
 
 	want := a.generateRecords(20)
-	var gotSynchronous []Record
-	var gotAsynchronous []Record
 
-	t.Run("synchronous", func(t *testing.T) {
-		is := is.New(t)
-		for i, r := range want {
-			writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-			defer cancel()
-			err := dest.Write(writeCtx, r)
-			if i == 0 && errors.Is(err, ErrUnimplemented) {
-				t.Skip("Write not implemented")
-			}
-			is.NoErr(err)
+	for i, r := range want {
+		writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		defer cancel()
+		err := dest.Write(writeCtx, r)
+		if i == 0 && errors.Is(err, ErrUnimplemented) {
+			t.Skip("Write not implemented")
 		}
-
-		// Flush is optional, we allow it to be unimplemented
-		err := dest.Flush(ctx)
-		if !errors.Is(err, ErrUnimplemented) {
-			is.NoErr(err)
-		}
-
-		got := make([]Record, 0, len(want))
-		a.driver.ReadFromDestination(t, &got)
-		gotSynchronous = got
-
-		is.Equal(len(got), len(want)) // destination didn't write expected number of records
-		for i := range want {
-			want[i].Position = got[i].Position   // position can't be determined in advance
-			want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
-
-			is.Equal(want[i], got[i])
-		}
-	})
-	t.Run("asynchronous", func(t *testing.T) {
-		is := is.New(t)
-		var ackWg sync.WaitGroup
-		for i, r := range want {
-			writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-			defer cancel()
-
-			ackWg.Add(1)
-			err := dest.WriteAsync(writeCtx, r, func(err error) error {
-				defer ackWg.Done()
-				return err // TODO check error, but not here, we might not be in the right goroutine
-			})
-			if i == 0 && errors.Is(err, ErrUnimplemented) {
-				t.Skip("WriteAsync not implemented")
-			}
-			is.NoErr(err)
-		}
-
-		err := dest.Flush(ctx)
 		is.NoErr(err)
+	}
 
-		// wait for acks to get called
-		// TODO timeout if it takes too long
-		ackWg.Done()
+	// Flush is optional, we allow it to be unimplemented
+	err := dest.Flush(ctx)
+	if !errors.Is(err, ErrUnimplemented) {
+		is.NoErr(err)
+	}
 
-		got := make([]Record, 0, len(want))
-		a.driver.ReadFromDestination(t, &got)
-		// skip records retrieved by synchronous function (unlikely to happen, but let's be thorough)
-		got = got[len(gotSynchronous):]
-		gotAsynchronous = got
+	got := make([]Record, 0, len(want))
+	a.driver.ReadFromDestination(t, &got)
 
-		is.Equal(len(got), len(want)) // destination didn't write expected number of records
-		for i := range want {
-			want[i].Position = got[i].Position   // position can't be determined in advance
-			want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
+	is.Equal(len(got), len(want)) // destination didn't write expected number of records
+	for i := range want {
+		want[i].Position = got[i].Position   // position can't be determined in advance
+		want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
 
-			is.Equal(want[i], got[i])
+		is.Equal(want[i], got[i]) // records did not match
+	}
+}
+
+func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
+	a.skipIfNoDestination(t)
+	is := is.New(t)
+	ctx := context.Background()
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	dest, cleanup := a.openDestination(ctx, t)
+	defer cleanup()
+
+	want := a.generateRecords(20)
+
+	var ackWg sync.WaitGroup
+	for i, r := range want {
+		writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		defer cancel()
+
+		ackWg.Add(1)
+		err := dest.WriteAsync(writeCtx, r, func(err error) error {
+			defer ackWg.Done()
+			return err // TODO check error, but not here, we might not be in the right goroutine
+		})
+		if i == 0 && errors.Is(err, ErrUnimplemented) {
+			t.Skip("WriteAsync not implemented")
 		}
-	})
+		is.NoErr(err)
+	}
 
-	is.True((len(gotSynchronous) > 0) != (len(gotAsynchronous) > 0)) // either Write or WriteAsync should be implemented and working (not both)
+	err := dest.Flush(ctx)
+	is.NoErr(err)
+
+	// wait for acks to get called
+	// TODO timeout if it takes too long
+	ackWg.Done()
+
+	got := make([]Record, 0, len(want))
+	a.driver.ReadFromDestination(t, &got)
+
+	is.Equal(len(got), len(want)) // destination didn't write expected number of records
+	for i := range want {
+		want[i].Position = got[i].Position   // position can't be determined in advance
+		want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
+
+		is.Equal(want[i], got[i])
+	}
+
 }
 
 func (a acceptanceTest) skipIfNoSpecification(t *testing.T) {
