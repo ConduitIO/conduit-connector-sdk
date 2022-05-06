@@ -44,6 +44,13 @@ import (
 //           },
 //       })
 //   }
+//
+// IMPORTANT: This function is not ready to be used yet, tests might fail while
+// the connector could already be working correctly. This comment should be
+// removed once we fix the following issues:
+// - Move generating of records to driver (https://github.com/ConduitIO/conduit-connector-sdk/issues/16)
+// - Generate structured data (https://github.com/ConduitIO/conduit-connector-sdk/issues/17)
+// - Smarter record comparison (https://github.com/ConduitIO/conduit-connector-sdk/issues/18)
 func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 	acceptanceTest{
 		driver: driver,
