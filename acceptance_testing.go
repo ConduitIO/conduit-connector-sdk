@@ -427,7 +427,7 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	for name, p := range spec.SourceParams {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
-			t.Run(name, func(t *testing.T) {
+			t.Run(fmt.Sprintf("without required param: %s", name), func(t *testing.T) {
 				haveCfg := a.cloneConfig(origCfg)
 				delete(haveCfg, name)
 
