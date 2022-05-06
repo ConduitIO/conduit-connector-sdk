@@ -62,7 +62,8 @@ type Destination interface {
 	// written.
 	// AckFunc will panic if it's called more than once.
 	// If WriteAsync returns ErrUnimplemented the SDK will fall back and call
-	// Write instead.
+	// Write instead. A connector must implement exactly one of these functions,
+	// not both.
 	WriteAsync(context.Context, Record, AckFunc) error
 
 	// Write receives a Record and is supposed to write the record to the
@@ -70,7 +71,8 @@ type Destination interface {
 	// to have reached the destination.
 	// WriteAsync takes precedence and will be tried first to write a record. If
 	// WriteAsync is not implemented the SDK will fall back and use Write
-	// instead.
+	// instead. A connector must implement exactly one of these functions, not
+	// both.
 	Write(context.Context, Record) error
 
 	// Flush signals the plugin it should flush any cached records and call all
