@@ -1,7 +1,7 @@
-name: Feature Request
+name: 🚀 Feature Request
 description: Request a new feature.
 title: "Feature: <title>"
-labels: [feature, triage]
+labels: [ feature, triage ]
 body:
   - type: textarea
     attributes:
