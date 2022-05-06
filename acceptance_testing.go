@@ -374,7 +374,8 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 		a.skipIfNoSource(t)
 		is := is.NewRelaxed(t)
 
-		// TODO should we even enforce that there is at least 1 parameter? what source wouldn't need any parameters?
+		// we enforce that there is at least 1 parameter, any real source will
+		// require some configuration
 		is.True(spec.SourceParams != nil)   // Specification.SourceParams is missing
 		is.True(len(spec.SourceParams) > 0) // Specification.SourceParams is empty
 
@@ -385,7 +386,8 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 		a.skipIfNoDestination(t)
 		is := is.NewRelaxed(t)
 
-		// TODO should we even enforce that there is at least 1 parameter? what destination wouldn't need any parameters?
+		// we enforce that there is at least 1 parameter, any real destination
+		// will require some configuration
 		is.True(spec.DestinationParams != nil)   // Specification.DestinationParams is missing
 		is.True(len(spec.DestinationParams) > 0) // Specification.DestinationParams is empty
 
