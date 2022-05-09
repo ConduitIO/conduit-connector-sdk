@@ -84,18 +84,21 @@ type AcceptanceTestDriver interface {
 	GoleakOptions(*testing.T) []goleak.Option
 
 	// WriteToSource receives a slice of records that should be prepared in the
-	// 3rd party system so that the source will read them. The slice will be
-	// used to verify the source connector can successfully execute reads.
-	// It is discouraged for the driver to change the record slice, unless there
-	// is no way to write the records to the 3rd party system, then the slice
-	// should be modified to reflect the expected records a source should read.
-	WriteToSource(*testing.T, *[]Record)
-	// ReadFromDestination should populate the slice with the records that were
+	// 3rd party system so that the source will read them. The returned slice
+	// will be used to verify the source connector can successfully execute
+	// reads.
+	// It is encouraged for the driver to return the same slice, unless there is
+	// no way to write the records to the 3rd party system, then the returning
+	// slice should contain the expected records a source should read.
+	WriteToSource(*testing.T, []Record) []Record
+	// ReadFromDestination should return a slice with the records that were
 	// written to the destination. The slice will be used to verify the
 	// destination has successfully executed writes.
-	// The capacity of the slice is equal to the number of records that the test
-	// expects to have been written to the destination.
-	ReadFromDestination(*testing.T, *[]Record)
+	// The parameter contains records that were actually written to the
+	// destination. These will be compared to the returned slice of records. It
+	// is encouraged for the driver to only touch the input records to change
+	// the order of records and to not change the records themselves.
+	ReadFromDestination(*testing.T, []Record) []Record
 }
 
 // ConfigurableAcceptanceTestDriver is the default implementation of
@@ -182,7 +185,7 @@ func (d ConfigurableAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.O
 // destination. It is expected that the destination is writing to the same
 // location the source is reading from. If the connector does not implement a
 // destination the function will fail the test.
-func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records *[]Record) {
+func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []Record) []Record {
 	if d.Connector().NewDestination == nil {
 		t.Fatal("connector is missing the field NewDestination, either implement the destination or overwrite the driver method Write")
 	}
@@ -201,22 +204,24 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records *[
 	is.NoErr(err)
 
 	// try to write using WriteAsync and fallback to Write if it's not supported
-	err = d.writeAsync(ctx, dest, *records)
+	err = d.writeAsync(ctx, dest, records)
 	if errors.Is(err, ErrUnimplemented) {
-		err = d.write(ctx, dest, *records)
+		err = d.write(ctx, dest, records)
 	}
 	is.NoErr(err)
 
 	cancel() // cancel context to simulate stop
 	err = dest.Teardown(context.Background())
 	is.NoErr(err)
+
+	return records
 }
 
 // ReadFromDestination by default opens the source and reads all records from
 // the source. It is expected that the destination is writing to the same
 // location the source is reading from. If the connector does not implement a
 // source the function will fail the test.
-func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, records *[]Record) {
+func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, records []Record) []Record {
 	if d.Connector().NewSource == nil {
 		t.Fatal("connector is missing the field NewSource, either implement the source or overwrite the driver method Read")
 	}
@@ -234,14 +239,15 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	err = src.Open(ctx, nil)
 	is.NoErr(err)
 
-	for i := 0; i < cap(*records); i++ {
+	output := make([]Record, 0, len(records))
+	for i := 0; i < cap(output); i++ {
 		// now try to read from the source
 		readCtx, readCancel := context.WithTimeout(ctx, time.Second*5)
 		defer readCancel()
 
 		r, err := src.Read(readCtx)
 		is.NoErr(err)
-		*records = append(*records, r)
+		output = append(output, r)
 	}
 
 	// try another read, there should be nothing so timeout after 1 second
@@ -254,6 +260,8 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	cancel() // cancel context to simulate stop
 	err = src.Teardown(context.Background())
 	is.NoErr(err)
+
+	return output
 }
 
 // writeAsync writes records to destination using Destination.WriteAsync.
@@ -461,8 +469,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPosition(t *testing.T) {
 	defer sourceCleanup()
 
 	// write expectations
-	want := a.generateRecords(10)
-	a.driver.WriteToSource(t, &want)
+	want := a.driver.WriteToSource(t, a.generateRecords(10))
 
 	// read all records, but stop acking them after we read half of them
 	var lastPosition Position
@@ -524,8 +531,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	}
 
 	// write expectation before source exists
-	want := a.generateRecords(10)
-	a.driver.WriteToSource(t, &want)
+	want := a.driver.WriteToSource(t, a.generateRecords(10))
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
@@ -553,8 +559,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 	// while connector is running write more data and make sure the connector
 	// detects it
-	want = a.generateRecords(20)
-	a.driver.WriteToSource(t, &want)
+	want = a.driver.WriteToSource(t, a.generateRecords(20))
 
 	t.Run("cdc", func(t *testing.T) {
 		is := is.New(t)
@@ -691,8 +696,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 		is.NoErr(err)
 	}
 
-	got := make([]Record, 0, len(want))
-	a.driver.ReadFromDestination(t, &got)
+	got := a.driver.ReadFromDestination(t, want)
 
 	is.Equal(len(got), len(want)) // destination didn't write expected number of records
 	for i := range want {
@@ -737,8 +741,7 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 	// TODO timeout if it takes too long
 	ackWg.Wait()
 
-	got := make([]Record, 0, len(want))
-	a.driver.ReadFromDestination(t, &got)
+	got := a.driver.ReadFromDestination(t, want)
 
 	is.Equal(len(got), len(want)) // destination didn't write expected number of records
 	for i := range want {
