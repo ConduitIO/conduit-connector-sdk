@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jpillora/backoff"
 	"github.com/matryer/is"
 	"go.uber.org/goleak"
 )
@@ -239,15 +240,41 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	err = src.Open(ctx, nil)
 	is.NoErr(err)
 
+	defer func() {
+		cancel() // first cancel context to simulate stop
+		err = src.Teardown(context.Background())
+		is.NoErr(err)
+	}()
+
+	b := &backoff.Backoff{
+		Factor: 2,
+		Min:    time.Millisecond * 100,
+		Max:    time.Second, // 8 tries
+	}
+
 	output := make([]Record, 0, len(records))
 	for i := 0; i < cap(output); i++ {
 		// now try to read from the source
 		readCtx, readCancel := context.WithTimeout(ctx, time.Second*5)
 		defer readCancel()
 
-		r, err := src.Read(readCtx)
-		is.NoErr(err)
-		output = append(output, r)
+		for {
+			r, err := src.Read(readCtx)
+			if errors.Is(err, ErrBackoffRetry) {
+				// the plugin wants us to retry reading later
+				t.Logf("source did not return record, backing off for %v", b.Duration())
+				select {
+				case <-readCtx.Done():
+					// store error and let it fail
+					err = readCtx.Err()
+				case <-time.After(b.Duration()):
+					continue
+				}
+			}
+			is.NoErr(err) // could not retrieve a record using the source, please check manually if the destination has successfully written the records
+			output = append(output, r)
+			break
+		}
 	}
 
 	// try another read, there should be nothing so timeout after 1 second
@@ -256,10 +283,6 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	_, err = src.Read(readCtx)
 
 	is.True(errors.Is(err, context.DeadlineExceeded))
-
-	cancel() // cancel context to simulate stop
-	err = src.Teardown(context.Background())
-	is.NoErr(err)
 
 	return output
 }
