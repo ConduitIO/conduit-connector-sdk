@@ -735,7 +735,7 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 
 	// wait for acks to get called
 	// TODO timeout if it takes too long
-	ackWg.Done()
+	ackWg.Wait()
 
 	got := make([]Record, 0, len(want))
 	a.driver.ReadFromDestination(t, &got)
