@@ -262,7 +262,7 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 			r, err := src.Read(readCtx)
 			if errors.Is(err, ErrBackoffRetry) {
 				// the plugin wants us to retry reading later
-				t.Logf("source did not return record, backing off for %v", b.Duration())
+				t.Logf("source returned backoff retry error, backing off for %v", b.Duration())
 				select {
 				case <-readCtx.Done():
 					// store error and let it fail
@@ -361,7 +361,7 @@ func (a acceptanceTest) Test(t *testing.T) {
 		}
 		t.Run(testName, func(t *testing.T) {
 			a.driver.BeforeTest(t)
-			t.Cleanup(func() { a.driver.AfterTest(t) })
+			defer a.driver.AfterTest(t)
 
 			av.Method(i).Call([]reflect.Value{reflect.ValueOf(t)})
 		})
@@ -497,14 +497,16 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPosition(t *testing.T) {
 	// read all records, but stop acking them after we read half of them
 	var lastPosition Position
 	var lastIndex int
+
 	for i := 0; i < len(want); i++ {
 		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 		defer cancel()
 
-		got, err := source.Read(readCtx)
-		is.NoErr(err)
+		got, err := a.readWithBackoffRetry(readCtx, t, source)
+		is.NoErr(err) // could not retrieve a record using the source
 
 		if i < len(want)/2 {
+			// only ack first half of the records
 			err = source.Ack(ctx, got.Position)
 			is.NoErr(err)
 			lastPosition = got.Position
@@ -524,8 +526,8 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPosition(t *testing.T) {
 		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 		defer cancel()
 
-		got, err := source.Read(readCtx)
-		is.NoErr(err)
+		got, err := a.readWithBackoffRetry(readCtx, t, source)
+		is.NoErr(err) // could not retrieve a record using the source
 
 		err = source.Ack(ctx, got.Position)
 		is.NoErr(err)
@@ -536,7 +538,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPosition(t *testing.T) {
 		// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
 		// TODO ensure position is unique
 		// TODO ensure we check metadata and mark it as successful or skipped if it's not (don't fail test because of metadata)
-		is.Equal(want[i], got)
+		is.Equal(want[i], got) // records did not match (want != got)
 	}
 }
 
@@ -566,7 +568,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 			readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
 
-			got, err := source.Read(readCtx)
+			got, err := a.readWithBackoffRetry(readCtx, t, source)
 			is.NoErr(err)
 			isUniquePosition(t, got.Position)
 
@@ -576,7 +578,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 			// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
 			// TODO ensure position is unique
 			// TODO ensure we check metadata and mark it as successful or skipped if it's not (don't fail test because of metadata)
-			is.Equal(want[i], got)
+			is.Equal(want[i], got) // records did not match (want != got)
 		}
 	})
 
@@ -591,7 +593,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 			readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
 
-			got, err := source.Read(readCtx)
+			got, err := a.readWithBackoffRetry(readCtx, t, source)
 			is.NoErr(err)
 			isUniquePosition(t, got.Position)
 
@@ -601,7 +603,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 			// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
 			// TODO ensure position is unique
 			// TODO ensure we check metadata and mark it as successful or skipped if it's not (don't fail test because of metadata)
-			is.Equal(want[i], got)
+			is.Equal(want[i], got) // records did not match (want != got)
 		}
 	})
 }
@@ -618,8 +620,8 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	readCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	r, err := source.Read(readCtx)
-	is.Equal(r, Record{}) // record should be empty
-	is.True(errors.Is(err, context.DeadlineExceeded))
+	is.Equal(Record{}, r) // record should be empty
+	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
 }
 
 func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
@@ -653,11 +655,11 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 				haveCfg := a.cloneConfig(origCfg)
 				delete(haveCfg, name)
 
-				is.Equal(len(haveCfg)+1, len(origCfg)) // destination config does not contain required parameter, please check the test setup
+				is.Equal(len(origCfg), len(haveCfg)+1) // destination config does not contain required parameter, please check the test setup
 
 				dest := a.driver.Connector().NewDestination()
 				err := dest.Configure(ctx, haveCfg)
-				is.True(err != nil)
+				is.True(err != nil) // expected error if required param is removed
 
 				err = dest.Teardown(ctx)
 				is.NoErr(err)
@@ -721,12 +723,12 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 
 	got := a.driver.ReadFromDestination(t, want)
 
-	is.Equal(len(got), len(want)) // destination didn't write expected number of records
+	is.Equal(len(want), len(got)) // destination didn't write expected number of records (want != got)
 	for i := range want {
 		want[i].Position = got[i].Position   // position can't be determined in advance
 		want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
 
-		is.Equal(want[i], got[i]) // records did not match
+		is.Equal(want[i], got[i]) // records did not match (want != got)
 	}
 }
 
@@ -766,12 +768,12 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 
 	got := a.driver.ReadFromDestination(t, want)
 
-	is.Equal(len(got), len(want)) // destination didn't write expected number of records
+	is.Equal(len(want), len(got)) // destination didn't write expected number of records (want != got)
 	for i := range want {
 		want[i].Position = got[i].Position   // position can't be determined in advance
 		want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
 
-		is.Equal(want[i], got[i])
+		is.Equal(want[i], got[i]) // records did not match (want != got)
 	}
 }
 
@@ -891,4 +893,27 @@ func (a acceptanceTest) randString(n int) string {
 		remain--
 	}
 	return sb.String()
+}
+
+func (a acceptanceTest) readWithBackoffRetry(ctx context.Context, t *testing.T, source Source) (Record, error) {
+	b := &backoff.Backoff{
+		Factor: 2,
+		Min:    time.Millisecond * 100,
+		Max:    time.Second,
+	}
+	for {
+		got, err := source.Read(ctx)
+		if errors.Is(err, ErrBackoffRetry) {
+			// the plugin wants us to retry reading later
+			t.Logf("source returned backoff retry error, backing off for %v", b.Duration())
+			select {
+			case <-ctx.Done():
+				// return error
+				return Record{}, ctx.Err()
+			case <-time.After(b.Duration()):
+				continue
+			}
+		}
+		return got, err
+	}
 }
