@@ -204,15 +204,17 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []
 	err = dest.Open(ctx)
 	is.NoErr(err)
 
+	defer func() {
+		cancel() // cancel context to simulate stop
+		err = dest.Teardown(context.Background())
+		is.NoErr(err)
+	}()
+
 	// try to write using WriteAsync and fallback to Write if it's not supported
 	err = d.writeAsync(ctx, dest, records)
 	if errors.Is(err, ErrUnimplemented) {
 		err = d.write(ctx, dest, records)
 	}
-	is.NoErr(err)
-
-	cancel() // cancel context to simulate stop
-	err = dest.Teardown(context.Background())
 	is.NoErr(err)
 
 	return records
@@ -280,9 +282,9 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	// try another read, there should be nothing so timeout after 1 second
 	readCtx, readCancel := context.WithTimeout(ctx, time.Second)
 	defer readCancel()
-	_, err = src.Read(readCtx)
-
-	is.True(errors.Is(err, context.DeadlineExceeded))
+	r, err := src.Read(readCtx)
+	is.Equal(Record{}, r) // record should be empty
+	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
 
 	return output
 }
@@ -482,7 +484,59 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	}
 }
 
-func (a acceptanceTest) TestSource_Open_ResumeAtPosition(t *testing.T) {
+func (a acceptanceTest) TestSource_Open_ResumeAtPositionSnapshot(t *testing.T) {
+	a.skipIfNoSource(t)
+	is := is.New(t)
+	ctx := context.Background()
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	// Write expectations before source is started, this means the source will
+	// have to first read the existing data (i.e. snapshot), but we will
+	// interrupt it and try to resume.
+	want := a.driver.WriteToSource(t, a.generateRecords(10))
+
+	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
+	defer sourceCleanup()
+
+	// read all records, but ack only half of them
+	got, err := a.readMany(ctx, t, source, len(want))
+	is.NoErr(err)
+	for i := 0; i < len(got)/2; i++ {
+		err = source.Ack(ctx, got[i].Position)
+		is.NoErr(err)
+	}
+	sourceCleanup()
+
+	// we only acked half of the records, let's "forget" we saw the second half
+	got = got[:len(got)/2]
+
+	// At this point we have read all records but acked only half and stopped
+	// the connector. We should be able to resume from the last record that was
+	// not acked.
+
+	lastPosition := got[len(got)-1].Position
+	source, sourceCleanup = a.openSource(ctx, t, lastPosition) // listen from position
+	defer sourceCleanup()
+
+	// Some connectors can't correctly resume if the snapshot is interrupted,
+	// those should restart the snapshot and start from scratch, meaning that
+	// some records might be encountered twice, but at least we don't miss any
+	// records. That's why we try to read all records, even though the connector
+	// might return only half of them.
+	gotRemaining, err := a.readMany(ctx, t, source, len(want))
+	if errors.Is(err, ErrBackoffRetry) || errors.Is(err, context.DeadlineExceeded) {
+		// connector stopped returning records, apparently it was able to restart
+		err = nil
+		got = append(got, gotRemaining...)
+	} else if err == nil {
+		// connector did not return an error, seems like it restarted the snapshot
+		got = gotRemaining
+	}
+	is.NoErr(err)
+	a.isEqualRecords(is, want, got)
+}
+
+func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
@@ -491,55 +545,43 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPosition(t *testing.T) {
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
 
-	// write expectations
+	// try to read something to make sure the source is initialized
+	readCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	_, err := source.Read(readCtx)
+	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
+
+	// Write expectations after source is open, this means the source is already
+	// listening to ongoing changes (i.e. CDC), we will interrupt it and try to
+	// resume.
 	want := a.driver.WriteToSource(t, a.generateRecords(10))
 
-	// read all records, but stop acking them after we read half of them
-	var lastPosition Position
-	var lastIndex int
-
-	for i := 0; i < len(want); i++ {
-		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-		defer cancel()
-
-		got, err := a.readWithBackoffRetry(readCtx, t, source)
-		is.NoErr(err) // could not retrieve a record using the source
-
-		if i < len(want)/2 {
-			// only ack first half of the records
-			err = source.Ack(ctx, got.Position)
-			is.NoErr(err)
-			lastPosition = got.Position
-			lastIndex = i
-		}
+	// read all records, but ack only half of them
+	got, err := a.readMany(ctx, t, source, len(want))
+	is.NoErr(err)
+	for i := 0; i < len(got)/2; i++ {
+		err = source.Ack(ctx, got[i].Position)
+		is.NoErr(err)
 	}
 	sourceCleanup()
+
+	// we only acked half of the records, let's "forget" we saw the second half
+	got = got[:len(got)/2]
 
 	// At this point we have read all records but acked only half and stopped
 	// the connector. We should be able to resume from the last record that was
 	// not acked.
 
+	lastPosition := got[len(got)-1].Position
 	source, sourceCleanup = a.openSource(ctx, t, lastPosition) // listen from position
 	defer sourceCleanup()
 
-	for i := lastIndex + 1; i < len(want); i++ {
-		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-		defer cancel()
+	// all connectors should know how to resume at the position
+	gotRemaining, err := a.readMany(ctx, t, source, len(want)-len(got))
+	is.NoErr(err)
 
-		got, err := a.readWithBackoffRetry(readCtx, t, source)
-		is.NoErr(err) // could not retrieve a record using the source
-
-		err = source.Ack(ctx, got.Position)
-		is.NoErr(err)
-
-		want[i].Position = got.Position   // position can't be determined in advance
-		want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
-
-		// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
-		// TODO ensure position is unique
-		// TODO ensure we check metadata and mark it as successful or skipped if it's not (don't fail test because of metadata)
-		is.Equal(want[i], got) // records did not match (want != got)
-	}
+	got = append(got, gotRemaining...)
+	a.isEqualRecords(is, want, got)
 }
 
 func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
@@ -549,10 +591,12 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	positions := make(map[string]bool)
-	isUniquePosition := func(t *testing.T, p Position) {
+	isUniquePositions := func(t *testing.T, records []Record) {
 		is := is.New(t)
-		is.True(!positions[string(p)])
-		positions[string(p)] = true
+		for _, r := range records {
+			is.True(!positions[string(r.Position)])
+			positions[string(r.Position)] = true
+		}
 	}
 
 	// write expectation before source exists
@@ -563,23 +607,13 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 	t.Run("snapshot", func(t *testing.T) {
 		is := is.New(t)
-		for i := 0; i < len(want); i++ {
-			// now try to read from the source
-			readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-			defer cancel()
 
-			got, err := a.readWithBackoffRetry(readCtx, t, source)
-			is.NoErr(err)
-			isUniquePosition(t, got.Position)
+		// now try to read from the source
+		got, err := a.readMany(ctx, t, source, len(want))
+		is.NoErr(err) // could not read records using the source
 
-			want[i].Position = got.Position   // position can't be determined in advance
-			want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
-
-			// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
-			// TODO ensure position is unique
-			// TODO ensure we check metadata and mark it as successful or skipped if it's not (don't fail test because of metadata)
-			is.Equal(want[i], got) // records did not match (want != got)
-		}
+		isUniquePositions(t, got)
+		a.isEqualRecords(is, want, got)
 	})
 
 	// while connector is running write more data and make sure the connector
@@ -588,23 +622,13 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 	t.Run("cdc", func(t *testing.T) {
 		is := is.New(t)
-		for i := 0; i < len(want); i++ {
-			// now try to read from the source
-			readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
-			defer cancel()
 
-			got, err := a.readWithBackoffRetry(readCtx, t, source)
-			is.NoErr(err)
-			isUniquePosition(t, got.Position)
+		// now try to read from the source
+		got, err := a.readMany(ctx, t, source, len(want))
+		is.NoErr(err) // could not read records using the source
 
-			want[i].Position = got.Position   // position can't be determined in advance
-			want[i].CreatedAt = got.CreatedAt // created at can't be determined in advance
-
-			// TODO do a smarter comparison that checks fields separately (e.g. metadata, position etc.)
-			// TODO ensure position is unique
-			// TODO ensure we check metadata and mark it as successful or skipped if it's not (don't fail test because of metadata)
-			is.Equal(want[i], got) // records did not match (want != got)
-		}
+		isUniquePositions(t, got)
+		a.isEqualRecords(is, want, got)
 	})
 }
 
@@ -619,7 +643,7 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 
 	readCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	r, err := source.Read(readCtx)
+	r, err := a.readWithBackoffRetry(readCtx, t, source)
 	is.Equal(Record{}, r) // record should be empty
 	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
 }
@@ -895,6 +919,22 @@ func (a acceptanceTest) randString(n int) string {
 	return sb.String()
 }
 
+func (a acceptanceTest) readMany(ctx context.Context, t *testing.T, source Source, limit int) ([]Record, error) {
+	var got []Record
+	for i := 0; i < limit; i++ {
+		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		defer cancel()
+
+		rec, err := a.readWithBackoffRetry(readCtx, t, source)
+		if err != nil {
+			return got, err // return error and whatever we have so far
+		}
+
+		got = append(got, rec)
+	}
+	return got, nil
+}
+
 func (a acceptanceTest) readWithBackoffRetry(ctx context.Context, t *testing.T, source Source) (Record, error) {
 	b := &backoff.Backoff{
 		Factor: 2,
@@ -916,4 +956,37 @@ func (a acceptanceTest) readWithBackoffRetry(ctx context.Context, t *testing.T, 
 		}
 		return got, err
 	}
+}
+
+// isEqualRecords compares two record slices and disregards their order.
+func (a acceptanceTest) isEqualRecords(is *is.I, want, got []Record) {
+	is.Equal(len(want), len(got)) // record number did not match
+
+	if len(want) == 0 {
+		return
+	}
+
+	// transform slices into maps so we can disregard the order
+	wantMap := make(map[string]Record, len(want))
+	gotMap := make(map[string]Record, len(got))
+	for i := 0; i < len(want); i++ {
+		wantMap[string(want[i].Payload.Bytes())] = want[i]
+		gotMap[string(got[i].Payload.Bytes())] = got[i]
+	}
+
+	is.Equal(len(got), len(gotMap)) // record payloads are not unique
+
+	for key, wantRec := range wantMap {
+		gotRec, ok := gotMap[key]
+		is.True(ok) // expected record not found
+
+		a.isEqualRecord(is, wantRec, gotRec)
+	}
+}
+
+func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
+	// TODO figure out if we should compare anything else or at least enforce
+	//  some properties for other fields (e.g. not nil)
+	is.Equal(want.Key, got.Key)         // record key did not match (want != got)
+	is.Equal(want.Payload, got.Payload) // record payload did not match (want != got)
 }
