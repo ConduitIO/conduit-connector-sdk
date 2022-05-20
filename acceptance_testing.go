@@ -83,7 +83,7 @@ type AcceptanceTestDriver interface {
 	// suppress false positive goroutine leaks.
 	GoleakOptions(*testing.T) []goleak.Option
 
-	// GenerateRecord will generate a Record which. It's the responsibility
+	// GenerateRecord will generate a new Record. It's the responsibility
 	// of the AcceptanceTestDriver implementation to provide records with
 	// appropriate contents (e.g. appropriate type of payload).
 	// todo: currently, only a single type of record payload can be used
