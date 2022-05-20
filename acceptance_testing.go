@@ -115,7 +115,7 @@ type AcceptanceTestDriver interface {
 // without the need of implementing a custom driver from scratch.
 type ConfigurableAcceptanceTestDriver struct {
 	Config ConfigurableAcceptanceTestDriverConfig
-	Rand   *rand.Rand
+	rand   *rand.Rand
 }
 
 // ConfigurableAcceptanceTestDriverConfig contains the configuration for
@@ -195,10 +195,17 @@ func (d ConfigurableAcceptanceTestDriver) GenerateRecord(_ *testing.T) Record {
 	return Record{
 		Position:  Position(d.randString(32)), // position doesn't matter, as long as it's unique
 		Metadata:  nil,                        // TODO metadata is optional so don't enforce it to be written, still create it
-		CreatedAt: time.Unix(0, d.Rand.Int63()),
+		CreatedAt: time.Unix(0, d.getRand().Int63()),
 		Key:       RawData(d.randString(32)), // TODO try structured data as well
 		Payload:   RawData(d.randString(32)), // TODO try structured data as well
 	}
+}
+
+func (d ConfigurableAcceptanceTestDriver) getRand() *rand.Rand {
+	if d.rand == nil {
+		d.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	return d.rand
 }
 
 // randString generates a random string of length n.
@@ -213,9 +220,9 @@ func (d ConfigurableAcceptanceTestDriver) randString(n int) string {
 	sb := strings.Builder{}
 	sb.Grow(n)
 	// src.Int63() generates 63 random bits, enough for letterIdxMax characters
-	for i, cache, remain := n-1, d.Rand.Int63(), letterIdxMax; i >= 0; {
+	for i, cache, remain := n-1, d.getRand().Int63(), letterIdxMax; i >= 0; {
 		if remain == 0 {
-			cache, remain = d.Rand.Int63(), letterIdxMax
+			cache, remain = d.getRand().Int63(), letterIdxMax
 		}
 		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
 			sb.WriteByte(letterBytes[idx])
