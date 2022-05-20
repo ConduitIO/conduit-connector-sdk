@@ -83,6 +83,13 @@ type AcceptanceTestDriver interface {
 	// suppress false positive goroutine leaks.
 	GoleakOptions(*testing.T) []goleak.Option
 
+	// GenerateRecord will generate a Record which. It's the responsibility
+	// of the AcceptanceTestDriver implementation to provide records with
+	// appropriate contents (e.g. appropriate type of payload).
+	// todo: currently, only a single type of record payload can be used
+	// in an acceptance test suite. Support for potentially different types
+	// of payloads for the same connector will be discussed in:
+	// https://github.com/ConduitIO/conduit-connector-sdk/issues/17
 	GenerateRecord(*testing.T) Record
 
 	// WriteToSource receives a slice of records that should be prepared in the
