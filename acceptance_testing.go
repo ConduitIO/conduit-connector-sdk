@@ -201,6 +201,9 @@ func (d ConfigurableAcceptanceTestDriver) GenerateRecord(_ *testing.T) Record {
 	}
 }
 
+// getRand returns a new rand.Rand, with its seed set to current Unix time in nanoseconds.
+// The method exists so that users of ConfigurableAcceptanceTestDriver do not have to do it themselves.
+// (Most of the time, a custom configuration is not needed anyway.)
 func (d ConfigurableAcceptanceTestDriver) getRand() *rand.Rand {
 	if d.rand == nil {
 		d.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
