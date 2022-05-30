@@ -55,7 +55,6 @@ import (
 func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 	acceptanceTest{
 		driver: driver,
-		rand:   rand.New(rand.NewSource(time.Now().UnixNano())),
 	}.Test(t)
 }
 
@@ -84,6 +83,15 @@ type AcceptanceTestDriver interface {
 	// suppress false positive goroutine leaks.
 	GoleakOptions(*testing.T) []goleak.Option
 
+	// GenerateRecord will generate a new Record. It's the responsibility
+	// of the AcceptanceTestDriver implementation to provide records with
+	// appropriate contents (e.g. appropriate type of payload).
+	// todo: currently, only a single type of record payload can be used
+	// in an acceptance test suite. Support for potentially different types
+	// of payloads for the same connector will be discussed in:
+	// https://github.com/ConduitIO/conduit-connector-sdk/issues/17
+	GenerateRecord(*testing.T) Record
+
 	// WriteToSource receives a slice of records that should be prepared in the
 	// 3rd party system so that the source will read them. The returned slice
 	// will be used to verify the source connector can successfully execute
@@ -107,6 +115,7 @@ type AcceptanceTestDriver interface {
 // without the need of implementing a custom driver from scratch.
 type ConfigurableAcceptanceTestDriver struct {
 	Config ConfigurableAcceptanceTestDriverConfig
+	rand   *rand.Rand
 }
 
 // ConfigurableAcceptanceTestDriverConfig contains the configuration for
@@ -180,6 +189,52 @@ func (d ConfigurableAcceptanceTestDriver) Skip(t *testing.T) {
 
 func (d ConfigurableAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.Option {
 	return d.Config.GoleakOptions
+}
+
+func (d ConfigurableAcceptanceTestDriver) GenerateRecord(_ *testing.T) Record {
+	return Record{
+		Position:  Position(d.randString(32)), // position doesn't matter, as long as it's unique
+		Metadata:  nil,                        // TODO metadata is optional so don't enforce it to be written, still create it
+		CreatedAt: time.Unix(0, d.getRand().Int63()),
+		Key:       RawData(d.randString(32)), // TODO try structured data as well
+		Payload:   RawData(d.randString(32)), // TODO try structured data as well
+	}
+}
+
+// getRand returns a new rand.Rand, with its seed set to current Unix time in nanoseconds.
+// The method exists so that users of ConfigurableAcceptanceTestDriver do not have to do it themselves.
+// (Most of the time, a custom configuration is not needed anyway.)
+func (d ConfigurableAcceptanceTestDriver) getRand() *rand.Rand {
+	if d.rand == nil {
+		d.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	return d.rand
+}
+
+// randString generates a random string of length n.
+// (source: https://stackoverflow.com/a/31832326)
+func (d ConfigurableAcceptanceTestDriver) randString(n int) string {
+	const letterBytes = ` !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_abcdefghijklmnopqrstuvwxyz`
+	const (
+		letterIdxBits = 6                    // 6 bits to represent a letter index
+		letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
+		letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+	)
+	sb := strings.Builder{}
+	sb.Grow(n)
+	// src.Int63() generates 63 random bits, enough for letterIdxMax characters
+	for i, cache, remain := n-1, d.getRand().Int63(), letterIdxMax; i >= 0; {
+		if remain == 0 {
+			cache, remain = d.getRand().Int63(), letterIdxMax
+		}
+		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
+			sb.WriteByte(letterBytes[idx])
+			i--
+		}
+		cache >>= letterIdxBits
+		remain--
+	}
+	return sb.String()
 }
 
 // WriteToSource by default opens the destination and writes records to the
@@ -308,7 +363,6 @@ func (d ConfigurableAcceptanceTestDriver) writeAsync(ctx context.Context, dest D
 			return err
 		}
 	}
-
 	// flush to make sure the records get written to the destination
 	err := dest.Flush(ctx)
 	if err != nil {
@@ -347,7 +401,6 @@ func (d ConfigurableAcceptanceTestDriver) write(ctx context.Context, dest Destin
 
 type acceptanceTest struct {
 	driver AcceptanceTestDriver
-	rand   *rand.Rand
 }
 
 // Test runs all acceptance tests.
@@ -493,7 +546,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionSnapshot(t *testing.T) {
 	// Write expectations before source is started, this means the source will
 	// have to first read the existing data (i.e. snapshot), but we will
 	// interrupt it and try to resume.
-	want := a.driver.WriteToSource(t, a.generateRecords(10))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, 10))
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
@@ -554,7 +607,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 	// Write expectations after source is open, this means the source is already
 	// listening to ongoing changes (i.e. CDC), we will interrupt it and try to
 	// resume.
-	want := a.driver.WriteToSource(t, a.generateRecords(10))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, 10))
 
 	// read all records, but ack only half of them
 	got, err := a.readMany(ctx, t, source, len(want))
@@ -600,7 +653,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	}
 
 	// write expectation before source exists
-	want := a.driver.WriteToSource(t, a.generateRecords(10))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, 10))
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
@@ -618,7 +671,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 	// while connector is running write more data and make sure the connector
 	// detects it
-	want = a.driver.WriteToSource(t, a.generateRecords(20))
+	want = a.driver.WriteToSource(t, a.generateRecords(t, 20))
 
 	t.Run("cdc", func(t *testing.T) {
 		is := is.New(t)
@@ -703,11 +756,11 @@ func (a acceptanceTest) TestDestination_WriteOrWriteAsync(t *testing.T) {
 
 	writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
-	errWrite := dest.Write(writeCtx, a.generateRecord())
+	errWrite := dest.Write(writeCtx, a.driver.GenerateRecord(t))
 
 	writeCtx, cancel = context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
-	errWriteAsync := dest.WriteAsync(writeCtx, a.generateRecord(), func(err error) error { return nil })
+	errWriteAsync := dest.WriteAsync(writeCtx, a.driver.GenerateRecord(t), func(err error) error { return nil })
 
 	is.True((errors.Is(errWrite, ErrUnimplemented)) != (errors.Is(errWriteAsync, ErrUnimplemented))) // either Write or WriteAsync should be implemented, not both
 
@@ -727,7 +780,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	dest, cleanup := a.openDestination(ctx, t)
 	defer cleanup()
 
-	want := a.generateRecords(20)
+	want := a.generateRecords(t, 20)
 
 	for i, r := range want {
 		writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
@@ -765,7 +818,7 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 	dest, cleanup := a.openDestination(ctx, t)
 	defer cleanup()
 
-	want := a.generateRecords(20)
+	want := a.generateRecords(t, 20)
 
 	var ackWg sync.WaitGroup
 	for i, r := range want {
@@ -875,48 +928,12 @@ func (a acceptanceTest) openDestination(ctx context.Context, t *testing.T) (dest
 	return dest, cleanup
 }
 
-func (a acceptanceTest) generateRecords(count int) []Record {
+func (a acceptanceTest) generateRecords(t *testing.T, count int) []Record {
 	records := make([]Record, count)
 	for i := range records {
-		records[i] = a.generateRecord()
+		records[i] = a.driver.GenerateRecord(t)
 	}
 	return records
-}
-
-func (a acceptanceTest) generateRecord() Record {
-	return Record{
-		Position:  Position(a.randString(32)), // position doesn't matter, as long as it's unique
-		Metadata:  nil,                        // TODO metadata is optional so don't enforce it to be written, still create it
-		CreatedAt: time.Unix(0, a.rand.Int63()),
-		Key:       RawData(a.randString(32)), // TODO try structured data as well
-		Payload:   RawData(a.randString(32)), // TODO try structured data as well
-	}
-}
-
-// randString generates a random string of length n.
-// (source: https://stackoverflow.com/a/31832326)
-func (a acceptanceTest) randString(n int) string {
-	const letterBytes = ` !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_abcdefghijklmnopqrstuvwxyz`
-	const (
-		letterIdxBits = 6                    // 6 bits to represent a letter index
-		letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
-		letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
-	)
-	sb := strings.Builder{}
-	sb.Grow(n)
-	// src.Int63() generates 63 random bits, enough for letterIdxMax characters
-	for i, cache, remain := n-1, a.rand.Int63(), letterIdxMax; i >= 0; {
-		if remain == 0 {
-			cache, remain = a.rand.Int63(), letterIdxMax
-		}
-		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
-			sb.WriteByte(letterBytes[idx])
-			i--
-		}
-		cache >>= letterIdxBits
-		remain--
-	}
-	return sb.String()
 }
 
 func (a acceptanceTest) readMany(ctx context.Context, t *testing.T, source Source, limit int) ([]Record, error) {
