@@ -45,13 +45,6 @@ import (
 //           },
 //       })
 //   }
-//
-// IMPORTANT: This function is not ready to be used yet, tests might fail while
-// the connector could already be working correctly. This comment should be
-// removed once we fix the following issues:
-// - Move generating of records to driver (https://github.com/ConduitIO/conduit-connector-sdk/issues/16)
-// - Generate structured data (https://github.com/ConduitIO/conduit-connector-sdk/issues/17)
-// - Smarter record comparison (https://github.com/ConduitIO/conduit-connector-sdk/issues/18)
 func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 	acceptanceTest{
 		driver: driver,
@@ -86,10 +79,9 @@ type AcceptanceTestDriver interface {
 	// GenerateRecord will generate a new Record. It's the responsibility
 	// of the AcceptanceTestDriver implementation to provide records with
 	// appropriate contents (e.g. appropriate type of payload).
-	// todo: currently, only a single type of record payload can be used
-	// in an acceptance test suite. Support for potentially different types
-	// of payloads for the same connector will be discussed in:
-	// https://github.com/ConduitIO/conduit-connector-sdk/issues/17
+	// The generated record will contain mixed data types in the field Key and
+	// Payload (i.e. RawData and StructuredData), unless configured otherwise
+	// (see ConfigurableAcceptanceTestDriverConfig.GenerateDataType).
 	GenerateRecord(*testing.T) Record
 
 	// WriteToSource receives a slice of records that should be prepared in the
@@ -144,7 +136,23 @@ type ConfigurableAcceptanceTestDriverConfig struct {
 	// be skipped. The full test name will be matched against all regular
 	// expressions and the test will be skipped if a match is found.
 	Skip []string
+
+	// GenerateDataType controls which Data type will be generated in test
+	// records. The default is GenerateMixedData which will produce both RawData
+	// and StructuredData. To generate only one type of data set this field to
+	// GenerateRawData or GenerateStructuredData.
+	GenerateDataType GenerateDataType
 }
+
+// GenerateDataType is used in acceptance tests to control what data type will
+// be generated.
+type GenerateDataType int
+
+const (
+	GenerateMixedData GenerateDataType = iota
+	GenerateRawData
+	GenerateStructuredData
+)
 
 func (d ConfigurableAcceptanceTestDriver) Connector() Connector {
 	return d.Config.Connector
@@ -191,13 +199,43 @@ func (d ConfigurableAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.O
 	return d.Config.GoleakOptions
 }
 
-func (d ConfigurableAcceptanceTestDriver) GenerateRecord(_ *testing.T) Record {
+func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T) Record {
 	return Record{
 		Position:  Position(d.randString(32)), // position doesn't matter, as long as it's unique
-		Metadata:  nil,                        // TODO metadata is optional so don't enforce it to be written, still create it
-		CreatedAt: time.Unix(0, d.getRand().Int63()),
-		Key:       RawData(d.randString(32)), // TODO try structured data as well
-		Payload:   RawData(d.randString(32)), // TODO try structured data as well
+		Metadata:  map[string]string{d.randString(32): d.randString(32)},
+		CreatedAt: time.Now().UTC(),
+		Key:       d.generateData(t),
+		Payload:   d.generateData(t),
+	}
+}
+
+// generateData generates either RawData or StructuredData depending on the
+// configured data type (see
+// ConfigurableAcceptanceTestDriverConfig.GenerateDataType).
+func (d ConfigurableAcceptanceTestDriver) generateData(t *testing.T) Data {
+	rand := d.getRand()
+
+	gen := d.Config.GenerateDataType
+	if gen == GenerateMixedData {
+		gen = GenerateDataType(1 + (rand.Int63() % 2))
+	}
+
+	switch gen {
+	case GenerateRawData:
+		return RawData(d.randString(rand.Intn(1024) + 32))
+	case GenerateStructuredData:
+		data := StructuredData{}
+		for {
+			data[d.randString(rand.Intn(1024)+32)] = d.randString(rand.Intn(1024) + 32)
+			if rand.Int63()%2 == 0 {
+				// 50% chance we stop adding fields
+				break
+			}
+		}
+		return data
+	default:
+		t.Fatalf("invalid config value for GenerateDataType %q", d.Config.GenerateDataType)
+		return nil
 	}
 }
 
@@ -799,14 +837,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	}
 
 	got := a.driver.ReadFromDestination(t, want)
-
-	is.Equal(len(want), len(got)) // destination didn't write expected number of records (want != got)
-	for i := range want {
-		want[i].Position = got[i].Position   // position can't be determined in advance
-		want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
-
-		is.Equal(want[i], got[i]) // records did not match (want != got)
-	}
+	a.isEqualRecords(is, want, got)
 }
 
 func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
@@ -844,14 +875,7 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 	ackWg.Wait()
 
 	got := a.driver.ReadFromDestination(t, want)
-
-	is.Equal(len(want), len(got)) // destination didn't write expected number of records (want != got)
-	for i := range want {
-		want[i].Position = got[i].Position   // position can't be determined in advance
-		want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
-
-		is.Equal(want[i], got[i]) // records did not match (want != got)
-	}
+	a.isEqualRecords(is, want, got)
 }
 
 func (a acceptanceTest) skipIfNoSpecification(t *testing.T) {
@@ -1002,8 +1026,39 @@ func (a acceptanceTest) isEqualRecords(is *is.I, want, got []Record) {
 }
 
 func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
-	// TODO figure out if we should compare anything else or at least enforce
-	//  some properties for other fields (e.g. not nil)
-	is.Equal(want.Key, got.Key)         // record key did not match (want != got)
-	is.Equal(want.Payload, got.Payload) // record payload did not match (want != got)
+	a.isEqualData(is, want.Key, got.Key)
+	a.isEqualData(is, want.Payload, got.Payload)
+
+	// check metadata fields, if they are there they should match
+	if len(got.Metadata) == 0 {
+		is.Equal(got.Metadata, nil) // if there is no metadata the map should be nil
+	} else {
+		for k, wantMetadata := range want.Metadata {
+			if gotMetadata, ok := got.Metadata[k]; ok {
+				// only compare fields if they actually exist
+				is.Equal(wantMetadata, gotMetadata) // record metadata did not match (want != got)
+			}
+		}
+	}
+
+	is.True(!want.CreatedAt.After(got.CreatedAt)) // the expected CreatedAt timestamp shouldn't be after the actual CreatedAt timestamp
+}
+
+// isEqualData will match the two data objects in their entirety if the types
+// match or only the byte slice content if types differ.
+func (a acceptanceTest) isEqualData(is *is.I, want, got Data) {
+	_, wantIsRaw := want.(RawData)
+	_, gotIsRaw := got.(RawData)
+	_, wantIsStructured := want.(StructuredData)
+	_, gotIsStructured := got.(StructuredData)
+
+	if (wantIsRaw && gotIsRaw) ||
+		(wantIsStructured && gotIsStructured) ||
+		(want == nil || got == nil) {
+		// types match or data is nil, compare them directly
+		is.Equal(want, got) // data did not match (want != got)
+	} else {
+		// we have different types, compare content
+		is.Equal(want.Bytes(), got.Bytes()) // data did not match (want != got)
+	}
 }
