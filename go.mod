@@ -1,6 +1,6 @@
 module github.com/conduitio/conduit-connector-sdk
 
-go 1.17
+go 1.18
 
 require (
 	github.com/conduitio/conduit-connector-protocol v0.2.0
