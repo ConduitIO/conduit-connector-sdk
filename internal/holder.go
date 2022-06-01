@@ -51,7 +51,7 @@ func (h *Holder[T]) Get() T {
 }
 
 // Await blocks and calls foundVal for every value that is put into the Holder.
-// Once foundVal returns true it stops blocking and returns nil. First call
+// Once foundVal returns true it stops blocking and returns nil. First call to
 // foundVal will be with the current value stored in Holder. Await can only be
 // called by one goroutine at a time (we don't need anything more fancy right
 // now), if two goroutines call Await one will receive an error. If the context
