@@ -246,74 +246,27 @@ func (d ConfigurableAcceptanceTestDriver) GenerateValue(t *testing.T) interface{
 	const (
 		typeBool = iota
 		typeInt
-		typeInt8
-		typeInt16
-		typeInt32
-		typeInt64
-		typeUint
-		typeUint8
-		typeUint16
-		typeUint32
-		typeUint64
-		typeFloat32
 		typeFloat64
 		typeString
 
 		typeCount // typeCount needs to be last and contains the number of constants
 	)
 
-	// helper, we need a random bool in lots of cases
-	randBool := func() bool {
-		return rand.Int63()%2 == 0
-	}
-
 	switch rand.Int() % typeCount {
 	case typeBool:
-		return randBool()
+		return rand.Int63()%2 == 0
 	case typeInt:
 		i := rand.Int()
-		if randBool() {
+		if rand.Int63()%2 == 0 {
 			return -i - 1 // negative
 		}
 		return i
-	case typeInt8:
-		i := int8(rand.Int63() >> (64 - 8))
-		if randBool() {
-			return -i - 1 // negative
-		}
-		return i
-	case typeInt16:
-		i := int16(rand.Int63() >> (64 - 16))
-		if randBool() {
-			return -i - 1 // negative
-		}
-		return i
-	case typeInt32:
-		i := rand.Int31()
-		if randBool() {
-			return -i - 1 // negative
-		}
-		return i
-	case typeInt64:
-		i := rand.Int63()
-		if randBool() {
-			return -i - 1 // negative
-		}
-		return i
-	case typeUint:
-		return uint(rand.Int())
-	case typeUint8:
-		return uint8(rand.Int63() >> (63 - 8))
-	case typeUint16:
-		return uint16(rand.Int63() >> (63 - 16))
-	case typeUint32:
-		return rand.Uint32()
-	case typeUint64:
-		return rand.Uint64()
-	case typeFloat32:
-		return rand.Float32()
 	case typeFloat64:
-		return rand.Float64()
+		i := rand.Float64()
+		if rand.Int63()%2 == 0 {
+			return -i - 1 // negative
+		}
+		return i
 	case typeString:
 		return d.randString(rand.Intn(1024) + 32)
 	}
