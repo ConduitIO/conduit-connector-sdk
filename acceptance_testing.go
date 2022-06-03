@@ -204,15 +204,15 @@ func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T) Record {
 		Position:  Position(d.randString(32)), // position doesn't matter, as long as it's unique
 		Metadata:  map[string]string{d.randString(32): d.randString(32)},
 		CreatedAt: time.Now().UTC(),
-		Key:       d.generateData(t),
-		Payload:   d.generateData(t),
+		Key:       d.GenerateData(t),
+		Payload:   d.GenerateData(t),
 	}
 }
 
-// generateData generates either RawData or StructuredData depending on the
+// GenerateData generates either RawData or StructuredData depending on the
 // configured data type (see
 // ConfigurableAcceptanceTestDriverConfig.GenerateDataType).
-func (d ConfigurableAcceptanceTestDriver) generateData(t *testing.T) Data {
+func (d ConfigurableAcceptanceTestDriver) GenerateData(t *testing.T) Data {
 	rand := d.getRand()
 
 	gen := d.Config.GenerateDataType
@@ -226,7 +226,7 @@ func (d ConfigurableAcceptanceTestDriver) generateData(t *testing.T) Data {
 	case GenerateStructuredData:
 		data := StructuredData{}
 		for {
-			data[d.randString(rand.Intn(1024)+32)] = d.randString(rand.Intn(1024) + 32)
+			data[d.randString(rand.Intn(1024)+32)] = d.GenerateValue(t)
 			if rand.Int63()%2 == 0 {
 				// 50% chance we stop adding fields
 				break
@@ -237,6 +237,88 @@ func (d ConfigurableAcceptanceTestDriver) generateData(t *testing.T) Data {
 		t.Fatalf("invalid config value for GenerateDataType %q", d.Config.GenerateDataType)
 		return nil
 	}
+}
+
+// GenerateValue generates a random value of a random builtin type.
+func (d ConfigurableAcceptanceTestDriver) GenerateValue(t *testing.T) interface{} {
+	rand := d.getRand()
+
+	const (
+		typeBool = iota
+		typeInt
+		typeInt8
+		typeInt16
+		typeInt32
+		typeInt64
+		typeUint
+		typeUint8
+		typeUint16
+		typeUint32
+		typeUint64
+		typeFloat32
+		typeFloat64
+		typeString
+
+		typeCount // typeCount needs to be last and contains the number of constants
+	)
+
+	// helper, we need a random bool in lots of cases
+	randBool := func() bool {
+		return rand.Int63()%2 == 0
+	}
+
+	switch rand.Int() % typeCount {
+	case typeBool:
+		return randBool()
+	case typeInt:
+		i := rand.Int()
+		if randBool() {
+			return -i - 1 // negative
+		}
+		return i
+	case typeInt8:
+		i := int8(rand.Int63() >> (64 - 8))
+		if randBool() {
+			return -i - 1 // negative
+		}
+		return i
+	case typeInt16:
+		i := int16(rand.Int63() >> (64 - 16))
+		if randBool() {
+			return -i - 1 // negative
+		}
+		return i
+	case typeInt32:
+		i := rand.Int31()
+		if randBool() {
+			return -i - 1 // negative
+		}
+		return i
+	case typeInt64:
+		i := rand.Int63()
+		if randBool() {
+			return -i - 1 // negative
+		}
+		return i
+	case typeUint:
+		return uint(rand.Int())
+	case typeUint8:
+		return uint8(rand.Int63() >> (63 - 8))
+	case typeUint16:
+		return uint16(rand.Int63() >> (63 - 16))
+	case typeUint32:
+		return rand.Uint32()
+	case typeUint64:
+		return rand.Uint64()
+	case typeFloat32:
+		return rand.Float32()
+	case typeFloat64:
+		return rand.Float64()
+	case typeString:
+		return d.randString(rand.Intn(1024) + 32)
+	}
+
+	panic("bug in random value generation")
 }
 
 // getRand returns a new rand.Rand, with its seed set to current Unix time in nanoseconds.
