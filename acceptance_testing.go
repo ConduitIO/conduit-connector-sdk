@@ -100,6 +100,13 @@ type AcceptanceTestDriver interface {
 	// is encouraged for the driver to only touch the input records to change
 	// the order of records and to not change the records themselves.
 	ReadFromDestination(*testing.T, []Record) []Record
+
+	// ReadTimeout controls the time the test should wait for a read operation
+	// to return before it considers the operation as failed.
+	ReadTimeout() time.Duration
+	// WriteTimeout controls the time the test should wait for a write operation
+	// to return before it considers the operation as failed.
+	WriteTimeout() time.Duration
 }
 
 // ConfigurableAcceptanceTestDriver is the default implementation of
@@ -142,6 +149,17 @@ type ConfigurableAcceptanceTestDriverConfig struct {
 	// and StructuredData. To generate only one type of data set this field to
 	// GenerateRawData or GenerateStructuredData.
 	GenerateDataType GenerateDataType
+
+	// ReadTimeout controls the time the test should wait for a read operation
+	// to return a record before it considers the operation as failed. The
+	// default timeout is 5 seconds. This value should be changed only if there
+	// is a good reason (uncontrollable limitations of the 3rd party system).
+	ReadTimeout time.Duration
+	// WriteTimeout controls the time the test should wait for a write operation
+	// to return a record before it considers the operation as failed. The
+	// default timeout is 5 seconds. This value should be changed only if there
+	// is a good reason (uncontrollable limitations of the 3rd party system).
+	WriteTimeout time.Duration
 }
 
 // GenerateDataType is used in acceptance tests to control what data type will
@@ -385,7 +403,7 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	output := make([]Record, 0, len(records))
 	for i := 0; i < cap(output); i++ {
 		// now try to read from the source
-		readCtx, readCancel := context.WithTimeout(ctx, time.Second*5)
+		readCtx, readCancel := context.WithTimeout(ctx, d.ReadTimeout())
 		defer readCancel()
 
 		for {
@@ -494,6 +512,20 @@ func (a acceptanceTest) Test(t *testing.T) {
 			av.Method(i).Call([]reflect.Value{reflect.ValueOf(t)})
 		})
 	}
+}
+
+func (d ConfigurableAcceptanceTestDriver) ReadTimeout() time.Duration {
+	if d.Config.ReadTimeout == 0 {
+		return time.Second * 5
+	}
+	return d.Config.ReadTimeout
+}
+
+func (d ConfigurableAcceptanceTestDriver) WriteTimeout() time.Duration {
+	if d.Config.WriteTimeout == 0 {
+		return time.Second * 5
+	}
+	return d.Config.WriteTimeout
 }
 
 func (a acceptanceTest) TestSpecifier_Exists(t *testing.T) {
@@ -767,7 +799,7 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
 
-	readCtx, cancel := context.WithTimeout(ctx, time.Second)
+	readCtx, cancel := context.WithTimeout(ctx, a.driver.ReadTimeout())
 	defer cancel()
 	r, err := a.readWithBackoffRetry(readCtx, t, source)
 	is.Equal(Record{}, r) // record should be empty
@@ -827,11 +859,11 @@ func (a acceptanceTest) TestDestination_WriteOrWriteAsync(t *testing.T) {
 	dest, cleanup := a.openDestination(ctx, t)
 	defer cleanup()
 
-	writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+	writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
 	defer cancel()
 	errWrite := dest.Write(writeCtx, a.driver.GenerateRecord(t))
 
-	writeCtx, cancel = context.WithTimeout(ctx, time.Second*5)
+	writeCtx, cancel = context.WithTimeout(ctx, a.driver.WriteTimeout())
 	defer cancel()
 	errWriteAsync := dest.WriteAsync(writeCtx, a.driver.GenerateRecord(t), func(err error) error { return nil })
 
@@ -856,7 +888,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	want := a.generateRecords(t, 20)
 
 	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
 		defer cancel()
 		err := dest.Write(writeCtx, r)
 		if i == 0 && errors.Is(err, ErrUnimplemented) {
@@ -888,7 +920,7 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 
 	var ackWg sync.WaitGroup
 	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
 		defer cancel()
 
 		ackWg.Add(1)
@@ -998,7 +1030,7 @@ func (a acceptanceTest) generateRecords(t *testing.T, count int) []Record {
 func (a acceptanceTest) readMany(ctx context.Context, t *testing.T, source Source, limit int) ([]Record, error) {
 	var got []Record
 	for i := 0; i < limit; i++ {
-		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		readCtx, cancel := context.WithTimeout(ctx, a.driver.ReadTimeout())
 		defer cancel()
 
 		rec, err := a.readWithBackoffRetry(readCtx, t, source)
