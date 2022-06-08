@@ -460,8 +460,8 @@ func (d ConfigurableAcceptanceTestDriver) writeAsync(ctx context.Context, dest D
 		return err
 	}
 
-	// TODO create timeout for wait to prevent deadlock for badly written connectors
-	waitForAck.Wait()
+	// wait for each of the records, for at most the specified write timeout
+	waitTimeout(&waitForAck, time.Duration(len(records))*d.WriteTimeout())
 	if ackErr != nil {
 		return ackErr
 	}
@@ -938,8 +938,8 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 	is.NoErr(err)
 
 	// wait for acks to get called
-	// TODO timeout if it takes too long
-	ackWg.Wait()
+	// wait for each of the records, for at most the specified write timeout
+	waitTimeout(&ackWg, time.Duration(20)*a.driver.WriteTimeout())
 
 	got := a.driver.ReadFromDestination(t, want)
 	a.isEqualRecords(is, want, got)
@@ -1127,5 +1127,19 @@ func (a acceptanceTest) isEqualData(is *is.I, want, got Data) {
 	} else {
 		// we have different types, compare content
 		is.Equal(want.Bytes(), got.Bytes()) // data did not match (want != got)
+	}
+}
+
+func waitTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		wg.Wait()
+	}()
+	select {
+	case <-c:
+		return false // completed normally
+	case <-time.After(timeout):
+		return true // timed out
 	}
 }
