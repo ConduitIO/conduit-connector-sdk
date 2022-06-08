@@ -45,13 +45,6 @@ import (
 //           },
 //       })
 //   }
-//
-// IMPORTANT: This function is not ready to be used yet, tests might fail while
-// the connector could already be working correctly. This comment should be
-// removed once we fix the following issues:
-// - Move generating of records to driver (https://github.com/ConduitIO/conduit-connector-sdk/issues/16)
-// - Generate structured data (https://github.com/ConduitIO/conduit-connector-sdk/issues/17)
-// - Smarter record comparison (https://github.com/ConduitIO/conduit-connector-sdk/issues/18)
 func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 	acceptanceTest{
 		driver: driver,
@@ -86,10 +79,9 @@ type AcceptanceTestDriver interface {
 	// GenerateRecord will generate a new Record. It's the responsibility
 	// of the AcceptanceTestDriver implementation to provide records with
 	// appropriate contents (e.g. appropriate type of payload).
-	// todo: currently, only a single type of record payload can be used
-	// in an acceptance test suite. Support for potentially different types
-	// of payloads for the same connector will be discussed in:
-	// https://github.com/ConduitIO/conduit-connector-sdk/issues/17
+	// The generated record will contain mixed data types in the field Key and
+	// Payload (i.e. RawData and StructuredData), unless configured otherwise
+	// (see ConfigurableAcceptanceTestDriverConfig.GenerateDataType).
 	GenerateRecord(*testing.T) Record
 
 	// WriteToSource receives a slice of records that should be prepared in the
@@ -108,6 +100,13 @@ type AcceptanceTestDriver interface {
 	// is encouraged for the driver to only touch the input records to change
 	// the order of records and to not change the records themselves.
 	ReadFromDestination(*testing.T, []Record) []Record
+
+	// ReadTimeout controls the time the test should wait for a read operation
+	// to return before it considers the operation as failed.
+	ReadTimeout() time.Duration
+	// WriteTimeout controls the time the test should wait for a write operation
+	// to return before it considers the operation as failed.
+	WriteTimeout() time.Duration
 }
 
 // ConfigurableAcceptanceTestDriver is the default implementation of
@@ -144,7 +143,34 @@ type ConfigurableAcceptanceTestDriverConfig struct {
 	// be skipped. The full test name will be matched against all regular
 	// expressions and the test will be skipped if a match is found.
 	Skip []string
+
+	// GenerateDataType controls which Data type will be generated in test
+	// records. The default is GenerateMixedData which will produce both RawData
+	// and StructuredData. To generate only one type of data set this field to
+	// GenerateRawData or GenerateStructuredData.
+	GenerateDataType GenerateDataType
+
+	// ReadTimeout controls the time the test should wait for a read operation
+	// to return a record before it considers the operation as failed. The
+	// default timeout is 5 seconds. This value should be changed only if there
+	// is a good reason (uncontrollable limitations of the 3rd party system).
+	ReadTimeout time.Duration
+	// WriteTimeout controls the time the test should wait for a write operation
+	// to return a record before it considers the operation as failed. The
+	// default timeout is 5 seconds. This value should be changed only if there
+	// is a good reason (uncontrollable limitations of the 3rd party system).
+	WriteTimeout time.Duration
 }
+
+// GenerateDataType is used in acceptance tests to control what data type will
+// be generated.
+type GenerateDataType int
+
+const (
+	GenerateMixedData GenerateDataType = iota
+	GenerateRawData
+	GenerateStructuredData
+)
 
 func (d ConfigurableAcceptanceTestDriver) Connector() Connector {
 	return d.Config.Connector
@@ -191,14 +217,79 @@ func (d ConfigurableAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.O
 	return d.Config.GoleakOptions
 }
 
-func (d ConfigurableAcceptanceTestDriver) GenerateRecord(_ *testing.T) Record {
+func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T) Record {
 	return Record{
 		Position:  Position(d.randString(32)), // position doesn't matter, as long as it's unique
-		Metadata:  nil,                        // TODO metadata is optional so don't enforce it to be written, still create it
-		CreatedAt: time.Unix(0, d.getRand().Int63()),
-		Key:       RawData(d.randString(32)), // TODO try structured data as well
-		Payload:   RawData(d.randString(32)), // TODO try structured data as well
+		Metadata:  map[string]string{d.randString(32): d.randString(32)},
+		CreatedAt: time.Now().UTC(),
+		Key:       d.GenerateData(t),
+		Payload:   d.GenerateData(t),
 	}
+}
+
+// GenerateData generates either RawData or StructuredData depending on the
+// configured data type (see
+// ConfigurableAcceptanceTestDriverConfig.GenerateDataType).
+func (d ConfigurableAcceptanceTestDriver) GenerateData(t *testing.T) Data {
+	rand := d.getRand()
+
+	gen := d.Config.GenerateDataType
+	if gen == GenerateMixedData {
+		gen = GenerateDataType(1 + (rand.Int63() % 2))
+	}
+
+	switch gen {
+	case GenerateRawData:
+		return RawData(d.randString(rand.Intn(1024) + 32))
+	case GenerateStructuredData:
+		data := StructuredData{}
+		for {
+			data[d.randString(rand.Intn(1024)+32)] = d.GenerateValue(t)
+			if rand.Int63()%2 == 0 {
+				// 50% chance we stop adding fields
+				break
+			}
+		}
+		return data
+	default:
+		t.Fatalf("invalid config value for GenerateDataType %q", d.Config.GenerateDataType)
+		return nil
+	}
+}
+
+// GenerateValue generates a random value of a random builtin type.
+func (d ConfigurableAcceptanceTestDriver) GenerateValue(t *testing.T) interface{} {
+	rand := d.getRand()
+
+	const (
+		typeBool = iota
+		typeInt
+		typeFloat64
+		typeString
+
+		typeCount // typeCount needs to be last and contains the number of constants
+	)
+
+	switch rand.Int() % typeCount {
+	case typeBool:
+		return rand.Int63()%2 == 0
+	case typeInt:
+		i := rand.Int()
+		if rand.Int63()%2 == 0 {
+			return -i - 1 // negative
+		}
+		return i
+	case typeFloat64:
+		i := rand.Float64()
+		if rand.Int63()%2 == 0 {
+			return -i - 1 // negative
+		}
+		return i
+	case typeString:
+		return d.randString(rand.Intn(1024) + 32)
+	}
+
+	panic("bug in random value generation")
 }
 
 // getRand returns a new rand.Rand, with its seed set to current Unix time in nanoseconds.
@@ -312,7 +403,7 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	output := make([]Record, 0, len(records))
 	for i := 0; i < cap(output); i++ {
 		// now try to read from the source
-		readCtx, readCancel := context.WithTimeout(ctx, time.Second*5)
+		readCtx, readCancel := context.WithTimeout(ctx, d.ReadTimeout())
 		defer readCancel()
 
 		for {
@@ -421,6 +512,20 @@ func (a acceptanceTest) Test(t *testing.T) {
 			av.Method(i).Call([]reflect.Value{reflect.ValueOf(t)})
 		})
 	}
+}
+
+func (d ConfigurableAcceptanceTestDriver) ReadTimeout() time.Duration {
+	if d.Config.ReadTimeout == 0 {
+		return time.Second * 5
+	}
+	return d.Config.ReadTimeout
+}
+
+func (d ConfigurableAcceptanceTestDriver) WriteTimeout() time.Duration {
+	if d.Config.WriteTimeout == 0 {
+		return time.Second * 5
+	}
+	return d.Config.WriteTimeout
 }
 
 func (a acceptanceTest) TestSpecifier_Exists(t *testing.T) {
@@ -694,7 +799,7 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
 
-	readCtx, cancel := context.WithTimeout(ctx, time.Second)
+	readCtx, cancel := context.WithTimeout(ctx, a.driver.ReadTimeout())
 	defer cancel()
 	r, err := a.readWithBackoffRetry(readCtx, t, source)
 	is.Equal(Record{}, r) // record should be empty
@@ -754,11 +859,11 @@ func (a acceptanceTest) TestDestination_WriteOrWriteAsync(t *testing.T) {
 	dest, cleanup := a.openDestination(ctx, t)
 	defer cleanup()
 
-	writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+	writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
 	defer cancel()
 	errWrite := dest.Write(writeCtx, a.driver.GenerateRecord(t))
 
-	writeCtx, cancel = context.WithTimeout(ctx, time.Second*5)
+	writeCtx, cancel = context.WithTimeout(ctx, a.driver.WriteTimeout())
 	defer cancel()
 	errWriteAsync := dest.WriteAsync(writeCtx, a.driver.GenerateRecord(t), func(err error) error { return nil })
 
@@ -783,7 +888,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	want := a.generateRecords(t, 20)
 
 	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
 		defer cancel()
 		err := dest.Write(writeCtx, r)
 		if i == 0 && errors.Is(err, ErrUnimplemented) {
@@ -799,14 +904,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	}
 
 	got := a.driver.ReadFromDestination(t, want)
-
-	is.Equal(len(want), len(got)) // destination didn't write expected number of records (want != got)
-	for i := range want {
-		want[i].Position = got[i].Position   // position can't be determined in advance
-		want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
-
-		is.Equal(want[i], got[i]) // records did not match (want != got)
-	}
+	a.isEqualRecords(is, want, got)
 }
 
 func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
@@ -822,7 +920,7 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 
 	var ackWg sync.WaitGroup
 	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
 		defer cancel()
 
 		ackWg.Add(1)
@@ -844,14 +942,7 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 	ackWg.Wait()
 
 	got := a.driver.ReadFromDestination(t, want)
-
-	is.Equal(len(want), len(got)) // destination didn't write expected number of records (want != got)
-	for i := range want {
-		want[i].Position = got[i].Position   // position can't be determined in advance
-		want[i].CreatedAt = got[i].CreatedAt // created at can't be determined in advance
-
-		is.Equal(want[i], got[i]) // records did not match (want != got)
-	}
+	a.isEqualRecords(is, want, got)
 }
 
 func (a acceptanceTest) skipIfNoSpecification(t *testing.T) {
@@ -939,7 +1030,7 @@ func (a acceptanceTest) generateRecords(t *testing.T, count int) []Record {
 func (a acceptanceTest) readMany(ctx context.Context, t *testing.T, source Source, limit int) ([]Record, error) {
 	var got []Record
 	for i := 0; i < limit; i++ {
-		readCtx, cancel := context.WithTimeout(ctx, time.Second*5)
+		readCtx, cancel := context.WithTimeout(ctx, a.driver.ReadTimeout())
 		defer cancel()
 
 		rec, err := a.readWithBackoffRetry(readCtx, t, source)
@@ -1002,8 +1093,39 @@ func (a acceptanceTest) isEqualRecords(is *is.I, want, got []Record) {
 }
 
 func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
-	// TODO figure out if we should compare anything else or at least enforce
-	//  some properties for other fields (e.g. not nil)
-	is.Equal(want.Key, got.Key)         // record key did not match (want != got)
-	is.Equal(want.Payload, got.Payload) // record payload did not match (want != got)
+	a.isEqualData(is, want.Key, got.Key)
+	a.isEqualData(is, want.Payload, got.Payload)
+
+	// check metadata fields, if they are there they should match
+	if len(got.Metadata) == 0 {
+		is.Equal(got.Metadata, nil) // if there is no metadata the map should be nil
+	} else {
+		for k, wantMetadata := range want.Metadata {
+			if gotMetadata, ok := got.Metadata[k]; ok {
+				// only compare fields if they actually exist
+				is.Equal(wantMetadata, gotMetadata) // record metadata did not match (want != got)
+			}
+		}
+	}
+
+	is.True(!want.CreatedAt.After(got.CreatedAt)) // the expected CreatedAt timestamp shouldn't be after the actual CreatedAt timestamp
+}
+
+// isEqualData will match the two data objects in their entirety if the types
+// match or only the byte slice content if types differ.
+func (a acceptanceTest) isEqualData(is *is.I, want, got Data) {
+	_, wantIsRaw := want.(RawData)
+	_, gotIsRaw := got.(RawData)
+	_, wantIsStructured := want.(StructuredData)
+	_, gotIsStructured := got.(StructuredData)
+
+	if (wantIsRaw && gotIsRaw) ||
+		(wantIsStructured && gotIsStructured) ||
+		(want == nil || got == nil) {
+		// types match or data is nil, compare them directly
+		is.Equal(want, got) // data did not match (want != got)
+	} else {
+		// we have different types, compare content
+		is.Equal(want.Bytes(), got.Bytes()) // data did not match (want != got)
+	}
 }
