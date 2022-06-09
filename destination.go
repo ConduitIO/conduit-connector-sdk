@@ -179,7 +179,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 			if err == io.EOF {
 				// stream is closed
 				// wait for all acks to be sent back to Conduit
-				return a.waitForAcks(ctx)
+				return waitOrDone(ctx, &a.wgAckFuncs)
 			}
 			return fmt.Errorf("write stream error: %w", err)
 		}
@@ -235,25 +235,6 @@ func (a *destinationPluginAdapter) ackFunc(r Record, stream cpluginv1.Destinatio
 	}
 }
 
-func (a *destinationPluginAdapter) waitForAcks(ctx context.Context) error {
-	// wait for all acks to be sent back to Conduit
-	ackFuncsDone := make(chan struct{})
-	go func() {
-		a.wgAckFuncs.Wait()
-		close(ackFuncsDone)
-	}()
-	return a.waitForClose(ctx, ackFuncsDone)
-}
-
-func (a *destinationPluginAdapter) waitForClose(ctx context.Context, stop chan struct{}) error {
-	select {
-	case <-stop:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
 func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.DestinationStopRequest) (cpluginv1.DestinationStopResponse, error) {
 	// last thing we do is cancel context in Open
 	defer a.openCancel()
@@ -263,7 +244,7 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 	defer cancel()
 
 	// wait for all acks to be sent back to Conduit
-	waitErr := a.waitForAcks(waitCtx)
+	waitErr := waitOrDone(waitCtx, &a.wgAckFuncs)
 	if waitErr != nil {
 		// just log error and continue to flush at least the processed records
 		Logger(ctx).Warn().Err(waitErr).Msg("failed to wait for all acks to be sent back to Conduit")
@@ -286,7 +267,7 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 	// everything went as expected, let's cancel the context in Open and
 	// wait for Run to stop gracefully
 	a.openCancel()
-	err = a.waitForClose(ctx, a.runDone)
+	err = waitForClose(ctx, a.runDone)
 	return cpluginv1.DestinationStopResponse{}, err
 }
 

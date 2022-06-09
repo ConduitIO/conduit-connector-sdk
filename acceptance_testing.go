@@ -208,7 +208,7 @@ func (d ConfigurableAcceptanceTestDriver) Skip(t *testing.T) {
 
 	for _, skipRegex := range skipRegexs {
 		if skipRegex.MatchString(t.Name()) {
-			t.Skip(fmt.Sprintf("caller requested to skip tests that match the regex %q", skipRegex.String()))
+			t.Skipf("caller requested to skip tests that match the regex %q", skipRegex.String())
 		}
 	}
 }
@@ -1127,19 +1127,5 @@ func (a acceptanceTest) isEqualData(is *is.I, want, got Data) {
 	} else {
 		// we have different types, compare content
 		is.Equal(want.Bytes(), got.Bytes()) // data did not match (want != got)
-	}
-}
-
-func waitTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
-	c := make(chan struct{})
-	go func() {
-		defer close(c)
-		wg.Wait()
-	}()
-	select {
-	case <-c:
-		return false // completed normally
-	case <-time.After(timeout):
-		return true // timed out
 	}
 }
