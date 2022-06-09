@@ -30,9 +30,9 @@ type Holder[T any] struct {
 	listener chan T // a single listener, if needed we can expand to multiple in the future
 }
 
-// Put stores val in Holder and notifies the goroutine that called Await about
+// Store sets val in Holder and notifies the goroutine that called Await about
 // the new value, if such a goroutine exists.
-func (h *Holder[T]) Put(val T) {
+func (h *Holder[T]) Store(val T) {
 	h.m.Lock()
 	defer h.m.Unlock()
 
@@ -42,8 +42,8 @@ func (h *Holder[T]) Put(val T) {
 	}
 }
 
-// Get returns the current value in Holder.
-func (h *Holder[T]) Get() T {
+// Load returns the current value stored in Holder.
+func (h *Holder[T]) Load() T {
 	h.m.RLock()
 	defer h.m.RUnlock()
 
@@ -58,7 +58,7 @@ func (h *Holder[T]) Get() T {
 // gets cancelled before foundVal returns true, the function will return the
 // context error.
 func (h *Holder[T]) Await(ctx context.Context, foundVal func(val T) bool) error {
-	err := h.subscribe()
+	val, err := h.subscribe()
 	if err != nil {
 		// the only option subscribe produces an error is if it is called
 		// concurrently which is an invalid use case at the moment
@@ -66,6 +66,11 @@ func (h *Holder[T]) Await(ctx context.Context, foundVal func(val T) bool) error 
 	}
 	defer h.unsubscribe()
 
+	if foundVal(val) {
+		// first call to foundVal is with the current value
+		return nil
+	}
+	// val was not found yet, we need to wait some more
 	for {
 		select {
 		case <-ctx.Done():
@@ -78,29 +83,19 @@ func (h *Holder[T]) Await(ctx context.Context, foundVal func(val T) bool) error 
 	}
 }
 
-func (h *Holder[T]) subscribe() error {
+// subscribe creates listener and returns the current value stored in Holder at
+// the time the listener was created.
+func (h *Holder[T]) subscribe() (T, error) {
 	h.m.Lock()
 	defer h.m.Unlock()
 
 	if h.listener != nil {
-		return errors.New("another goroutine is already subscribed to changes")
+		var empty T
+		return empty, errors.New("another goroutine is already subscribed to changes")
 	}
-
 	h.listener = make(chan T)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		// make sure the current value is sent to the listener
-		currentVal := h.val // copy val
-		wg.Done()           // signal to subscribe function it can unlock the mutex
-		h.listener <- currentVal
-	}()
-
-	// wait for goroutine to copy val
-	wg.Wait()
-
-	return nil
+	return h.val, nil
 }
 
 func (h *Holder[T]) unsubscribe() {

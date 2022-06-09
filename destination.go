@@ -187,7 +187,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 
 		a.wgAckFuncs.Add(1)
 		err = writeFunc(ctx, r, stream)
-		a.lastPositionHolder.Put(r.Position) // store last processed position
+		a.lastPositionHolder.Store(r.Position) // store last processed position
 		if err != nil {
 			return err
 		}

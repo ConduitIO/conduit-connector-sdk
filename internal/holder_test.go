@@ -21,13 +21,14 @@ import (
 	"time"
 
 	"github.com/matryer/is"
+	"go.uber.org/goleak"
 )
 
 func TestHolder_GetEmptyValue(t *testing.T) {
 	is := is.New(t)
 
 	var h Holder[int]
-	got := h.Get()
+	got := h.Load()
 	is.Equal(0, got)
 }
 
@@ -35,7 +36,7 @@ func TestHolder_GetEmptyPtr(t *testing.T) {
 	is := is.New(t)
 
 	var h Holder[*int]
-	got := h.Get()
+	got := h.Load()
 	is.Equal(nil, got)
 }
 
@@ -44,8 +45,8 @@ func TestHolder_PutGetValue(t *testing.T) {
 
 	var h Holder[int]
 	want := 123
-	h.Put(want)
-	got := h.Get()
+	h.Store(want)
+	got := h.Load()
 	is.Equal(want, got)
 }
 
@@ -54,12 +55,13 @@ func TestHolder_PutGetPtr(t *testing.T) {
 
 	var h Holder[*int]
 	want := 123
-	h.Put(&want)
-	got := h.Get()
+	h.Store(&want)
+	got := h.Load()
 	is.Equal(&want, got)
 }
 
 func TestHolder_AwaitSuccess(t *testing.T) {
+	goleak.VerifyNone(t)
 	is := is.New(t)
 
 	var h Holder[int]
@@ -68,7 +70,7 @@ func TestHolder_AwaitSuccess(t *testing.T) {
 	defer close(putValue)
 	go func() {
 		for val := range putValue {
-			h.Put(val)
+			h.Store(val)
 		}
 	}()
 
@@ -98,16 +100,17 @@ func TestHolder_AwaitSuccess(t *testing.T) {
 	is.NoErr(err)
 	is.Equal(3, i)
 
-	got := h.Get()
+	got := h.Load()
 	is.Equal(555, got)
 
 	// we can still put more values into the holder
-	h.Put(666)
-	got = h.Get()
+	h.Store(666)
+	got = h.Load()
 	is.Equal(666, got)
 }
 
 func TestHolder_AwaitContextCancel(t *testing.T) {
+	goleak.VerifyNone(t)
 	is := is.New(t)
 
 	var h Holder[int]
@@ -127,6 +130,7 @@ func TestHolder_AwaitContextCancel(t *testing.T) {
 }
 
 func TestHolder_AwaitMultiple(t *testing.T) {
+	goleak.VerifyNone(t)
 	is := is.New(t)
 
 	var h Holder[int]
