@@ -95,6 +95,7 @@ type sourcePluginAdapter struct {
 	// readDone will be closed after runRead stops running.
 	readDone chan struct{}
 
+	// lastPosition stores the position of the last record sent to Conduit.
 	lastPosition Position
 
 	openCancel context.CancelFunc
