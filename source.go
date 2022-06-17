@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync/atomic"
 	"time"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
@@ -93,14 +92,14 @@ func NewSourcePlugin(impl Source) cpluginv1.SourcePlugin {
 type sourcePluginAdapter struct {
 	impl Source
 
-	// openAcks tracks how many acks we are still waiting for.
-	openAcks int32
 	// readDone will be closed after runRead stops running.
 	readDone chan struct{}
 
+	// lastPosition stores the position of the last record sent to Conduit.
+	lastPosition Position
+
 	openCancel context.CancelFunc
 	readCancel context.CancelFunc
-	ackCancel  context.CancelFunc
 	t          *tomb.Tomb
 }
 
@@ -135,11 +134,9 @@ func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceSta
 func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRunStream) error {
 	t, ctx := tomb.WithContext(ctx)
 	readCtx, readCancel := context.WithCancel(ctx)
-	ackCtx, ackCancel := context.WithCancel(ctx)
 
 	a.t = t
 	a.readCancel = readCancel
-	a.ackCancel = ackCancel
 	a.readDone = make(chan struct{})
 
 	t.Go(func() error {
@@ -147,7 +144,7 @@ func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRu
 		return a.runRead(readCtx, stream)
 	})
 	t.Go(func() error {
-		return a.runAck(ackCtx, stream)
+		return a.runAck(ctx, stream)
 	})
 
 	<-t.Dying() // stop as soon as it's dying
@@ -186,7 +183,7 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cpluginv1.Sour
 		if err != nil {
 			return fmt.Errorf("read stream error: %w", err)
 		}
-		atomic.AddInt32(&a.openAcks, 1)
+		a.lastPosition = r.Position // store last sent position
 
 		// reset backoff retry
 		b.Reset()
@@ -194,60 +191,18 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cpluginv1.Sour
 }
 
 func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cpluginv1.SourceRunStream) error {
-	type streamResponse struct {
-		req cpluginv1.SourceRunRequest
-		err error
-	}
-
-	out := make(chan streamResponse)
-	// start fetching acks asynchronously and send them to the out channel
-	go func() {
-		defer close(out)
-		for {
-			req, err := stream.Recv()
-			out <- streamResponse{req, err}
-			if err != nil {
-				return // stream is closed
-			}
-		}
-	}()
-
 	for {
-		select {
-		case resp := <-out:
-			req, err := resp.req, resp.err
-			if err != nil {
-				if err == io.EOF {
-					return nil // stream is closed, not an error
-				}
-				return fmt.Errorf("ack stream error: %w", err)
+		req, err := stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				return nil // stream is closed, not an error
 			}
-			err = a.impl.Ack(ctx, req.AckPosition)
-			// implementing Ack is optional
-			if err != nil && !errors.Is(err, ErrUnimplemented) {
-				return fmt.Errorf("ack plugin error: %w", err)
-			}
-
-			// decrease number of open acks
-			atomic.AddInt32(&a.openAcks, -1)
-
-			// check if we are still producing new records
-			select {
-			case <-a.readDone:
-				// read function stopped running, check if we can stop too
-				if atomic.LoadInt32(&a.openAcks) == 0 {
-					a.ackCancel()
-				}
-			default:
-				// continue
-			}
-		case <-ctx.Done():
-			// context is cancelled when there are no more acks to be received
-
-			// once the function returns the stream will return one more EOF error,
-			// we will drain the channel to prevent a goroutine leak
-			go func() { <-out }()
-			return nil
+			return fmt.Errorf("ack stream error: %w", err)
+		}
+		err = a.impl.Ack(ctx, req.AckPosition)
+		// implementing Ack is optional
+		if err != nil && !errors.Is(err, ErrUnimplemented) {
+			return fmt.Errorf("ack plugin error: %w", err)
 		}
 	}
 }
@@ -256,21 +211,57 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, req cpluginv1.SourceStop
 	// stop reading new messages
 	a.openCancel()
 	a.readCancel()
+
+	// TODO timeout for badly written connectors
 	<-a.readDone // wait for read to actually stop running
-	if atomic.LoadInt32(&a.openAcks) == 0 {
-		// we aren't waiting for any further acks, let's stop the ack goroutine as well
-		a.ackCancel()
-	}
-	return cpluginv1.SourceStopResponse{}, nil
+
+	return cpluginv1.SourceStopResponse{
+		LastPosition: a.lastPosition,
+	}, nil
 }
 
 func (a *sourcePluginAdapter) Teardown(ctx context.Context, req cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
-	// TODO add a timeout and kill plugin forcefully if needed (https://github.com/ConduitIO/conduit/issues/185)
+	var waitErr error
 	if a.t != nil {
-		_ = a.t.Wait() // wait for Run to stop running
+		// wait for at most 1 minute
+		waitCtx, cancel := context.WithTimeout(ctx, time.Minute) // TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
+		defer cancel()
+
+		waitErr = a.waitForRun(waitCtx) // wait for Run to stop running
+		if waitErr != nil {
+			// just log error and continue to call Teardown to keep guarantee
+			Logger(ctx).Warn().Err(waitErr).Msg("failed to wait for Run to stop running")
+		}
 	}
+
 	err := a.impl.Teardown(ctx)
-	return cpluginv1.SourceTeardownResponse{}, err
+	if err != nil {
+		return cpluginv1.SourceTeardownResponse{}, err
+	}
+
+	return cpluginv1.SourceTeardownResponse{}, waitErr
+}
+
+// waitForRun returns once the Run function returns or the context gets
+// cancelled, whichever happens first. If the context gets cancelled the context
+// error will be returned.
+func (a *sourcePluginAdapter) waitForRun(ctx context.Context) error {
+	// wait for all acks to be sent back to Conduit
+	ackFuncsDone := make(chan struct{})
+	go func() {
+		_ = a.t.Wait() // ignore tomb error, it will be returned in Run anyway
+		close(ackFuncsDone)
+	}()
+	return a.waitForClose(ctx, ackFuncsDone)
+}
+
+func (a *sourcePluginAdapter) waitForClose(ctx context.Context, stop chan struct{}) error {
+	select {
+	case <-stop:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (a *sourcePluginAdapter) convertRecord(r Record) cpluginv1.Record {
