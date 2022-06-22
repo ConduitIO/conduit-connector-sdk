@@ -24,47 +24,47 @@ import (
 	"go.uber.org/goleak"
 )
 
-func TestHolder_GetEmptyValue(t *testing.T) {
+func TestAtomicValueWatcher_GetEmptyValue(t *testing.T) {
 	is := is.New(t)
 
-	var h Holder[int]
+	var h AtomicValueWatcher[int]
 	got := h.Load()
 	is.Equal(0, got)
 }
 
-func TestHolder_GetEmptyPtr(t *testing.T) {
+func TestAtomicValueWatcher_GetEmptyPtr(t *testing.T) {
 	is := is.New(t)
 
-	var h Holder[*int]
+	var h AtomicValueWatcher[*int]
 	got := h.Load()
 	is.Equal(nil, got)
 }
 
-func TestHolder_PutGetValue(t *testing.T) {
+func TestAtomicValueWatcher_PutGetValue(t *testing.T) {
 	is := is.New(t)
 
-	var h Holder[int]
+	var h AtomicValueWatcher[int]
 	want := 123
 	h.Store(want)
 	got := h.Load()
 	is.Equal(want, got)
 }
 
-func TestHolder_PutGetPtr(t *testing.T) {
+func TestAtomicValueWatcher_PutGetPtr(t *testing.T) {
 	is := is.New(t)
 
-	var h Holder[*int]
+	var h AtomicValueWatcher[*int]
 	want := 123
 	h.Store(&want)
 	got := h.Load()
 	is.Equal(&want, got)
 }
 
-func TestHolder_AwaitSuccess(t *testing.T) {
+func TestAtomicValueWatcher_AwaitSuccess(t *testing.T) {
 	goleak.VerifyNone(t)
 	is := is.New(t)
 
-	var h Holder[int]
+	var h AtomicValueWatcher[int]
 
 	putValue := make(chan int)
 	defer close(putValue)
@@ -103,17 +103,17 @@ func TestHolder_AwaitSuccess(t *testing.T) {
 	got := h.Load()
 	is.Equal(555, got)
 
-	// we can still put more values into the holder
+	// we can still put more values into the watcher
 	h.Store(666)
 	got = h.Load()
 	is.Equal(666, got)
 }
 
-func TestHolder_AwaitContextCancel(t *testing.T) {
+func TestAtomicValueWatcher_AwaitContextCancel(t *testing.T) {
 	goleak.VerifyNone(t)
 	is := is.New(t)
 
-	var h Holder[int]
+	var h AtomicValueWatcher[int]
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10)
 	defer cancel()
@@ -129,11 +129,11 @@ func TestHolder_AwaitContextCancel(t *testing.T) {
 	is.Equal(1, i)
 }
 
-func TestHolder_AwaitMultiple(t *testing.T) {
+func TestAtomicValueWatcher_AwaitMultiple(t *testing.T) {
 	goleak.VerifyNone(t)
 	is := is.New(t)
 
-	var h Holder[int]
+	var h AtomicValueWatcher[int]
 
 	var wg1, wg2, wg3 sync.WaitGroup
 	wg1.Add(1)

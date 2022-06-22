@@ -116,7 +116,7 @@ type destinationPluginAdapter struct {
 	wgAckFuncs sync.WaitGroup
 	isAsync    bool
 
-	lastPositionHolder *internal.Holder[Position]
+	lastPosition *internal.AtomicValueWatcher[Position]
 
 	openCancel context.CancelFunc
 }
@@ -127,7 +127,7 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.
 }
 
 func (a *destinationPluginAdapter) Start(ctx context.Context, req cpluginv1.DestinationStartRequest) (cpluginv1.DestinationStartResponse, error) {
-	a.lastPositionHolder = new(internal.Holder[Position])
+	a.lastPosition = new(internal.AtomicValueWatcher[Position])
 
 	// detach context, so we can control when it's canceled
 	ctxOpen := internal.DetachContext(ctx)
@@ -187,7 +187,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 
 		a.wgAckFuncs.Add(1)
 		err = writeFunc(ctx, r, stream)
-		a.lastPositionHolder.Store(r.Position) // store last processed position
+		a.lastPosition.Store(r.Position) // store last processed position
 		if err != nil {
 			return err
 		}
@@ -264,7 +264,7 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 	defer cancel()
 
 	// wait for last record to be received
-	awaitErr := a.lastPositionHolder.Await(waitCtx, func(val Position) bool {
+	awaitErr := a.lastPosition.Await(waitCtx, func(val Position) bool {
 		return bytes.Equal(val, req.LastPosition)
 	})
 	if awaitErr != nil {
