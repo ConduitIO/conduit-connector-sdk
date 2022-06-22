@@ -208,7 +208,7 @@ func (d ConfigurableAcceptanceTestDriver) Skip(t *testing.T) {
 
 	for _, skipRegex := range skipRegexs {
 		if skipRegex.MatchString(t.Name()) {
-			t.Skip(fmt.Sprintf("caller requested to skip tests that match the regex %q", skipRegex.String()))
+			t.Skipf("caller requested to skip tests that match the regex %q", skipRegex.String())
 		}
 	}
 }
