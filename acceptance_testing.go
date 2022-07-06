@@ -426,7 +426,7 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	}
 
 	// try another read, there should be nothing so timeout after 1 second
-	readCtx, readCancel := context.WithTimeout(ctx, time.Second)
+	readCtx, readCancel := context.WithTimeout(ctx, d.ReadTimeout())
 	defer readCancel()
 	r, err := src.Read(readCtx)
 	is.Equal(Record{}, r) // record should be empty
@@ -704,7 +704,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 	defer sourceCleanup()
 
 	// try to read something to make sure the source is initialized
-	readCtx, cancel := context.WithTimeout(ctx, time.Second)
+	readCtx, cancel := context.WithTimeout(ctx, a.driver.ReadTimeout())
 	defer cancel()
 	_, err := source.Read(readCtx)
 	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
