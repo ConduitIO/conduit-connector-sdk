@@ -299,10 +299,17 @@ func (a *destinationPluginAdapter) Teardown(ctx context.Context, req cpluginv1.D
 func (a *destinationPluginAdapter) convertRecord(r cpluginv1.Record) Record {
 	return Record{
 		Position:  r.Position,
+		Operation: Operation(r.Operation),
 		Metadata:  r.Metadata,
-		Key:       a.convertData(r.Key),
-		Payload:   a.convertData(r.Payload),
-		CreatedAt: r.CreatedAt,
+		Before:    a.convertEntity(r.Before),
+		After:     a.convertEntity(r.After),
+	}
+}
+
+func (a *destinationPluginAdapter) convertEntity(e cpluginv1.Entity) Entity {
+	return Entity{
+		Key:     a.convertData(e.Key),
+		Payload: a.convertData(e.Payload),
 	}
 }
 

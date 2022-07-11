@@ -267,10 +267,17 @@ func (a *sourcePluginAdapter) waitForClose(ctx context.Context, stop chan struct
 func (a *sourcePluginAdapter) convertRecord(r Record) cpluginv1.Record {
 	return cpluginv1.Record{
 		Position:  r.Position,
+		Operation: cpluginv1.Operation(r.Operation),
 		Metadata:  r.Metadata,
-		Key:       a.convertData(r.Key),
-		Payload:   a.convertData(r.Payload),
-		CreatedAt: r.CreatedAt,
+		Before:    a.convertEntity(r.Before),
+		After:     a.convertEntity(r.After),
+	}
+}
+
+func (a *sourcePluginAdapter) convertEntity(e Entity) cpluginv1.Entity {
+	return cpluginv1.Entity{
+		Key:     a.convertData(e.Key),
+		Payload: a.convertData(e.Payload),
 	}
 }
 

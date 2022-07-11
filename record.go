@@ -17,26 +17,60 @@ package sdk
 import (
 	"encoding/json"
 	"fmt"
-	"time"
+
+	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 )
+
+const (
+	OperationCreate Operation = iota + 1
+	OperationUpdate
+	OperationDelete
+	OperationSnapshot
+)
+
+// Operation defines what triggered the creation of a record.
+type Operation int
+
+func _() {
+	// An "invalid array index" compiler error signifies that the constant values have changed.
+	var cTypes [1]struct{}
+	_ = cTypes[int(OperationCreate)-int(cpluginv1.OperationCreate)]
+	_ = cTypes[int(OperationUpdate)-int(cpluginv1.OperationUpdate)]
+	_ = cTypes[int(OperationDelete)-int(cpluginv1.OperationDelete)]
+	_ = cTypes[int(OperationSnapshot)-int(cpluginv1.OperationSnapshot)]
+}
 
 // Record represents a single data record produced by a source and/or consumed
 // by a destination connector.
 type Record struct {
 	// Position uniquely represents the record.
 	Position Position
+	// Operation defines what triggered the creation of a record. There are four
+	// possibilities: create, update, delete or snapshot. The first three
+	// operations are encountered during normal CDC operation, while "snapshot"
+	// is meant to represent records during an initial load. Depending on the
+	// operation, the record will contain either the state before the change,
+	// after the change, or both (see fields Before and After).
+	Operation Operation
 	// Metadata contains additional information regarding the record.
 	Metadata map[string]string
-	// CreatedAt represents the time when the change occurred in the source
-	// system. If that's impossible to find out, then it should be the time the
-	// change was detected by the connector.
-	CreatedAt time.Time
-	// Key represents a value that should be the same for records originating
-	// from the same source entry (e.g. same DB row). In a destination Key will
-	// never be null.
+
+	// Before contains the state of the entity before the operation occurred.
+	// This field should only be populated for operations update and delete.
+	Before Entity
+	// After contains the state of the entity after the operation occurred. This
+	// field should only be populated for operations create, update, snapshot.
+	After Entity
+}
+
+type Entity struct {
+	// Key represents a value that should identify the entity (e.g. database
+	// row). In a destination Key will never be null.
 	Key Data
-	// Payload holds the actual information that the record is transmitting. In
-	// a destination Payload will never be null.
+	// Payload holds the actual data of the entity.
+	// If the key and payload both contain structured data it is preferable not
+	// to include the key data in the payload data.
+	// In a destination Payload will never be null.
 	Payload Data
 }
 
