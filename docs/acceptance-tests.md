@@ -213,7 +213,7 @@ flowchart TD;
 | Test 2 - detect X raw records                                | :white_check_mark:                                                                                         | :white_check_mark:*                                                                                     |
 | **Does the destination connector mutate entities in place?** |                                                                                                            | :white_check_mark:                                                                                      |
 | Test 1 - apply delete                                        |                                                                                                            | :white_check_mark:                                                                                      |
-| Test 1 - apply update                                        |                                                                                                            | :white_check_mark:                                                                                      |
+| Test 2 - apply update                                        |                                                                                                            | :white_check_mark:                                                                                      |
 
 \* A mutating destination should _probably_ support writing raw records, but it shouldn't be a hard requirement. For instance a DB destination connector might need structured data to map values to columns.
 
