@@ -63,6 +63,19 @@ type Record struct {
 	After Entity
 }
 
+// Bytes returns the JSON encoding of the Record.
+// TODO in the future the behavior of this function will be configurable through
+//  the SDK.
+func (r Record) Bytes() []byte {
+	b, err := json.Marshal(r)
+	if err != nil {
+		// Unlikely to happen, we receive content from a plugin through GRPC.
+		// If the content could be marshaled as protobuf it can be as JSON.
+		panic(fmt.Errorf("error while marshaling Entity as JSON: %w", err))
+	}
+	return b
+}
+
 type Entity struct {
 	// Key represents a value that should identify the entity (e.g. database
 	// row). In a destination Key will never be null.
@@ -109,7 +122,7 @@ func (d StructuredData) Bytes() []byte {
 	if err != nil {
 		// Unlikely to happen, we receive content from a plugin through GRPC.
 		// If the content could be marshaled as protobuf it can be as JSON.
-		panic(fmt.Errorf("StructuredData error while marshaling as JSON: %w", err))
+		panic(fmt.Errorf("error while marshaling StructuredData as JSON: %w", err))
 	}
 	return b
 }
