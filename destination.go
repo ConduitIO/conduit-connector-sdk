@@ -327,3 +327,44 @@ func (a *destinationPluginAdapter) convertData(d cpluginv1.Data) Data {
 		panic("unknown data type")
 	}
 }
+
+// destinationUtil provides utility methods for implementing a destination.
+type destinationUtil struct{}
+
+// Route makes it easier to implement a destination that mutates entities in
+// place and thus handles different operations differently. It will inspect the
+// operation on the record and based on that choose which handler to call.
+//
+// Example usage:
+//   func (d *Destination) Write(ctx context.Context, r sdk.Record) error {
+//     return d.Util.Route(ctx, r,
+//       d.handleInsert,
+//       d.handleUpdate,
+//       d.handleDelete,
+//       d.handleSnapshot, // we could also reuse d.handleInsert
+//     )
+//   }
+//   func (d *Destination) handleInsert(ctx context.Context, r sdk.Record) error {
+//     ...
+//   }
+func (u destinationUtil) Route(
+	ctx context.Context,
+	rec Record,
+	handleCreate func(context.Context, Record) error,
+	handleUpdate func(context.Context, Record) error,
+	handleDelete func(context.Context, Record) error,
+	handleSnapshot func(context.Context, Record) error,
+) error {
+	switch rec.Operation {
+	case OperationCreate:
+		return handleCreate(ctx, rec)
+	case OperationUpdate:
+		return handleUpdate(ctx, rec)
+	case OperationDelete:
+		return handleDelete(ctx, rec)
+	case OperationSnapshot:
+		return handleSnapshot(ctx, rec)
+	default:
+		return fmt.Errorf("invalid operation %q", rec.Operation)
+	}
+}
