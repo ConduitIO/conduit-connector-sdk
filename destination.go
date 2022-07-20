@@ -347,7 +347,7 @@ type destinationUtil struct{}
 //   func (d *Destination) handleInsert(ctx context.Context, r sdk.Record) error {
 //     ...
 //   }
-func (u destinationUtil) Route(
+func (destinationUtil) Route(
 	ctx context.Context,
 	rec Record,
 	handleCreate func(context.Context, Record) error,

@@ -295,3 +295,92 @@ func (a *sourcePluginAdapter) convertData(d Data) cpluginv1.Data {
 		panic("unknown data type")
 	}
 }
+
+// sourceUtil provides utility methods for implementing a source.
+type sourceUtil struct{}
+
+// NewRecordCreate can be used to instantiate a record with OperationCreate.
+func (sourceUtil) NewRecordCreate(
+	position Position,
+	metadata map[string]string,
+	key Data,
+	payload Data,
+) Record {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	SetMetadataReadAt(metadata, time.Now())
+	return Record{
+		Position:  position,
+		Operation: OperationCreate,
+		Metadata:  metadata,
+		Key:       key,
+		Payload: Change{
+			After: payload,
+		},
+	}
+}
+
+// NewRecordSnapshot can be used to instantiate a record with OperationSnapshot.
+func (sourceUtil) NewRecordSnapshot(
+	position Position,
+	metadata map[string]string,
+	key Data,
+	payload Data,
+) Record {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	SetMetadataReadAt(metadata, time.Now())
+	return Record{
+		Position:  position,
+		Operation: OperationSnapshot,
+		Metadata:  metadata,
+		Key:       key,
+		Payload: Change{
+			After: payload,
+		},
+	}
+}
+
+// NewRecordUpdate can be used to instantiate a record with OperationUpdate.
+func (sourceUtil) NewRecordUpdate(
+	position Position,
+	metadata map[string]string,
+	key Data,
+	payloadBefore Data,
+	payloadAfter Data,
+) Record {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	SetMetadataReadAt(metadata, time.Now())
+	return Record{
+		Position:  position,
+		Operation: OperationUpdate,
+		Metadata:  metadata,
+		Key:       key,
+		Payload: Change{
+			Before: payloadBefore,
+			After:  payloadAfter,
+		},
+	}
+}
+
+// NewRecordDelete can be used to instantiate a record with OperationDelete.
+func (sourceUtil) NewRecordDelete(
+	position Position,
+	metadata map[string]string,
+	key Data,
+) Record {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	SetMetadataReadAt(metadata, time.Now())
+	return Record{
+		Position:  position,
+		Operation: OperationDelete,
+		Metadata:  metadata,
+		Key:       key,
+	}
+}
