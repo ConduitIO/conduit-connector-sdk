@@ -113,10 +113,10 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 		Position:  Position("foo"),
 		Operation: OperationCreate,
 		Metadata:  map[string]string{"foo": "bar"},
-		Before:    Entity{ /* create has no before */ },
-		After: Entity{
-			Key: RawData("bar"),
-			Payload: StructuredData{
+		Key:       RawData("bar"),
+		Payload: Change{
+			Before: nil, // create has no before
+			After: StructuredData{
 				"x": "y",
 				"z": 3,
 			},
@@ -154,10 +154,10 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 				Position:  want.Position,
 				Operation: cpluginv1.Operation(want.Operation),
 				Metadata:  want.Metadata,
-				Before:    cpluginv1.Entity{ /* create has no before */ },
-				After: cpluginv1.Entity{
-					Key:     cpluginv1.RawData(want.After.Key.(RawData)),
-					Payload: cpluginv1.StructuredData(want.After.Payload.(StructuredData)),
+				Key:       cpluginv1.RawData(want.Key.(RawData)),
+				Payload: cpluginv1.Change{
+					Before: nil, // create has no before
+					After:  cpluginv1.StructuredData(want.Payload.After.(StructuredData)),
 				},
 			},
 		})
@@ -170,10 +170,10 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 			Position:  wantLast.Position,
 			Operation: cpluginv1.Operation(want.Operation),
 			Metadata:  want.Metadata,
-			Before:    cpluginv1.Entity{ /* create has no before */ },
-			After: cpluginv1.Entity{
-				Key:     cpluginv1.RawData(want.After.Key.(RawData)),
-				Payload: cpluginv1.StructuredData(want.After.Payload.(StructuredData)),
+			Key:       cpluginv1.RawData(want.Key.(RawData)),
+			Payload: cpluginv1.Change{
+				Before: nil, // create has no before
+				After:  cpluginv1.StructuredData(want.Payload.After.(StructuredData)),
 			},
 		},
 	})

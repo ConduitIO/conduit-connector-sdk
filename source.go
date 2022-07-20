@@ -269,15 +269,15 @@ func (a *sourcePluginAdapter) convertRecord(r Record) cpluginv1.Record {
 		Position:  r.Position,
 		Operation: cpluginv1.Operation(r.Operation),
 		Metadata:  r.Metadata,
-		Before:    a.convertEntity(r.Before),
-		After:     a.convertEntity(r.After),
+		Key:       a.convertData(r.Key),
+		Payload:   a.convertChange(r.Payload),
 	}
 }
 
-func (a *sourcePluginAdapter) convertEntity(e Entity) cpluginv1.Entity {
-	return cpluginv1.Entity{
-		Key:     a.convertData(e.Key),
-		Payload: a.convertData(e.Payload),
+func (a *sourcePluginAdapter) convertChange(c Change) cpluginv1.Change {
+	return cpluginv1.Change{
+		Before: a.convertData(c.Before),
+		After:  a.convertData(c.After),
 	}
 }
 

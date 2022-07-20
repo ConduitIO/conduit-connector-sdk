@@ -49,18 +49,18 @@ type Record struct {
 	// possibilities: create, update, delete or snapshot. The first three
 	// operations are encountered during normal CDC operation, while "snapshot"
 	// is meant to represent records during an initial load. Depending on the
-	// operation, the record will contain either the state before the change,
-	// after the change, or both (see fields Before and After).
+	// operation, the record will contain either the payload before the change,
+	// after the change, or both (see field Payload).
 	Operation Operation
 	// Metadata contains additional information regarding the record.
 	Metadata map[string]string
 
-	// Before contains the state of the entity before the operation occurred.
-	// This field should only be populated for operations update and delete.
-	Before Entity
-	// After contains the state of the entity after the operation occurred. This
-	// field should only be populated for operations create, update, snapshot.
-	After Entity
+	// Key represents a value that should identify the entity (e.g. database
+	// row).
+	Key Data
+	// Payload holds the payload change (data before and after the operation
+	// occurred).
+	Payload Change
 }
 
 // Bytes returns the JSON encoding of the Record.
@@ -76,15 +76,15 @@ func (r Record) Bytes() []byte {
 	return b
 }
 
-type Entity struct {
-	// Key represents a value that should identify the entity (e.g. database
-	// row). In a destination Key will never be null.
-	Key Data
-	// Payload holds the actual data of the entity.
-	// If the key and payload both contain structured data it is preferable not
-	// to include the key data in the payload data.
-	// In a destination Payload will never be null.
-	Payload Data
+type Change struct {
+	// Before contains the data before the operation occurred. This field is
+	// optional and should only be populated for operations OperationUpdate
+	// OperationDelete (if the system supports fetching the data before the
+	// operation).
+	Before Data
+	// After contains the data after the operation occurred. This field should
+	// be populated for all operations except OperationDelete.
+	After Data
 }
 
 // Position is a unique identifier for a record. It is the responsibility of the

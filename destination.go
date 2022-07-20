@@ -301,15 +301,15 @@ func (a *destinationPluginAdapter) convertRecord(r cpluginv1.Record) Record {
 		Position:  r.Position,
 		Operation: Operation(r.Operation),
 		Metadata:  r.Metadata,
-		Before:    a.convertEntity(r.Before),
-		After:     a.convertEntity(r.After),
+		Key:       a.convertData(r.Key),
+		Payload:   a.convertChange(r.Payload),
 	}
 }
 
-func (a *destinationPluginAdapter) convertEntity(e cpluginv1.Entity) Entity {
-	return Entity{
-		Key:     a.convertData(e.Key),
-		Payload: a.convertData(e.Payload),
+func (a *destinationPluginAdapter) convertChange(c cpluginv1.Change) Change {
+	return Change{
+		Before: a.convertData(c.Before),
+		After:  a.convertData(c.After),
 	}
 }
 

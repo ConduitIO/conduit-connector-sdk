@@ -229,15 +229,11 @@ func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T, op Operat
 		Position:  Position(d.randString(32)), // position doesn't matter, as long as it's unique
 		Operation: op,
 		Metadata:  map[string]string{d.randString(32): d.randString(32)},
-		Before:    Entity{},
-		After:     d.GenerateEntity(t),
-	}
-}
-
-func (d ConfigurableAcceptanceTestDriver) GenerateEntity(t *testing.T) Entity {
-	return Entity{
-		Key:     d.GenerateData(t),
-		Payload: d.GenerateData(t),
+		Key:       d.GenerateData(t),
+		Payload: Change{
+			Before: nil,
+			After:  d.GenerateData(t),
+		},
 	}
 }
 
@@ -1095,20 +1091,20 @@ func (a acceptanceTest) isEqualRecords(is *is.I, want, got []Record) {
 		// TODO we use Reord.After.Payload to detect records that are the same.
 		//  We can take this shortcut because we only generate "create" and
 		//  "snapshot" records right now.
-		wantMap[string(want[i].After.Payload.Bytes())] = want[i]
+		wantMap[string(want[i].Payload.After.Bytes())] = want[i]
 		// hacky way to enable support for connectors that write whole records
 		// to the 3rd party system
 		wantMap[string(want[i].Bytes())] = Record{
 			Position:  nil,
 			Operation: want[i].Operation,
 			Metadata:  want[i].Metadata,
-			Before:    Entity{},
-			After: Entity{
-				Key:     nil, // TODO key could be anything, we incorrectly expect it to be nil though
-				Payload: RawData(want[i].Bytes()),
+			Key:       nil, // TODO key could be anything, we incorrectly expect it to be nil though
+			Payload: Change{
+				Before: nil,
+				After:  RawData(want[i].Bytes()),
 			},
 		}
-		gotMap[string(got[i].After.Payload.Bytes())] = got[i]
+		gotMap[string(got[i].Payload.After.Bytes())] = got[i]
 	}
 
 	is.Equal(len(got), len(gotMap)) // record payloads are not unique
@@ -1132,8 +1128,8 @@ func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
 		is.Equal(want.Operation, got.Operation) // record operation did not match (want != got)
 	}
 
-	a.isEqualEntity(is, want.Before, got.Before)
-	a.isEqualEntity(is, want.After, got.After)
+	a.isEqualData(is, want.Key, got.Key)
+	a.isEqualChange(is, want.Payload, got.Payload)
 
 	// check metadata fields, if they are there they should match
 	if len(got.Metadata) == 0 {
@@ -1148,9 +1144,9 @@ func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
 	}
 }
 
-func (a acceptanceTest) isEqualEntity(is *is.I, want, got Entity) {
-	a.isEqualData(is, want.Key, got.Key)
-	a.isEqualData(is, want.Payload, got.Payload)
+func (a acceptanceTest) isEqualChange(is *is.I, want, got Change) {
+	a.isEqualData(is, want.Before, got.Before)
+	a.isEqualData(is, want.After, got.After)
 }
 
 // isEqualData will match the two data objects in their entirety if the types
