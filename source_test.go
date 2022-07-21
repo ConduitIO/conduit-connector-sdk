@@ -111,12 +111,15 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 
 	want := Record{
 		Position:  Position("foo"),
+		Operation: OperationCreate,
 		Metadata:  map[string]string{"foo": "bar"},
-		CreatedAt: time.Now().UTC(),
 		Key:       RawData("bar"),
-		Payload: StructuredData{
-			"x": "y",
-			"z": 3,
+		Payload: Change{
+			Before: nil, // create has no before
+			After: StructuredData{
+				"x": "y",
+				"z": 3,
+			},
 		},
 	}
 	wantLast := want
@@ -149,10 +152,13 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 		is.Equal(resp, cpluginv1.SourceRunResponse{
 			Record: cpluginv1.Record{
 				Position:  want.Position,
+				Operation: cpluginv1.Operation(want.Operation),
 				Metadata:  want.Metadata,
-				CreatedAt: want.CreatedAt,
 				Key:       cpluginv1.RawData(want.Key.(RawData)),
-				Payload:   cpluginv1.StructuredData(want.Payload.(StructuredData)),
+				Payload: cpluginv1.Change{
+					Before: nil, // create has no before
+					After:  cpluginv1.StructuredData(want.Payload.After.(StructuredData)),
+				},
 			},
 		})
 	}
@@ -162,10 +168,13 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	is.Equal(resp, cpluginv1.SourceRunResponse{
 		Record: cpluginv1.Record{
 			Position:  wantLast.Position,
-			Metadata:  wantLast.Metadata,
-			CreatedAt: wantLast.CreatedAt,
-			Key:       cpluginv1.RawData(wantLast.Key.(RawData)),
-			Payload:   cpluginv1.StructuredData(wantLast.Payload.(StructuredData)),
+			Operation: cpluginv1.Operation(want.Operation),
+			Metadata:  want.Metadata,
+			Key:       cpluginv1.RawData(want.Key.(RawData)),
+			Payload: cpluginv1.Change{
+				Before: nil, // create has no before
+				After:  cpluginv1.StructuredData(want.Payload.After.(StructuredData)),
+			},
 		},
 	})
 

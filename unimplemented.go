@@ -17,7 +17,10 @@ package sdk
 import "context"
 
 // UnimplementedDestination should be embedded to have forward compatible implementations.
-type UnimplementedDestination struct{}
+type UnimplementedDestination struct {
+	// Util provides utility methods for implementing a destination.
+	Util destinationUtil
+}
 
 // Configure needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Configure(context.Context, map[string]string) error {
@@ -54,7 +57,10 @@ func (UnimplementedDestination) Teardown(context.Context) error {
 func (UnimplementedDestination) mustEmbedUnimplementedDestination() {}
 
 // UnimplementedSource should be embedded to have forward compatible implementations.
-type UnimplementedSource struct{}
+type UnimplementedSource struct {
+	// Util provides utility methods for implementing a source.
+	Util sourceUtil
+}
 
 // Configure needs to be overridden in the actual implementation.
 func (UnimplementedSource) Configure(context.Context, map[string]string) error {
