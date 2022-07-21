@@ -15,12 +15,14 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -1084,37 +1086,50 @@ func (a acceptanceTest) isEqualRecords(is *is.I, want, got []Record) {
 		return
 	}
 
-	// transform slices into maps so we can disregard the order
-	wantMap := make(map[string]Record, len(want))
-	gotMap := make(map[string]Record, len(got))
-	for i := 0; i < len(want); i++ {
-		// TODO we use Reord.After.Payload to detect records that are the same.
-		//  We can take this shortcut because we only generate "create" and
-		//  "snapshot" records right now.
-		wantMap[string(want[i].Payload.After.Bytes())] = want[i]
-		// hacky way to enable support for connectors that write whole records
-		// to the 3rd party system
-		wantMap[string(want[i].Bytes())] = Record{
-			Position:  nil,
-			Operation: want[i].Operation,
-			Metadata:  want[i].Metadata,
-			Key:       nil, // TODO key could be anything, we incorrectly expect it to be nil though
-			Payload: Change{
-				Before: nil,
-				After:  RawData(want[i].Bytes()),
-			},
+	a.sortMatchingRecords(want, got)
+
+	if bytes.Equal(want[0].Bytes(), got[0].Payload.After.Bytes()) {
+		// the payload of the actual record matches the whole record in the
+		// expectation, the destination apparently writes records as a whole and
+		// retrieves them as a whole in the payload
+		// this is valid behavior, we need to adjust the expectations
+		for i, wantRec := range want {
+			want[i] = Record{
+				Position:  nil,
+				Operation: OperationSnapshot, // we allow operations Snapshot or Create
+				Metadata:  nil,               // no expectation for metadata
+				Key:       got[i].Key,        // no expectation for key
+				Payload: Change{
+					Before: nil,
+					After:  RawData(wantRec.Bytes()), // the payload should contain the whole expected record
+				},
+			}
 		}
-		gotMap[string(got[i].Payload.After.Bytes())] = got[i]
 	}
 
-	is.Equal(len(got), len(gotMap)) // record payloads are not unique
-
-	for key, gotRec := range gotMap {
-		wantRec, ok := wantMap[key]
-		is.True(ok) // expected record not found
-
-		a.isEqualRecord(is, wantRec, gotRec)
+	for i := range want {
+		a.isEqualRecord(is, want[i], got[i])
 	}
+}
+
+func (a acceptanceTest) sortMatchingRecords(want, got []Record) {
+	sort.Slice(want, func(i, j int) bool {
+		return string(want[i].Payload.After.Bytes()) < string(want[j].Payload.After.Bytes())
+	})
+	sort.Slice(got, func(i, j int) bool {
+		return string(got[i].Payload.After.Bytes()) < string(got[j].Payload.After.Bytes())
+	})
+
+	// check if first record payload matches to ensure we have the right order
+	if bytes.Equal(want[0].Payload.After.Bytes(), got[0].Payload.After.Bytes()) {
+		return // all good
+	}
+
+	// record payloads didn't match, we assume the destination writes whole
+	// records, we should sort the want records based on their bytes then
+	sort.Slice(want, func(i, j int) bool {
+		return string(want[i].Bytes()) < string(want[j].Bytes())
+	})
 }
 
 func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
