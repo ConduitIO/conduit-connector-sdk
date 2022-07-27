@@ -15,16 +15,11 @@
 package sdk
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
-)
-
-var (
-	ErrMetadataValueNotFound = errors.New("metadata value not found")
 )
 
 const (
@@ -60,14 +55,21 @@ func (MetadataUtil) SetOpenCDCVersion(metadata map[string]string) {
 	metadata[MetadataOpenCDCVersion] = cpluginv1.OpenCDCVersion
 }
 
+// GetOpenCDCVersion returns the value for key
+// MetadataOpenCDCVersion. If the value is does not exist or is empty the
+// function returns ErrMetadataFieldNotFound.
+func (u MetadataUtil) GetOpenCDCVersion(metadata map[string]string) (string, error) {
+	return u.getValue(metadata, MetadataOpenCDCVersion)
+}
+
 // GetCreatedAt parses the value for key MetadataCreatedAt as a unix
 // timestamp. If the value does not exist or the value is empty the function
-// returns ErrMetadataValueNotFound. If the value is not a valid unix timestamp
+// returns ErrMetadataFieldNotFound. If the value is not a valid unix timestamp
 // in nanoseconds the function returns an error.
 func (MetadataUtil) GetCreatedAt(metadata map[string]string) (time.Time, error) {
 	raw := metadata[MetadataCreatedAt]
 	if raw == "" {
-		return time.Time{}, fmt.Errorf("failed to get value for %q: %w", MetadataCreatedAt, ErrMetadataValueNotFound)
+		return time.Time{}, fmt.Errorf("failed to get value for %q: %w", MetadataCreatedAt, ErrMetadataFieldNotFound)
 	}
 
 	unixNano, err := strconv.ParseInt(raw, 10, 64)
@@ -86,12 +88,12 @@ func (MetadataUtil) SetCreatedAt(metadata map[string]string, createdAt time.Time
 
 // GetReadAt parses the value for key MetadataReadAt as a unix
 // timestamp. If the value does not exist or the value is empty the function
-// returns ErrMetadataValueNotFound. If the value is not a valid unix timestamp
+// returns ErrMetadataFieldNotFound. If the value is not a valid unix timestamp
 // in nanoseconds the function returns an error.
 func (MetadataUtil) GetReadAt(metadata map[string]string) (time.Time, error) {
 	raw := metadata[MetadataReadAt]
 	if raw == "" {
-		return time.Time{}, fmt.Errorf("failed to get value for %q: %w", MetadataReadAt, ErrMetadataValueNotFound)
+		return time.Time{}, fmt.Errorf("failed to get value for %q: %w", MetadataReadAt, ErrMetadataFieldNotFound)
 	}
 
 	unixNano, err := strconv.ParseInt(raw, 10, 64)
@@ -110,7 +112,7 @@ func (MetadataUtil) SetReadAt(metadata map[string]string, createdAt time.Time) {
 
 // GetConduitPluginName returns the value for key
 // MetadataConduitPluginName. If the value is does not exist or is empty the
-// function returns ErrMetadataValueNotFound.
+// function returns ErrMetadataFieldNotFound.
 func (u MetadataUtil) GetConduitPluginName(metadata map[string]string) (string, error) {
 	return u.getValue(metadata, MetadataConduitPluginName)
 }
@@ -123,7 +125,7 @@ func (MetadataUtil) SetConduitPluginName(metadata map[string]string, name string
 
 // GetConduitPluginVersion returns the value for key
 // MetadataConduitPluginVersion. If the value is does not exist or is empty the
-// function returns ErrMetadataValueNotFound.
+// function returns ErrMetadataFieldNotFound.
 func (u MetadataUtil) GetConduitPluginVersion(metadata map[string]string) (string, error) {
 	return u.getValue(metadata, MetadataConduitPluginVersion)
 }
@@ -135,11 +137,11 @@ func (MetadataUtil) SetConduitPluginVersion(metadata map[string]string, version 
 }
 
 // getValue returns the value for a specific key. If the value is does
-// not exist or is empty the function returns ErrMetadataValueNotFound.
+// not exist or is empty the function returns ErrMetadataFieldNotFound.
 func (MetadataUtil) getValue(metadata map[string]string, key string) (string, error) {
 	str := metadata[key]
 	if str == "" {
-		return "", fmt.Errorf("failed to get value for %q: %w", key, ErrMetadataValueNotFound)
+		return "", fmt.Errorf("failed to get value for %q: %w", key, ErrMetadataFieldNotFound)
 	}
 	return str, nil
 }
