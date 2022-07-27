@@ -328,8 +328,8 @@ func (a *destinationPluginAdapter) convertData(d cpluginv1.Data) Data {
 	}
 }
 
-// destinationUtil provides utility methods for implementing a destination.
-type destinationUtil struct{}
+// DestinationUtil provides utility methods for implementing a destination.
+type DestinationUtil struct{}
 
 // Route makes it easier to implement a destination that mutates entities in
 // place and thus handles different operations differently. It will inspect the
@@ -347,7 +347,7 @@ type destinationUtil struct{}
 //   func (d *Destination) handleInsert(ctx context.Context, r sdk.Record) error {
 //     ...
 //   }
-func (destinationUtil) Route(
+func (DestinationUtil) Route(
 	ctx context.Context,
 	rec Record,
 	handleCreate func(context.Context, Record) error,

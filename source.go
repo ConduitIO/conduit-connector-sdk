@@ -296,11 +296,13 @@ func (a *sourcePluginAdapter) convertData(d Data) cpluginv1.Data {
 	}
 }
 
-// sourceUtil provides utility methods for implementing a source.
-type sourceUtil struct{}
+// SourceUtil provides utility methods for implementing a source.
+type SourceUtil struct {
+	mu MetadataUtil
+}
 
 // NewRecordCreate can be used to instantiate a record with OperationCreate.
-func (sourceUtil) NewRecordCreate(
+func (u SourceUtil) NewRecordCreate(
 	position Position,
 	metadata map[string]string,
 	key Data,
@@ -309,7 +311,7 @@ func (sourceUtil) NewRecordCreate(
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
-	SetMetadataReadAt(metadata, time.Now())
+	u.mu.SetReadAt(metadata, time.Now())
 	return Record{
 		Position:  position,
 		Operation: OperationCreate,
@@ -322,7 +324,7 @@ func (sourceUtil) NewRecordCreate(
 }
 
 // NewRecordSnapshot can be used to instantiate a record with OperationSnapshot.
-func (sourceUtil) NewRecordSnapshot(
+func (u SourceUtil) NewRecordSnapshot(
 	position Position,
 	metadata map[string]string,
 	key Data,
@@ -331,7 +333,7 @@ func (sourceUtil) NewRecordSnapshot(
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
-	SetMetadataReadAt(metadata, time.Now())
+	u.mu.SetReadAt(metadata, time.Now())
 	return Record{
 		Position:  position,
 		Operation: OperationSnapshot,
@@ -344,7 +346,7 @@ func (sourceUtil) NewRecordSnapshot(
 }
 
 // NewRecordUpdate can be used to instantiate a record with OperationUpdate.
-func (sourceUtil) NewRecordUpdate(
+func (u SourceUtil) NewRecordUpdate(
 	position Position,
 	metadata map[string]string,
 	key Data,
@@ -354,7 +356,7 @@ func (sourceUtil) NewRecordUpdate(
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
-	SetMetadataReadAt(metadata, time.Now())
+	u.mu.SetReadAt(metadata, time.Now())
 	return Record{
 		Position:  position,
 		Operation: OperationUpdate,
@@ -368,7 +370,7 @@ func (sourceUtil) NewRecordUpdate(
 }
 
 // NewRecordDelete can be used to instantiate a record with OperationDelete.
-func (sourceUtil) NewRecordDelete(
+func (u SourceUtil) NewRecordDelete(
 	position Position,
 	metadata map[string]string,
 	key Data,
@@ -376,7 +378,7 @@ func (sourceUtil) NewRecordDelete(
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
-	SetMetadataReadAt(metadata, time.Now())
+	u.mu.SetReadAt(metadata, time.Now())
 	return Record{
 		Position:  position,
 		Operation: OperationDelete,
