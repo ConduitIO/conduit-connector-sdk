@@ -47,20 +47,6 @@ func (mr *MockDestinationMockRecorder) Configure(arg0, arg1 interface{}) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Configure", reflect.TypeOf((*MockDestination)(nil).Configure), arg0, arg1)
 }
 
-// Flush mocks base method.
-func (m *MockDestination) Flush(arg0 context.Context) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Flush", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Flush indicates an expected call of Flush.
-func (mr *MockDestinationMockRecorder) Flush(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Flush", reflect.TypeOf((*MockDestination)(nil).Flush), arg0)
-}
-
 // Open mocks base method.
 func (m *MockDestination) Open(arg0 context.Context) error {
 	m.ctrl.T.Helper()
@@ -90,31 +76,18 @@ func (mr *MockDestinationMockRecorder) Teardown(arg0 interface{}) *gomock.Call {
 }
 
 // Write mocks base method.
-func (m *MockDestination) Write(arg0 context.Context, arg1 Record) error {
+func (m *MockDestination) Write(arg0 context.Context, arg1 []Record) (int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Write", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Write indicates an expected call of Write.
 func (mr *MockDestinationMockRecorder) Write(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Write", reflect.TypeOf((*MockDestination)(nil).Write), arg0, arg1)
-}
-
-// WriteAsync mocks base method.
-func (m *MockDestination) WriteAsync(arg0 context.Context, arg1 Record, arg2 AckFunc) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WriteAsync", arg0, arg1, arg2)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// WriteAsync indicates an expected call of WriteAsync.
-func (mr *MockDestinationMockRecorder) WriteAsync(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WriteAsync", reflect.TypeOf((*MockDestination)(nil).WriteAsync), arg0, arg1, arg2)
 }
 
 // mustEmbedUnimplementedDestination mocks base method.

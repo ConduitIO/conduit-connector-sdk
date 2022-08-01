@@ -368,11 +368,7 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []
 		is.NoErr(err)
 	}()
 
-	// try to write using WriteAsync and fallback to Write if it's not supported
-	err = d.writeAsync(ctx, dest, records)
-	if errors.Is(err, ErrUnimplemented) {
-		err = d.write(ctx, dest, records)
-	}
+	_, err = dest.Write(ctx, records)
 	is.NoErr(err)
 
 	return records
@@ -445,61 +441,6 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
 
 	return output
-}
-
-// writeAsync writes records to destination using Destination.WriteAsync.
-func (d ConfigurableAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destination, records []Record) error {
-	var waitForAck sync.WaitGroup
-	var ackErr error
-
-	for _, r := range records {
-		waitForAck.Add(1)
-		ack := func(err error) error {
-			defer waitForAck.Done()
-			if ackErr == nil { // only overwrite a nil error
-				ackErr = err
-			}
-			return nil
-		}
-		err := dest.WriteAsync(ctx, r, ack)
-		if err != nil {
-			return err
-		}
-	}
-	// flush to make sure the records get written to the destination
-	err := dest.Flush(ctx)
-	if err != nil {
-		return err
-	}
-
-	// TODO create timeout for wait to prevent deadlock for badly written connectors
-	waitForAck.Wait()
-	if ackErr != nil {
-		return ackErr
-	}
-
-	// records were successfully written
-	return nil
-}
-
-// write writes records to destination using Destination.Write.
-func (d ConfigurableAcceptanceTestDriver) write(ctx context.Context, dest Destination, records []Record) error {
-	for _, r := range records {
-		err := dest.Write(ctx, r)
-		if err != nil {
-			return err
-		}
-	}
-
-	// flush to make sure the records get written to the destination, but allow
-	// it to be unimplemented
-	err := dest.Flush(ctx)
-	if err != nil && !errors.Is(err, ErrUnimplemented) {
-		return err
-	}
-
-	// records were successfully written
-	return nil
 }
 
 type acceptanceTest struct {
@@ -862,32 +803,6 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	}
 }
 
-func (a acceptanceTest) TestDestination_WriteOrWriteAsync(t *testing.T) {
-	a.skipIfNoDestination(t)
-	is := is.New(t)
-	ctx := context.Background()
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
-
-	dest, cleanup := a.openDestination(ctx, t)
-	defer cleanup()
-
-	writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
-	defer cancel()
-	errWrite := dest.Write(writeCtx, a.driver.GenerateRecord(t, OperationCreate))
-
-	writeCtx, cancel = context.WithTimeout(ctx, a.driver.WriteTimeout())
-	defer cancel()
-	errWriteAsync := dest.WriteAsync(writeCtx, a.driver.GenerateRecord(t, OperationCreate), func(err error) error { return nil })
-
-	is.True((errors.Is(errWrite, ErrUnimplemented)) != (errors.Is(errWriteAsync, ErrUnimplemented))) // either Write or WriteAsync should be implemented, not both
-
-	// Flush in case it's an async write and the connector expects this call
-	err := dest.Flush(ctx)
-	if !errors.Is(err, ErrUnimplemented) {
-		is.NoErr(err)
-	}
-}
-
 func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
@@ -899,59 +814,12 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 
 	want := a.generateRecords(t, OperationSnapshot, 20)
 
-	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
-		defer cancel()
-		err := dest.Write(writeCtx, r)
-		if i == 0 && errors.Is(err, ErrUnimplemented) {
-			t.Skip("Write not implemented")
-		}
-		is.NoErr(err)
-	}
+	writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
+	defer cancel()
 
-	// Flush is optional, we allow it to be unimplemented
-	err := dest.Flush(ctx)
-	if !errors.Is(err, ErrUnimplemented) {
-		is.NoErr(err)
-	}
-
-	got := a.driver.ReadFromDestination(t, want)
-	a.isEqualRecords(is, want, got)
-}
-
-func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
-	a.skipIfNoDestination(t)
-	is := is.New(t)
-	ctx := context.Background()
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
-
-	dest, cleanup := a.openDestination(ctx, t)
-	defer cleanup()
-
-	want := a.generateRecords(t, OperationSnapshot, 20)
-
-	var ackWg sync.WaitGroup
-	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
-		defer cancel()
-
-		ackWg.Add(1)
-		err := dest.WriteAsync(writeCtx, r, func(err error) error {
-			defer ackWg.Done()
-			return err // TODO check error, but not here, we might not be in the right goroutine
-		})
-		if i == 0 && errors.Is(err, ErrUnimplemented) {
-			t.Skip("WriteAsync not implemented")
-		}
-		is.NoErr(err)
-	}
-
-	err := dest.Flush(ctx)
+	n, err := dest.Write(writeCtx, want)
 	is.NoErr(err)
-
-	// wait for acks to get called
-	// TODO timeout if it takes too long
-	ackWg.Wait()
+	is.Equal(n, len(want))
 
 	got := a.driver.ReadFromDestination(t, want)
 	a.isEqualRecords(is, want, got)

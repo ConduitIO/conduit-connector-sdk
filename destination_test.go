@@ -102,7 +102,7 @@ func TestDestinationPluginAdapter_Start_Logger(t *testing.T) {
 	is.NoErr(err)
 }
 
-func TestDestinationPluginAdapter_Run_WriteAsync(t *testing.T) {
+func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
@@ -124,10 +124,7 @@ func TestDestinationPluginAdapter_Run_WriteAsync(t *testing.T) {
 	}
 
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
-	dst.EXPECT().WriteAsync(gomock.Any(), want, gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ Record, ackFunc AckFunc) error {
-			return ackFunc(nil)
-		}).Times(2)
+	dst.EXPECT().Write(gomock.Any(), []Record{want}).Return(1, nil).Times(2)
 
 	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
 
@@ -143,78 +140,7 @@ func TestDestinationPluginAdapter_Run_WriteAsync(t *testing.T) {
 	}()
 
 	for i := 0; i < 2; i++ {
-		// write the same record twice to check if WriteAsync is skipped the
-		// second time
-		reqStream <- cpluginv1.DestinationRunRequest{
-			Record: cpluginv1.Record{
-				Position:  want.Position,
-				Operation: cpluginv1.Operation(want.Operation),
-				Metadata:  want.Metadata,
-				Key:       cpluginv1.RawData(want.Key.(RawData)),
-				Payload: cpluginv1.Change{
-					Before: nil, // create has no before
-					After:  cpluginv1.StructuredData(want.Payload.After.(StructuredData)),
-				},
-			},
-		}
-		resp := <-respStream
-		is.Equal(resp, cpluginv1.DestinationRunResponse{
-			AckPosition: want.Position,
-			Error:       "",
-		})
-	}
-
-	// close stream after 2 records
-	close(reqStream)
-	close(respStream)
-
-	// wait for Run to exit
-	<-runDone
-}
-
-func TestDestinationPluginAdapter_Run_WriteFallback(t *testing.T) {
-	is := is.New(t)
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
-
-	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
-
-	want := Record{
-		Position:  Position("foo"),
-		Operation: OperationCreate,
-		Metadata:  map[string]string{"foo": "bar"},
-		Key:       RawData("bar"),
-		Payload: Change{
-			Before: nil, // create has no before
-			After: StructuredData{
-				"x": "y",
-				"z": 3,
-			},
-		},
-	}
-
-	dst.EXPECT().Open(gomock.Any()).Return(nil)
-	// WriteAsync returns ErrUnimplemented, the sdk is expected to fall back to
-	// Write, all future calls should go directly to Write
-	dst.EXPECT().WriteAsync(gomock.Any(), gomock.Any(), gomock.Any()).Return(ErrUnimplemented)
-	dst.EXPECT().Write(gomock.Any(), want).Return(nil).Times(2)
-
-	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
-
-	ctx := context.Background()
-	_, err := dstPlugin.Start(ctx, cpluginv1.DestinationStartRequest{})
-	is.NoErr(err)
-
-	runDone := make(chan struct{})
-	go func() {
-		defer close(runDone)
-		err := dstPlugin.Run(ctx, stream)
-		is.NoErr(err)
-	}()
-
-	for i := 0; i < 2; i++ {
-		// write the same record twice to check if WriteAsync is skipped the
-		// second time
+		// write the same record twice
 		reqStream <- cpluginv1.DestinationRunRequest{
 			Record: cpluginv1.Record{
 				Position:  want.Position,
@@ -252,19 +178,8 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	lastRecord := Record{Position: Position("foo")}
 
 	// ackFunc stores the ackFunc so it can be called at a later time
-	var ackFunc AckFunc
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
-	dst.EXPECT().WriteAsync(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ Record, af AckFunc) error {
-			if ackFunc != nil {
-				// second time we actually call the previous ackFunc to simulate
-				// an asynchronous write
-				err := ackFunc(nil)
-				is.NoErr(err)
-			}
-			ackFunc = af
-			return nil
-		}).Times(2)
+	dst.EXPECT().Write(gomock.Any(), gomock.Any()).Return(1, nil)
 
 	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
 
@@ -278,10 +193,6 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 		err := dstPlugin.Run(ctx, stream)
 		is.NoErr(err)
 	}()
-
-	// first write a random record and receive the ack
-	reqStream <- cpluginv1.DestinationRunRequest{}
-	// don't receive ack at this point, we simulate an asynchronous write
 
 	// initiate stop and signal what the last record will be
 	// separate goroutine needed because Stop will block until last record
@@ -303,19 +214,12 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 		// continue
 	}
 
-	// only now we prepare the expectation to Flush, it shouldn't be called
-	// before receiving the last record
-	dst.EXPECT().Flush(gomock.Any()).DoAndReturn(func(context.Context) error {
-		return ackFunc(nil)
-	})
-
 	// send last record
 	reqStream <- cpluginv1.DestinationRunRequest{
 		Record: cpluginv1.Record{Position: lastRecord.Position},
 	}
-	// receive ack from first record
-	<-respStream
 
+	// stop should still block since acknowledgment wasn't sent back yet
 	select {
 	case <-stopDone:
 		is.Fail() // stop returned before all acks were sent back
@@ -323,7 +227,7 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 		// continue
 	}
 
-	// flush simulates the write of the last record, let's receive the ack now
+	// let's receive the ack now
 	<-respStream
 
 	select {
