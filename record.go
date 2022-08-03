@@ -60,7 +60,7 @@ type Record struct {
 	// after the change, or both (see field Payload).
 	Operation Operation `json:"operation"`
 	// Metadata contains additional information regarding the record.
-	Metadata map[string]string `json:"metadata"`
+	Metadata Metadata `json:"metadata"`
 
 	// Key represents a value that should identify the entity (e.g. database
 	// row).
@@ -69,6 +69,8 @@ type Record struct {
 	// occurred).
 	Payload Change `json:"payload"`
 }
+
+type Metadata map[string]string
 
 // Bytes returns the JSON encoding of the Record.
 // TODO in the future the behavior of this function will be configurable through
@@ -81,7 +83,7 @@ func (r Record) Bytes() []byte {
 	}
 
 	// before encoding the record set the opencdc version metadata field
-	Util.Metadata.SetOpenCDCVersion(r.Metadata)
+	r.Metadata.SetOpenCDCVersion()
 	// we don't want to mutate the metadata permanently, so we revert it
 	// when we are done
 	defer func() {

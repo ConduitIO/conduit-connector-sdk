@@ -302,14 +302,14 @@ type SourceUtil struct{}
 // NewRecordCreate can be used to instantiate a record with OperationCreate.
 func (SourceUtil) NewRecordCreate(
 	position Position,
-	metadata map[string]string,
+	metadata Metadata,
 	key Data,
 	payload Data,
 ) Record {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
-	Util.Metadata.SetReadAt(metadata, time.Now())
+	metadata.SetReadAt(time.Now())
 	return Record{
 		Position:  position,
 		Operation: OperationCreate,
@@ -324,14 +324,14 @@ func (SourceUtil) NewRecordCreate(
 // NewRecordSnapshot can be used to instantiate a record with OperationSnapshot.
 func (SourceUtil) NewRecordSnapshot(
 	position Position,
-	metadata map[string]string,
+	metadata Metadata,
 	key Data,
 	payload Data,
 ) Record {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
-	Util.Metadata.SetReadAt(metadata, time.Now())
+	metadata.SetReadAt(time.Now())
 	return Record{
 		Position:  position,
 		Operation: OperationSnapshot,
@@ -346,7 +346,7 @@ func (SourceUtil) NewRecordSnapshot(
 // NewRecordUpdate can be used to instantiate a record with OperationUpdate.
 func (SourceUtil) NewRecordUpdate(
 	position Position,
-	metadata map[string]string,
+	metadata Metadata,
 	key Data,
 	payloadBefore Data,
 	payloadAfter Data,
@@ -354,7 +354,7 @@ func (SourceUtil) NewRecordUpdate(
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
-	Util.Metadata.SetReadAt(metadata, time.Now())
+	metadata.SetReadAt(time.Now())
 	return Record{
 		Position:  position,
 		Operation: OperationUpdate,
@@ -370,13 +370,13 @@ func (SourceUtil) NewRecordUpdate(
 // NewRecordDelete can be used to instantiate a record with OperationDelete.
 func (SourceUtil) NewRecordDelete(
 	position Position,
-	metadata map[string]string,
+	metadata Metadata,
 	key Data,
 ) Record {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
-	Util.Metadata.SetReadAt(metadata, time.Now())
+	metadata.SetReadAt(time.Now())
 	return Record{
 		Position:  position,
 		Operation: OperationDelete,

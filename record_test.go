@@ -26,7 +26,7 @@ func TestRecord_Bytes(t *testing.T) {
 	r := Record{
 		Position:  Position("foo"),
 		Operation: OperationCreate,
-		Metadata: map[string]string{
+		Metadata: Metadata{
 			MetadataConduitPluginName: "example",
 		},
 		Key: RawData("bar"),
@@ -43,4 +43,6 @@ func TestRecord_Bytes(t *testing.T) {
 
 	got := string(r.Bytes())
 	is.Equal(got, want)
+
+	is.Equal(r.Metadata, Metadata{MetadataConduitPluginName: "example"}) // expected metadata to stay unaltered
 }

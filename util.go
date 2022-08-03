@@ -16,8 +16,6 @@ package sdk
 
 // Util provides utilities for implementing connectors.
 var Util struct {
-	// MetadataUtil provides utility methods for reading and writing metadata.
-	Metadata MetadataUtil
 	// SourceUtil provides utility methods for implementing a source.
 	Source SourceUtil
 	// SourceUtil provides utility methods for implementing a destination.

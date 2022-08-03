@@ -46,28 +46,25 @@ const (
 	MetadataConduitPluginVersion = cpluginv1.MetadataConduitPluginVersion
 )
 
-// MetadataUtil provides utility methods for reading and writing metadata.
-type MetadataUtil struct{}
-
 // SetOpenCDCVersion sets the metadata value for key MetadataVersion to the
 // current version of OpenCDC used. This
-func (MetadataUtil) SetOpenCDCVersion(metadata map[string]string) {
-	metadata[MetadataOpenCDCVersion] = cpluginv1.OpenCDCVersion
+func (m Metadata) SetOpenCDCVersion() {
+	m[MetadataOpenCDCVersion] = cpluginv1.OpenCDCVersion
 }
 
 // GetOpenCDCVersion returns the value for key
 // MetadataOpenCDCVersion. If the value is does not exist or is empty the
 // function returns ErrMetadataFieldNotFound.
-func (u MetadataUtil) GetOpenCDCVersion(metadata map[string]string) (string, error) {
-	return u.getValue(metadata, MetadataOpenCDCVersion)
+func (m Metadata) GetOpenCDCVersion() (string, error) {
+	return m.getValue(MetadataOpenCDCVersion)
 }
 
 // GetCreatedAt parses the value for key MetadataCreatedAt as a unix
 // timestamp. If the value does not exist or the value is empty the function
 // returns ErrMetadataFieldNotFound. If the value is not a valid unix timestamp
 // in nanoseconds the function returns an error.
-func (MetadataUtil) GetCreatedAt(metadata map[string]string) (time.Time, error) {
-	raw := metadata[MetadataCreatedAt]
+func (m Metadata) GetCreatedAt() (time.Time, error) {
+	raw := m[MetadataCreatedAt]
 	if raw == "" {
 		return time.Time{}, fmt.Errorf("failed to get value for %q: %w", MetadataCreatedAt, ErrMetadataFieldNotFound)
 	}
@@ -82,16 +79,16 @@ func (MetadataUtil) GetCreatedAt(metadata map[string]string) (time.Time, error) 
 
 // SetCreatedAt sets the metadata value for key MetadataCreatedAt as a
 // unix timestamp in nanoseconds.
-func (MetadataUtil) SetCreatedAt(metadata map[string]string, createdAt time.Time) {
-	metadata[MetadataCreatedAt] = strconv.FormatInt(createdAt.UnixNano(), 10)
+func (m Metadata) SetCreatedAt(createdAt time.Time) {
+	m[MetadataCreatedAt] = strconv.FormatInt(createdAt.UnixNano(), 10)
 }
 
 // GetReadAt parses the value for key MetadataReadAt as a unix
 // timestamp. If the value does not exist or the value is empty the function
 // returns ErrMetadataFieldNotFound. If the value is not a valid unix timestamp
 // in nanoseconds the function returns an error.
-func (MetadataUtil) GetReadAt(metadata map[string]string) (time.Time, error) {
-	raw := metadata[MetadataReadAt]
+func (m Metadata) GetReadAt() (time.Time, error) {
+	raw := m[MetadataReadAt]
 	if raw == "" {
 		return time.Time{}, fmt.Errorf("failed to get value for %q: %w", MetadataReadAt, ErrMetadataFieldNotFound)
 	}
@@ -106,40 +103,40 @@ func (MetadataUtil) GetReadAt(metadata map[string]string) (time.Time, error) {
 
 // SetReadAt sets the metadata value for key MetadataReadAt as a unix
 // timestamp in nanoseconds.
-func (MetadataUtil) SetReadAt(metadata map[string]string, createdAt time.Time) {
-	metadata[MetadataReadAt] = strconv.FormatInt(createdAt.UnixNano(), 10)
+func (m Metadata) SetReadAt(createdAt time.Time) {
+	m[MetadataReadAt] = strconv.FormatInt(createdAt.UnixNano(), 10)
 }
 
 // GetConduitPluginName returns the value for key
 // MetadataConduitPluginName. If the value is does not exist or is empty the
 // function returns ErrMetadataFieldNotFound.
-func (u MetadataUtil) GetConduitPluginName(metadata map[string]string) (string, error) {
-	return u.getValue(metadata, MetadataConduitPluginName)
+func (m Metadata) GetConduitPluginName() (string, error) {
+	return m.getValue(MetadataConduitPluginName)
 }
 
 // SetConduitPluginName sets the metadata value for key
 // MetadataConduitPluginName.
-func (MetadataUtil) SetConduitPluginName(metadata map[string]string, name string) {
-	metadata[MetadataConduitPluginName] = name
+func (m Metadata) SetConduitPluginName(name string) {
+	m[MetadataConduitPluginName] = name
 }
 
 // GetConduitPluginVersion returns the value for key
 // MetadataConduitPluginVersion. If the value is does not exist or is empty the
 // function returns ErrMetadataFieldNotFound.
-func (u MetadataUtil) GetConduitPluginVersion(metadata map[string]string) (string, error) {
-	return u.getValue(metadata, MetadataConduitPluginVersion)
+func (m Metadata) GetConduitPluginVersion() (string, error) {
+	return m.getValue(MetadataConduitPluginVersion)
 }
 
 // SetConduitPluginVersion sets the metadata value for key
 // MetadataConduitPluginVersion.
-func (MetadataUtil) SetConduitPluginVersion(metadata map[string]string, version string) {
-	metadata[MetadataConduitPluginVersion] = version
+func (m Metadata) SetConduitPluginVersion(version string) {
+	m[MetadataConduitPluginVersion] = version
 }
 
 // getValue returns the value for a specific key. If the value is does
 // not exist or is empty the function returns ErrMetadataFieldNotFound.
-func (MetadataUtil) getValue(metadata map[string]string, key string) (string, error) {
-	str := metadata[key]
+func (m Metadata) getValue(key string) (string, error) {
+	str := m[key]
 	if str == "" {
 		return "", fmt.Errorf("failed to get value for %q: %w", key, ErrMetadataFieldNotFound)
 	}
