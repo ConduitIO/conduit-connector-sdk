@@ -1112,6 +1112,15 @@ func (a acceptanceTest) isEqualRecords(is *is.I, want, got []Record) {
 	}
 }
 
+// sortMatchingRecords will try to reorder records in both slices in a way that
+// puts the equivalent records into the same position. It uses two strategies:
+//   - It starts of by sorting records based on the output of
+//     Record.Payload.After.Bytes(). If the first records contain the same
+//     payload bytes after that it assumes the sort is fine and returns,
+//     otherwise it falls back to the next strategy.
+//   - It then sorts only the want slice using the output of Record.Bytes().
+//     This assumes that the destination writes whole records and not only the
+//     payload. It does not check if the first records match after this.
 func (a acceptanceTest) sortMatchingRecords(want, got []Record) {
 	sort.Slice(want, func(i, j int) bool {
 		return string(want[i].Payload.After.Bytes()) < string(want[j].Payload.After.Bytes())
