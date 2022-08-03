@@ -47,7 +47,7 @@ const (
 )
 
 // SetOpenCDCVersion sets the metadata value for key MetadataVersion to the
-// current version of OpenCDC used. This
+// current version of OpenCDC used.
 func (m Metadata) SetOpenCDCVersion() {
 	m[MetadataOpenCDCVersion] = cpluginv1.OpenCDCVersion
 }
