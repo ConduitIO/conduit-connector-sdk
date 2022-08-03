@@ -111,12 +111,15 @@ func TestDestinationPluginAdapter_Run_WriteAsync(t *testing.T) {
 
 	want := Record{
 		Position:  Position("foo"),
+		Operation: OperationCreate,
 		Metadata:  map[string]string{"foo": "bar"},
-		CreatedAt: time.Now().UTC(),
 		Key:       RawData("bar"),
-		Payload: StructuredData{
-			"x": "y",
-			"z": 3,
+		Payload: Change{
+			Before: nil, // create has no before
+			After: StructuredData{
+				"x": "y",
+				"z": 3,
+			},
 		},
 	}
 
@@ -145,10 +148,13 @@ func TestDestinationPluginAdapter_Run_WriteAsync(t *testing.T) {
 		reqStream <- cpluginv1.DestinationRunRequest{
 			Record: cpluginv1.Record{
 				Position:  want.Position,
+				Operation: cpluginv1.Operation(want.Operation),
 				Metadata:  want.Metadata,
-				CreatedAt: want.CreatedAt,
 				Key:       cpluginv1.RawData(want.Key.(RawData)),
-				Payload:   cpluginv1.StructuredData(want.Payload.(StructuredData)),
+				Payload: cpluginv1.Change{
+					Before: nil, // create has no before
+					After:  cpluginv1.StructuredData(want.Payload.After.(StructuredData)),
+				},
 			},
 		}
 		resp := <-respStream
@@ -175,12 +181,15 @@ func TestDestinationPluginAdapter_Run_WriteFallback(t *testing.T) {
 
 	want := Record{
 		Position:  Position("foo"),
+		Operation: OperationCreate,
 		Metadata:  map[string]string{"foo": "bar"},
-		CreatedAt: time.Now().UTC(),
 		Key:       RawData("bar"),
-		Payload: StructuredData{
-			"x": "y",
-			"z": 3,
+		Payload: Change{
+			Before: nil, // create has no before
+			After: StructuredData{
+				"x": "y",
+				"z": 3,
+			},
 		},
 	}
 
@@ -209,10 +218,13 @@ func TestDestinationPluginAdapter_Run_WriteFallback(t *testing.T) {
 		reqStream <- cpluginv1.DestinationRunRequest{
 			Record: cpluginv1.Record{
 				Position:  want.Position,
+				Operation: cpluginv1.Operation(want.Operation),
 				Metadata:  want.Metadata,
-				CreatedAt: want.CreatedAt,
 				Key:       cpluginv1.RawData(want.Key.(RawData)),
-				Payload:   cpluginv1.StructuredData(want.Payload.(StructuredData)),
+				Payload: cpluginv1.Change{
+					Before: nil, // create has no before
+					After:  cpluginv1.StructuredData(want.Payload.After.(StructuredData)),
+				},
 			},
 		}
 		resp := <-respStream

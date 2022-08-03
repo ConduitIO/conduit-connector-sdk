@@ -15,12 +15,14 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -76,13 +78,13 @@ type AcceptanceTestDriver interface {
 	// suppress false positive goroutine leaks.
 	GoleakOptions(*testing.T) []goleak.Option
 
-	// GenerateRecord will generate a new Record. It's the responsibility
-	// of the AcceptanceTestDriver implementation to provide records with
-	// appropriate contents (e.g. appropriate type of payload).
+	// GenerateRecord will generate a new Record for a certain Operation. It's
+	// the responsibility of the AcceptanceTestDriver implementation to provide
+	// records with appropriate contents (e.g. appropriate type of payload).
 	// The generated record will contain mixed data types in the field Key and
 	// Payload (i.e. RawData and StructuredData), unless configured otherwise
 	// (see ConfigurableAcceptanceTestDriverConfig.GenerateDataType).
-	GenerateRecord(*testing.T) Record
+	GenerateRecord(*testing.T, Operation) Record
 
 	// WriteToSource receives a slice of records that should be prepared in the
 	// 3rd party system so that the source will read them. The returned slice
@@ -217,13 +219,23 @@ func (d ConfigurableAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.O
 	return d.Config.GoleakOptions
 }
 
-func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T) Record {
+func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T, op Operation) Record {
+	// TODO we currently only generate records with operation "create" and
+	//  "snapshot", because this is the only operation we know all connectors
+	//  should be able to handle. We should make acceptance tests more
+	//  sophisticated and also check how the connector handles other operations,
+	//  specifically "update" and "delete".
+	//  Once we generate different operations we need to adjust how we compare
+	//  records!
 	return Record{
 		Position:  Position(d.randString(32)), // position doesn't matter, as long as it's unique
+		Operation: op,
 		Metadata:  map[string]string{d.randString(32): d.randString(32)},
-		CreatedAt: time.Now().UTC(),
 		Key:       d.GenerateData(t),
-		Payload:   d.GenerateData(t),
+		Payload: Change{
+			Before: nil,
+			After:  d.GenerateData(t),
+		},
 	}
 }
 
@@ -651,7 +663,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionSnapshot(t *testing.T) {
 	// Write expectations before source is started, this means the source will
 	// have to first read the existing data (i.e. snapshot), but we will
 	// interrupt it and try to resume.
-	want := a.driver.WriteToSource(t, a.generateRecords(t, 10))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, OperationSnapshot, 10))
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
@@ -712,7 +724,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 	// Write expectations after source is open, this means the source is already
 	// listening to ongoing changes (i.e. CDC), we will interrupt it and try to
 	// resume.
-	want := a.driver.WriteToSource(t, a.generateRecords(t, 10))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, OperationCreate, 10))
 
 	// read all records, but ack only half of them
 	got, err := a.readMany(ctx, t, source, len(want))
@@ -758,7 +770,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	}
 
 	// write expectation before source exists
-	want := a.driver.WriteToSource(t, a.generateRecords(t, 10))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, OperationSnapshot, 10))
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
@@ -776,7 +788,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 	// while connector is running write more data and make sure the connector
 	// detects it
-	want = a.driver.WriteToSource(t, a.generateRecords(t, 20))
+	want = a.driver.WriteToSource(t, a.generateRecords(t, OperationCreate, 20))
 
 	t.Run("cdc", func(t *testing.T) {
 		is := is.New(t)
@@ -861,11 +873,11 @@ func (a acceptanceTest) TestDestination_WriteOrWriteAsync(t *testing.T) {
 
 	writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
 	defer cancel()
-	errWrite := dest.Write(writeCtx, a.driver.GenerateRecord(t))
+	errWrite := dest.Write(writeCtx, a.driver.GenerateRecord(t, OperationCreate))
 
 	writeCtx, cancel = context.WithTimeout(ctx, a.driver.WriteTimeout())
 	defer cancel()
-	errWriteAsync := dest.WriteAsync(writeCtx, a.driver.GenerateRecord(t), func(err error) error { return nil })
+	errWriteAsync := dest.WriteAsync(writeCtx, a.driver.GenerateRecord(t, OperationCreate), func(err error) error { return nil })
 
 	is.True((errors.Is(errWrite, ErrUnimplemented)) != (errors.Is(errWriteAsync, ErrUnimplemented))) // either Write or WriteAsync should be implemented, not both
 
@@ -885,7 +897,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	dest, cleanup := a.openDestination(ctx, t)
 	defer cleanup()
 
-	want := a.generateRecords(t, 20)
+	want := a.generateRecords(t, OperationSnapshot, 20)
 
 	for i, r := range want {
 		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
@@ -916,7 +928,7 @@ func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
 	dest, cleanup := a.openDestination(ctx, t)
 	defer cleanup()
 
-	want := a.generateRecords(t, 20)
+	want := a.generateRecords(t, OperationSnapshot, 20)
 
 	var ackWg sync.WaitGroup
 	for i, r := range want {
@@ -1019,10 +1031,10 @@ func (a acceptanceTest) openDestination(ctx context.Context, t *testing.T) (dest
 	return dest, cleanup
 }
 
-func (a acceptanceTest) generateRecords(t *testing.T, count int) []Record {
+func (a acceptanceTest) generateRecords(t *testing.T, op Operation, count int) []Record {
 	records := make([]Record, count)
 	for i := range records {
-		records[i] = a.driver.GenerateRecord(t)
+		records[i] = a.driver.GenerateRecord(t, op)
 	}
 	return records
 }
@@ -1074,27 +1086,74 @@ func (a acceptanceTest) isEqualRecords(is *is.I, want, got []Record) {
 		return
 	}
 
-	// transform slices into maps so we can disregard the order
-	wantMap := make(map[string]Record, len(want))
-	gotMap := make(map[string]Record, len(got))
-	for i := 0; i < len(want); i++ {
-		wantMap[string(want[i].Payload.Bytes())] = want[i]
-		gotMap[string(got[i].Payload.Bytes())] = got[i]
+	a.sortMatchingRecords(want, got)
+
+	if bytes.Equal(want[0].Bytes(), got[0].Payload.After.Bytes()) {
+		// the payload of the actual record matches the whole record in the
+		// expectation, the destination apparently writes records as a whole and
+		// retrieves them as a whole in the payload
+		// this is valid behavior, we need to adjust the expectations
+		for i, wantRec := range want {
+			want[i] = Record{
+				Position:  nil,
+				Operation: OperationSnapshot, // we allow operations Snapshot or Create
+				Metadata:  nil,               // no expectation for metadata
+				Key:       got[i].Key,        // no expectation for key
+				Payload: Change{
+					Before: nil,
+					After:  RawData(wantRec.Bytes()), // the payload should contain the whole expected record
+				},
+			}
+		}
 	}
 
-	is.Equal(len(got), len(gotMap)) // record payloads are not unique
-
-	for key, wantRec := range wantMap {
-		gotRec, ok := gotMap[key]
-		is.True(ok) // expected record not found
-
-		a.isEqualRecord(is, wantRec, gotRec)
+	for i := range want {
+		a.isEqualRecord(is, want[i], got[i])
 	}
 }
 
+// sortMatchingRecords will try to reorder records in both slices in a way that
+// puts the equivalent records into the same position. It uses two strategies:
+//   - It starts of by sorting records based on the output of
+//     Record.Payload.After.Bytes(). If the first records contain the same
+//     payload bytes after that it assumes the sort is fine and returns,
+//     otherwise it falls back to the next strategy.
+//   - It then sorts only the want slice using the output of Record.Bytes().
+//     This assumes that the destination writes whole records and not only the
+//     payload. It does not check if the first records match after this.
+func (a acceptanceTest) sortMatchingRecords(want, got []Record) {
+	sort.Slice(want, func(i, j int) bool {
+		return string(want[i].Payload.After.Bytes()) < string(want[j].Payload.After.Bytes())
+	})
+	sort.Slice(got, func(i, j int) bool {
+		return string(got[i].Payload.After.Bytes()) < string(got[j].Payload.After.Bytes())
+	})
+
+	// check if first record payload matches to ensure we have the right order
+	if bytes.Equal(want[0].Payload.After.Bytes(), got[0].Payload.After.Bytes()) {
+		return // all good
+	}
+
+	// record payloads didn't match, we assume the destination writes whole
+	// records, we should sort the want records based on their bytes then
+	sort.Slice(want, func(i, j int) bool {
+		return string(want[i].Bytes()) < string(want[j].Bytes())
+	})
+}
+
 func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
+	if want.Operation == OperationSnapshot &&
+		got.Operation == OperationCreate {
+		// This is a special case and we accept it. Not all connectors will
+		// create records with operation "snapshot", but they will still able to
+		// produce records that were written before the source was open in
+		// normal CDC mode (e.g. Kafka connector).
+	} else {
+		is.Equal(want.Operation, got.Operation) // record operation did not match (want != got)
+	}
+
 	a.isEqualData(is, want.Key, got.Key)
-	a.isEqualData(is, want.Payload, got.Payload)
+	a.isEqualChange(is, want.Payload, got.Payload)
 
 	// check metadata fields, if they are there they should match
 	if len(got.Metadata) == 0 {
@@ -1107,8 +1166,11 @@ func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
 			}
 		}
 	}
+}
 
-	is.True(!want.CreatedAt.After(got.CreatedAt)) // the expected CreatedAt timestamp shouldn't be after the actual CreatedAt timestamp
+func (a acceptanceTest) isEqualChange(is *is.I, want, got Change) {
+	a.isEqualData(is, want.Before, got.Before)
+	a.isEqualData(is, want.After, got.After)
 }
 
 // isEqualData will match the two data objects in their entirety if the types
