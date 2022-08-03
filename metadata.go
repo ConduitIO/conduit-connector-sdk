@@ -64,9 +64,9 @@ func (m Metadata) GetOpenCDCVersion() (string, error) {
 // returns ErrMetadataFieldNotFound. If the value is not a valid unix timestamp
 // in nanoseconds the function returns an error.
 func (m Metadata) GetCreatedAt() (time.Time, error) {
-	raw := m[MetadataCreatedAt]
-	if raw == "" {
-		return time.Time{}, fmt.Errorf("failed to get value for %q: %w", MetadataCreatedAt, ErrMetadataFieldNotFound)
+	raw, err := m.getValue(MetadataCreatedAt)
+	if err != nil {
+		return time.Time{}, err
 	}
 
 	unixNano, err := strconv.ParseInt(raw, 10, 64)
@@ -88,9 +88,9 @@ func (m Metadata) SetCreatedAt(createdAt time.Time) {
 // returns ErrMetadataFieldNotFound. If the value is not a valid unix timestamp
 // in nanoseconds the function returns an error.
 func (m Metadata) GetReadAt() (time.Time, error) {
-	raw := m[MetadataReadAt]
-	if raw == "" {
-		return time.Time{}, fmt.Errorf("failed to get value for %q: %w", MetadataReadAt, ErrMetadataFieldNotFound)
+	raw, err := m.getValue(MetadataReadAt)
+	if err != nil {
+		return time.Time{}, err
 	}
 
 	unixNano, err := strconv.ParseInt(raw, 10, 64)
