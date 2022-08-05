@@ -152,15 +152,6 @@ func (a *destinationPluginAdapter) ack(r Record, writeErr error, stream cpluginv
 	return nil
 }
 
-func (a *destinationPluginAdapter) waitForClose(ctx context.Context, stop chan struct{}) error {
-	select {
-	case <-stop:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
 func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.DestinationStopRequest) (cpluginv1.DestinationStopResponse, error) {
 	// last thing we do is cancel context in Open
 	defer a.openCancel()
