@@ -180,6 +180,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 		err = a.writeStrategy.Write(ctx, r, func(err error) error {
 			return a.ack(r, err, stream)
 		})
+		a.lastPosition.Store(r.Position)
 		if err != nil {
 			return err
 		}
@@ -188,8 +189,6 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 
 // ack sends a message into the stream signaling that the record was processed.
 func (a *destinationPluginAdapter) ack(r Record, writeErr error, stream cpluginv1.DestinationRunStream) error {
-	defer a.lastPosition.Store(r.Position) // store last processed position after ack
-
 	var ackErrStr string
 	if writeErr != nil {
 		ackErrStr = writeErr.Error()
@@ -217,14 +216,12 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 		return bytes.Equal(val, req.LastPosition)
 	})
 
-	flusher, ok := a.impl.(interface{ Flush(context.Context) error })
-	if ok {
-		flushErr := flusher.Flush(waitCtx)
-		if flushErr != nil && err == nil {
-			err = flushErr
-		} else if flushErr != nil {
-			Logger(ctx).Err(err).Msg("error flushing records")
-		}
+	// flush cached records
+	flushErr := a.writeStrategy.Flush(ctx)
+	if flushErr != nil && err == nil {
+		err = flushErr
+	} else if flushErr != nil {
+		Logger(ctx).Err(err).Msg("error flushing records")
 	}
 
 	return cpluginv1.DestinationStopResponse{}, err

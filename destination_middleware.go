@@ -31,8 +31,9 @@ type DestinationMiddleware interface {
 // DefaultDestinationMiddleware is a slice of middleware that should be added to
 // all destinations unless there's a good reason not to.
 var DefaultDestinationMiddleware = []DestinationMiddleware{
-	DestinationWithRateLimit{},
-	DestinationWithBatch{},
+	// TODO enable default middleware once it is tested
+	// DestinationWithRateLimit{},
+	// DestinationWithBatch{},
 }
 
 // DestinationWithMiddleware wraps the destination into the supplied middleware.
@@ -92,7 +93,7 @@ type destinationWithBatch struct {
 }
 
 func (d *destinationWithBatch) Parameters() map[string]Parameter {
-	return map[string]Parameter{
+	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
 		configDestinationBatchSize: {
 			Default:     strconv.Itoa(d.defaults.DefaultBatchSize),
 			Required:    false,
@@ -103,7 +104,7 @@ func (d *destinationWithBatch) Parameters() map[string]Parameter {
 			Required:    false,
 			Description: "Maximum delay before an incomplete batch is written to the destination.",
 		},
-	}
+	})
 }
 
 func (d *destinationWithBatch) Configure(ctx context.Context, config map[string]string) error {
