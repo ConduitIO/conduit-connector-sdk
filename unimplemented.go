@@ -19,6 +19,11 @@ import "context"
 // UnimplementedDestination should be embedded to have forward compatible implementations.
 type UnimplementedDestination struct{}
 
+// Parameters needs to be overridden in the actual implementation.
+func (UnimplementedDestination) Parameters() map[string]Parameter {
+	return nil
+}
+
 // Configure needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Configure(context.Context, map[string]string) error {
 	return ErrUnimplemented
@@ -42,6 +47,11 @@ func (UnimplementedDestination) mustEmbedUnimplementedDestination() {}
 
 // UnimplementedSource should be embedded to have forward compatible implementations.
 type UnimplementedSource struct{}
+
+// Parameters needs to be overridden in the actual implementation.
+func (UnimplementedSource) Parameters() map[string]Parameter {
+	return nil
+}
 
 // Configure needs to be overridden in the actual implementation.
 func (UnimplementedSource) Configure(context.Context, map[string]string) error {

@@ -19,8 +19,10 @@ package sdk
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
@@ -32,6 +34,10 @@ import (
 // All implementations must embed UnimplementedDestination for forward
 // compatibility.
 type Destination interface {
+	// Parameters is a map of named Parameters that describe how to configure
+	// the Destination.
+	Parameters() map[string]Parameter
+
 	// Configure is the first function to be called in a connector. It provides the
 	// connector with the configuration that needs to be validated and stored.
 	// In case the configuration is not valid it should return an error.
@@ -73,13 +79,65 @@ type destinationPluginAdapter struct {
 	impl Destination
 
 	lastPosition *internal.AtomicValueWatcher[Position]
+	openCancel   context.CancelFunc
 
-	openCancel context.CancelFunc
+	// write is the chosen write strategy, either single records or batches
+	writeStrategy writeStrategy
 }
 
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.DestinationConfigureRequest) (cpluginv1.DestinationConfigureResponse, error) {
+	ctx = DestinationWithBatch{}.setBatchFlag(ctx, false)
+
 	err := a.impl.Configure(ctx, req.Config)
+	if err != nil {
+		return cpluginv1.DestinationConfigureResponse{}, err
+	}
+
+	err = a.configureWriteStrategy(ctx, req.Config)
 	return cpluginv1.DestinationConfigureResponse{}, err
+}
+
+func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config map[string]string) error {
+	a.writeStrategy = &writeStrategySingle{impl: a.impl} // by default we write single records
+
+	batchEnabled := DestinationWithBatch{}.getBatchFlag(ctx)
+	if !batchEnabled {
+		// batching disabled, just write single records
+		return nil
+	}
+
+	var batchSize int
+	var batchDelay time.Duration
+
+	batchSizeRaw := config[configDestinationBatchSize]
+	if batchSizeRaw != "" {
+		batchSizeInt, err := strconv.Atoi(batchSizeRaw)
+		if err != nil {
+			return fmt.Errorf("invalid %q: %w", configDestinationBatchSize, err)
+		}
+		batchSize = batchSizeInt
+	}
+
+	delayRaw := config[configDestinationBatchDelay]
+	if delayRaw != "" {
+		delayDur, err := time.ParseDuration(delayRaw)
+		if err != nil {
+			return fmt.Errorf("invalid %q: %w", configDestinationBatchDelay, err)
+		}
+		batchDelay = delayDur
+	}
+
+	if batchSize > 0 || batchDelay > 0 {
+		a.writeStrategy = &writeStrategyBatch{
+			impl:       a.impl,
+			batchSize:  batchSize,
+			batchDelay: batchDelay,
+		}
+		// TODO remove this once batching is implemented
+		return errors.New("batching not implemented")
+	}
+
+	return nil
 }
 
 func (a *destinationPluginAdapter) Start(ctx context.Context, req cpluginv1.DestinationStartRequest) (cpluginv1.DestinationStartResponse, error) {
@@ -119,12 +177,9 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 		}
 		r := a.convertRecord(req.Record)
 
-		_, err = a.impl.Write(ctx, []Record{r}) // TODO implement batching
-		if err != nil {
-			Logger(ctx).Err(err).Bytes("record_position", r.Position).Msg("error writing record")
-		}
-		err = a.ack(r, err, stream)
-		a.lastPosition.Store(r.Position) // store last processed position
+		err = a.writeStrategy.Write(ctx, r, func(err error) error {
+			return a.ack(r, err, stream)
+		})
 		if err != nil {
 			return err
 		}
@@ -133,6 +188,8 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 
 // ack sends a message into the stream signaling that the record was processed.
 func (a *destinationPluginAdapter) ack(r Record, writeErr error, stream cpluginv1.DestinationRunStream) error {
+	defer a.lastPosition.Store(r.Position) // store last processed position after ack
+
 	var ackErrStr string
 	if writeErr != nil {
 		ackErrStr = writeErr.Error()
@@ -159,6 +216,16 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 	err := a.lastPosition.Await(waitCtx, func(val Position) bool {
 		return bytes.Equal(val, req.LastPosition)
 	})
+
+	flusher, ok := a.impl.(interface{ Flush(context.Context) error })
+	if ok {
+		flushErr := flusher.Flush(waitCtx)
+		if flushErr != nil && err == nil {
+			err = flushErr
+		} else if flushErr != nil {
+			Logger(ctx).Err(err).Msg("error flushing records")
+		}
+	}
 
 	return cpluginv1.DestinationStopResponse{}, err
 }
@@ -201,6 +268,41 @@ func (a *destinationPluginAdapter) convertData(d cpluginv1.Data) Data {
 	default:
 		panic("unknown data type")
 	}
+}
+
+type writeStrategy interface {
+	Write(ctx context.Context, r Record, ack func(error) error) error
+	Flush(ctx context.Context) error
+}
+
+type writeStrategySingle struct {
+	impl Destination
+}
+
+func (w *writeStrategySingle) Write(ctx context.Context, r Record, ack func(error) error) error {
+	_, err := w.impl.Write(ctx, []Record{r})
+	if err != nil {
+		Logger(ctx).Err(err).Bytes("record_position", r.Position).Msg("error writing record")
+	}
+	return ack(err)
+}
+
+func (w *writeStrategySingle) Flush(ctx context.Context) error {
+	return nil // nothing to flush
+}
+
+type writeStrategyBatch struct {
+	impl Destination
+
+	batchSize  int
+	batchDelay time.Duration
+}
+
+func (w *writeStrategyBatch) Write(ctx context.Context, r Record, ack func(error) error) error {
+	panic("batching not implemented yet")
+}
+func (w *writeStrategyBatch) Flush(ctx context.Context) error {
+	panic("batching not implemented yet")
 }
 
 // DestinationUtil provides utility methods for implementing a destination.

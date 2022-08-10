@@ -9,6 +9,7 @@ require (
 	github.com/matryer/is v1.4.0
 	github.com/rs/zerolog v1.27.0
 	go.uber.org/goleak v1.1.12
+	golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
 )
 

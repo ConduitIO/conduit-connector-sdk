@@ -511,44 +511,30 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 	is.True(spec.Author != "")                             // Specification.Author is missing
 	is.True(strings.TrimSpace(spec.Author) == spec.Author) // Specification.Author starts or ends with whitespace
 
-	isParamsCorrect := func(t *testing.T, params map[string]Parameter) {
-		is := is.NewRelaxed(t)
-		paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
-
-		for name, p := range params {
-			is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
-			is.True(p.Description != "")              // parameter description is empty
-		}
-	}
-
-	t.Run("sourceParams", func(t *testing.T) {
-		a.skipIfNoSource(t)
-		is := is.NewRelaxed(t)
-
-		// we enforce that there is at least 1 parameter, any real source will
-		// require some configuration
-		is.True(spec.SourceParams != nil)   // Specification.SourceParams is missing
-		is.True(len(spec.SourceParams) > 0) // Specification.SourceParams is empty
-
-		isParamsCorrect(t, spec.SourceParams)
-	})
-
-	t.Run("destinationParams", func(t *testing.T) {
-		a.skipIfNoDestination(t)
-		is := is.NewRelaxed(t)
-
-		// we enforce that there is at least 1 parameter, any real destination
-		// will require some configuration
-		is.True(spec.DestinationParams != nil)   // Specification.DestinationParams is missing
-		is.True(len(spec.DestinationParams) > 0) // Specification.DestinationParams is empty
-
-		isParamsCorrect(t, spec.DestinationParams)
-	})
-
 	semverRegex := regexp.MustCompile(`v([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` +
 		`(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?` +
 		`(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?`)
 	is.True(semverRegex.MatchString(spec.Version)) // Specification.Version is not a valid semantic version (vX.Y.Z)
+}
+
+func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
+	a.skipIfNoSource(t)
+	is := is.New(t)
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	source := a.driver.Connector().NewSource()
+	params := source.Parameters()
+
+	// we enforce that there is at least 1 parameter, any real source will
+	// require some configuration
+	is.True(params != nil)   // Source.Parameters() returns empty map
+	is.True(len(params) > 0) // Source.Parameters() returns empty map
+
+	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
+	for name, p := range params {
+		is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
+		is.True(p.Description != "")              // parameter description is empty
+	}
 }
 
 func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
@@ -567,15 +553,14 @@ func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 }
 
 func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
-	a.skipIfNoSpecification(t)
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
 
-	spec := a.driver.Connector().NewSpecification()
+	srcSpec := a.driver.Connector().NewSource()
 	origCfg := a.driver.SourceConfig(t)
 
-	for name, p := range spec.SourceParams {
+	for name, p := range srcSpec.Parameters() {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(fmt.Sprintf("without required param: %s", name), func(t *testing.T) {
@@ -759,6 +744,26 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
 }
 
+func (a acceptanceTest) TestDestination_Parameters_Success(t *testing.T) {
+	a.skipIfNoDestination(t)
+	is := is.New(t)
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	dest := a.driver.Connector().NewDestination()
+	params := dest.Parameters()
+
+	// we enforce that there is at least 1 parameter, any real destination will
+	// require some configuration
+	is.True(params != nil)   // Destination.Parameters() returns empty map
+	is.True(len(params) > 0) // Destination.Parameters() returns empty map
+
+	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
+	for name, p := range params {
+		is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
+		is.True(p.Description != "")              // parameter description is empty
+	}
+}
+
 func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
@@ -775,15 +780,14 @@ func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 }
 
 func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
-	a.skipIfNoSpecification(t)
 	a.skipIfNoDestination(t)
 	is := is.New(t)
 	ctx := context.Background()
 
-	spec := a.driver.Connector().NewSpecification()
+	destSpec := a.driver.Connector().NewDestination()
 	origCfg := a.driver.DestinationConfig(t)
 
-	for name, p := range spec.DestinationParams {
+	for name, p := range destSpec.Parameters() {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {

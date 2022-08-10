@@ -123,13 +123,16 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 		},
 	}
 
+	dst.EXPECT().Configure(gomock.Any(), map[string]string{}).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), []Record{want}).Return(1, nil).Times(2)
 
 	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
 
 	ctx := context.Background()
-	_, err := dstPlugin.Start(ctx, cpluginv1.DestinationStartRequest{})
+	_, err := dstPlugin.Configure(ctx, cpluginv1.DestinationConfigureRequest{Config: map[string]string{}})
+	is.NoErr(err)
+	_, err = dstPlugin.Start(ctx, cpluginv1.DestinationStartRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -178,13 +181,16 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	lastRecord := Record{Position: Position("foo")}
 
 	// ackFunc stores the ackFunc so it can be called at a later time
+	dst.EXPECT().Configure(gomock.Any(), map[string]string{}).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), gomock.Any()).Return(1, nil)
 
 	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
 
 	ctx := context.Background()
-	_, err := dstPlugin.Start(ctx, cpluginv1.DestinationStartRequest{})
+	_, err := dstPlugin.Configure(ctx, cpluginv1.DestinationConfigureRequest{Config: map[string]string{}})
+	is.NoErr(err)
+	_, err = dstPlugin.Start(ctx, cpluginv1.DestinationStartRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})

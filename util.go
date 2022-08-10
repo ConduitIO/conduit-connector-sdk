@@ -14,10 +14,27 @@
 
 package sdk
 
+import "fmt"
+
 // Util provides utilities for implementing connectors.
 var Util struct {
 	// SourceUtil provides utility methods for implementing a source.
 	Source SourceUtil
 	// SourceUtil provides utility methods for implementing a destination.
 	Destination DestinationUtil
+}
+
+func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[string]Parameter {
+	params := make(map[string]Parameter, len(p1)+len(p2))
+	for k, v := range p1 {
+		params[k] = v
+	}
+	for k, v := range p2 {
+		_, ok := params[k]
+		if ok {
+			panic(fmt.Errorf("parameter %q declared twice", k))
+		}
+		params[k] = v
+	}
+	return params
 }

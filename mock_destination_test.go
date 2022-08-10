@@ -61,6 +61,20 @@ func (mr *MockDestinationMockRecorder) Open(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Open", reflect.TypeOf((*MockDestination)(nil).Open), arg0)
 }
 
+// Parameters mocks base method.
+func (m *MockDestination) Parameters() map[string]Parameter {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Parameters")
+	ret0, _ := ret[0].(map[string]Parameter)
+	return ret0
+}
+
+// Parameters indicates an expected call of Parameters.
+func (mr *MockDestinationMockRecorder) Parameters() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Parameters", reflect.TypeOf((*MockDestination)(nil).Parameters))
+}
+
 // Teardown mocks base method.
 func (m *MockDestination) Teardown(arg0 context.Context) error {
 	m.ctrl.T.Helper()

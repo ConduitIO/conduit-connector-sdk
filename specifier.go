@@ -36,10 +36,6 @@ type Specification struct {
 	Version string
 	// Author declares the entity that created or maintains this plugin.
 	Author string
-	// DestinationParams and SourceParams is a map of named Parameters that
-	// describe how to configure the plugin's Destination or Source.
-	DestinationParams map[string]Parameter
-	SourceParams      map[string]Parameter
 }
 
 // Parameter is a helper struct for defining plugin Specifications.
@@ -54,12 +50,18 @@ type Parameter struct {
 
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that
 // converts it into a cpluginv1.SpecifierPlugin.
-func NewSpecifierPlugin(specs Specification) cpluginv1.SpecifierPlugin {
-	return &specifierPluginAdapter{specs: specs}
+func NewSpecifierPlugin(specs Specification, source Source, dest Destination) cpluginv1.SpecifierPlugin {
+	return &specifierPluginAdapter{
+		specs:             specs,
+		sourceParams:      source.Parameters(),
+		destinationParams: dest.Parameters(),
+	}
 }
 
 type specifierPluginAdapter struct {
-	specs Specification
+	specs             Specification
+	sourceParams      map[string]Parameter
+	destinationParams map[string]Parameter
 }
 
 func (s *specifierPluginAdapter) Specify(ctx context.Context, req cpluginv1.SpecifierSpecifyRequest) (cpluginv1.SpecifierSpecifyResponse, error) {
@@ -69,8 +71,8 @@ func (s *specifierPluginAdapter) Specify(ctx context.Context, req cpluginv1.Spec
 		Description:       s.specs.Description,
 		Version:           s.specs.Version,
 		Author:            s.specs.Author,
-		DestinationParams: s.convertParameters(s.specs.DestinationParams),
-		SourceParams:      s.convertParameters(s.specs.SourceParams),
+		SourceParams:      s.convertParameters(s.sourceParams),
+		DestinationParams: s.convertParameters(s.destinationParams),
 	}, nil
 }
 
