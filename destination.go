@@ -121,7 +121,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 
 		_, err = a.impl.Write(ctx, []Record{r}) // TODO implement batching
 		if err != nil {
-			Logger(ctx)
+			Logger(ctx).Err(err).Bytes("record_position", r.Position).Msg("error writing record")
 		}
 		err = a.ack(r, err, stream)
 		a.lastPosition.Store(r.Position) // store last processed position
@@ -131,12 +131,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 	}
 }
 
-// ackFunc creates an AckFunc that can be called to signal that the record was
-// processed. The destination plugin adapter keeps track of how many AckFunc
-// functions still need to be called, once an AckFunc returns it decrements the
-// internal counter by one.
-// It is allowed to call AckFunc only once, if it's called more than once it
-// will panic.
+// ack sends a message into the stream signaling that the record was processed.
 func (a *destinationPluginAdapter) ack(r Record, writeErr error, stream cpluginv1.DestinationRunStream) error {
 	var ackErrStr string
 	if writeErr != nil {
