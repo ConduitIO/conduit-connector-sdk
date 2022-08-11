@@ -179,7 +179,7 @@ func (d *destinationWithRateLimit) Parameters() map[string]Parameter {
 		configDestinationRatePerSecond: {
 			Default:     strconv.FormatFloat(d.defaults.DefaultRatePerSecond, 'f', -1, 64),
 			Required:    false,
-			Description: "Maximum times the Write function can be called per second (0 means no rate limit).",
+			Description: "Maximum times records can be written per second (0 means no rate limit).",
 		},
 		configDestinationRateBurst: {
 			Default:     strconv.Itoa(d.defaults.DefaultBurst),

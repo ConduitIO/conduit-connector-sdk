@@ -16,6 +16,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -198,7 +199,7 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := tt.middleware.Wrap(dst).(*destinationWithRateLimit)
 
-			dst.EXPECT().Configure(ctx, gomock.AssignableToTypeOf(map[string]string{})).Return(nil)
+			dst.EXPECT().Configure(ctx, tt.have).Return(nil)
 
 			err := d.Configure(ctx, tt.have)
 			is.NoErr(err)
@@ -211,4 +212,74 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDestinationWithRateLimit_Write(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+	ctx := context.Background()
+
+	d := DestinationWithRateLimit{}.Wrap(dst)
+
+	dst.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
+
+	err := d.Configure(ctx, map[string]string{
+		configDestinationRatePerSecond: "10",
+		configDestinationRateBurst:     "2",
+	})
+	is.NoErr(err)
+
+	recs := []Record{{}, {}}
+
+	const tolerance = time.Millisecond * 10
+
+	expectWriteAfter := func(delay time.Duration) {
+		start := time.Now()
+		dst.EXPECT().Write(ctx, recs).Do(func(context.Context, []Record) {
+			dur := time.Since(start)
+			diff := dur - delay
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff > tolerance {
+				t.Fatalf("expected delay: %s, actual delay: %s, tolerance: %s", delay, dur, tolerance)
+			}
+		}).Return(len(recs), nil)
+	}
+
+	// first write should happen right away
+	expectWriteAfter(0)
+	_, err = d.Write(ctx, recs)
+	is.NoErr(err)
+
+	// second write happens right away because we allow bursts of 2
+	expectWriteAfter(0)
+	_, err = d.Write(ctx, recs)
+	is.NoErr(err)
+
+	// third write needs to wait for 100ms
+	expectWriteAfter(100 * time.Millisecond)
+	_, err = d.Write(ctx, recs)
+	is.NoErr(err)
+}
+
+func TestDestinationWithRateLimit_Write_CancelledContext(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+
+	d := DestinationWithRateLimit{}.Wrap(dst)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	dst.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
+	err := d.Configure(ctx, map[string]string{
+		configDestinationRatePerSecond: "10",
+	})
+	is.NoErr(err)
+
+	cancel()
+	_, err = d.Write(ctx, []Record{{}})
+	is.True(errors.Is(err, ctx.Err()))
 }
