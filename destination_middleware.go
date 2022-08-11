@@ -32,9 +32,8 @@ type DestinationMiddleware interface {
 // added to all destinations unless there's a good reason not to.
 func DefaultDestinationMiddleware() []DestinationMiddleware {
 	return []DestinationMiddleware{
-		// TODO enable default middleware once it is tested
-		// DestinationWithRateLimit{},
-		// DestinationWithBatch{},
+		DestinationWithRateLimit{},
+		// DestinationWithBatch{}, // TODO enable batch middleware once batching is implemented
 	}
 }
 
@@ -185,7 +184,7 @@ func (d *destinationWithRateLimit) Parameters() map[string]Parameter {
 		configDestinationRateBurst: {
 			Default:     strconv.Itoa(d.defaults.DefaultBurst),
 			Required:    false,
-			Description: "Allow bursts of at most X writes (0 means that bursts are not allowed).",
+			Description: "Allow bursts of at most X writes (1 or less means that bursts are not allowed). Only takes effect if a rate limit per second is set.",
 		},
 	})
 }
@@ -217,6 +216,9 @@ func (d *destinationWithRateLimit) Configure(ctx context.Context, config map[str
 	}
 
 	if limit > 0 {
+		if burst <= 0 {
+			burst = 1 // non-positive numbers would prevent all writes, we don't allow that, we default it to 1
+		}
 		d.limiter = rate.NewLimiter(limit, burst)
 	}
 
