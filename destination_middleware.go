@@ -28,12 +28,14 @@ type DestinationMiddleware interface {
 	Wrap(Destination) Destination
 }
 
-// DefaultDestinationMiddleware is a slice of middleware that should be added to
-// all destinations unless there's a good reason not to.
-var DefaultDestinationMiddleware = []DestinationMiddleware{
-	// TODO enable default middleware once it is tested
-	// DestinationWithRateLimit{},
-	// DestinationWithBatch{},
+// DefaultDestinationMiddleware returns a slice of middleware that should be
+// added to all destinations unless there's a good reason not to.
+func DefaultDestinationMiddleware() []DestinationMiddleware {
+	return []DestinationMiddleware{
+		// TODO enable default middleware once it is tested
+		// DestinationWithRateLimit{},
+		// DestinationWithBatch{},
+	}
 }
 
 // DestinationWithMiddleware wraps the destination into the supplied middleware.
@@ -51,14 +53,19 @@ const (
 	configDestinationBatchDelay = "sdk.batch.delay"
 )
 
-type ctxBatchFlag struct{}
+type ctxKeyBatchEnabled struct{}
 
-// DestinationWithBatch enables batching on the destination. Batching is
-// disabled by default.
+// DestinationWithBatch adds support for batching on the destination. It adds
+// two parameters to the destination config:
+//   - `sdk.batch.size` - Maximum size of batch before it gets written to the
+//     destination.
+//   - `sdk.batch.delay` - Maximum delay before an incomplete batch is written
+//     to the destination.
+// To change the defaults of these parameters use the fields of this struct.
 type DestinationWithBatch struct {
-	// TODO
+	// DefaultBatchSize is the default value for the batch size.
 	DefaultBatchSize int
-	// TODO
+	// DefaultBatchDelay is the default value for the batch delay.
 	DefaultBatchDelay time.Duration
 }
 
@@ -70,17 +77,22 @@ func (d DestinationWithBatch) Wrap(impl Destination) Destination {
 	}
 }
 
-func (DestinationWithBatch) setBatchFlag(ctx context.Context, enabled bool) context.Context {
-	flag, ok := ctx.Value(ctxBatchFlag{}).(*bool)
+// setBatchEnabled stores the boolean in the context. If the context already
+// contains the key it will update the boolean under that key and return the
+// same context, otherwise it will return a new context with the stored value.
+// This is used to signal to destinationPluginAdapter if the Destination is
+// wrapped into DestinationWithBatch middleware.
+func (DestinationWithBatch) setBatchEnabled(ctx context.Context, enabled bool) context.Context {
+	flag, ok := ctx.Value(ctxKeyBatchEnabled{}).(*bool)
 	if ok {
 		*flag = enabled
 	} else {
-		ctx = context.WithValue(ctx, ctxBatchFlag{}, &enabled)
+		ctx = context.WithValue(ctx, ctxKeyBatchEnabled{}, &enabled)
 	}
 	return ctx
 }
-func (DestinationWithBatch) getBatchFlag(ctx context.Context) bool {
-	flag, ok := ctx.Value(ctxBatchFlag{}).(*bool)
+func (DestinationWithBatch) getBatchEnabled(ctx context.Context) bool {
+	flag, ok := ctx.Value(ctxKeyBatchEnabled{}).(*bool)
 	if !ok {
 		return false
 	}
@@ -114,7 +126,7 @@ func (d *destinationWithBatch) Configure(ctx context.Context, config map[string]
 	// this by changing a pointer that is stored in the context. It's a bit
 	// hacky, but the only way to propagate a value back to the adapter without
 	// changing the interface.
-	d.defaults.setBatchFlag(ctx, true)
+	d.defaults.setBatchEnabled(ctx, true)
 
 	// set defaults in the config, they will be visible to the caller as well
 	if config[configDestinationBatchSize] == "" {
@@ -134,12 +146,18 @@ const (
 	configDestinationRateBurst     = "sdk.rate.burst"
 )
 
-// DestinationWithRateLimit TODO
+// DestinationWithRateLimit adds support for rate limiting to the destination.
+// It adds two parameters to the destination config:
+//   - `sdk.rate.perSecond` - Maximum times the Write function can be called per
+//     second (0 means no rate limit).
+//   - `sdk.rate.burst` - Allow bursts of at most X writes (0 means that bursts
+//     are not allowed).
+// To change the defaults of these parameters use the fields of this struct.
 type DestinationWithRateLimit struct {
-	// TODO
-	DefaultRateLimit float64 // writes per second
-	// TODO
-	DefaultBurst int // allow bursts of at most X writes
+	// DefaultRatePerSecond is the default value for the rate per second.
+	DefaultRatePerSecond float64
+	// DefaultBurst is the default value for the allowed burst count.
+	DefaultBurst int
 }
 
 // Wrap a Destination into the rate limiting middleware.
@@ -160,14 +178,14 @@ type destinationWithRateLimit struct {
 func (d *destinationWithRateLimit) Parameters() map[string]Parameter {
 	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
 		configDestinationRatePerSecond: {
-			Default:     strconv.FormatFloat(d.defaults.DefaultRateLimit, 'f', -1, 64),
+			Default:     strconv.FormatFloat(d.defaults.DefaultRatePerSecond, 'f', -1, 64),
 			Required:    false,
 			Description: "Maximum times the Write function can be called per second (0 means no rate limit).",
 		},
 		configDestinationRateBurst: {
 			Default:     strconv.Itoa(d.defaults.DefaultBurst),
 			Required:    false,
-			Description: "Permit bursts of at most X writes (0 means that bursts are not permitted).",
+			Description: "Allow bursts of at most X writes (0 means that bursts are not allowed).",
 		},
 	})
 }
@@ -178,7 +196,7 @@ func (d *destinationWithRateLimit) Configure(ctx context.Context, config map[str
 		return err
 	}
 
-	limit := rate.Limit(d.defaults.DefaultRateLimit)
+	limit := rate.Limit(d.defaults.DefaultRatePerSecond)
 	burst := d.defaults.DefaultBurst
 
 	limitRaw := config[configDestinationRatePerSecond]
@@ -212,5 +230,5 @@ func (d *destinationWithRateLimit) Write(ctx context.Context, recs []Record) (in
 			return 0, fmt.Errorf("rate limiter: %w", err)
 		}
 	}
-	return d.Write(ctx, recs)
+	return d.Destination.Write(ctx, recs)
 }

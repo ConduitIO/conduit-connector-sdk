@@ -19,12 +19,12 @@ type SourceMiddleware interface {
 	Wrap(Source) Source
 }
 
-// DefaultSourceMiddleware is a slice of middleware that should be added to all
-// sources unless there's a good reason not to.
-var DefaultSourceMiddleware = []SourceMiddleware{
-	// TODO enable default middleware once it is tested
-	// SourceWithRateLimit{},
-	// SourceWithBatch{},
+// DefaultSourceMiddleware returns a slice of middleware that should be added to
+// all sources unless there's a good reason not to.
+func DefaultSourceMiddleware() []SourceMiddleware {
+	return []SourceMiddleware{
+		// TODO add default middleware (e.g. rate limit)
+	}
 }
 
 // SourceWithMiddleware wraps the source into the supplied middleware.

@@ -86,7 +86,7 @@ type destinationPluginAdapter struct {
 }
 
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.DestinationConfigureRequest) (cpluginv1.DestinationConfigureResponse, error) {
-	ctx = DestinationWithBatch{}.setBatchFlag(ctx, false)
+	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
 
 	err := a.impl.Configure(ctx, req.Config)
 	if err != nil {
@@ -100,7 +100,7 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.
 func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config map[string]string) error {
 	a.writeStrategy = &writeStrategySingle{impl: a.impl} // by default we write single records
 
-	batchEnabled := DestinationWithBatch{}.getBatchFlag(ctx)
+	batchEnabled := DestinationWithBatch{}.getBatchEnabled(ctx)
 	if !batchEnabled {
 		// batching disabled, just write single records
 		return nil
@@ -267,11 +267,16 @@ func (a *destinationPluginAdapter) convertData(d cpluginv1.Data) Data {
 	}
 }
 
+// writeStrategy is used to switch between writing single records and batching
+// them.
 type writeStrategy interface {
 	Write(ctx context.Context, r Record, ack func(error) error) error
 	Flush(ctx context.Context) error
 }
 
+// writeStrategySingle will write records synchronously one by one without
+// caching them. Acknowledgments are sent back to Conduit right after they are
+// written.
 type writeStrategySingle struct {
 	impl Destination
 }
@@ -288,6 +293,11 @@ func (w *writeStrategySingle) Flush(ctx context.Context) error {
 	return nil // nothing to flush
 }
 
+// writeStrategyBatch will cache records before writing them. Records are
+// grouped into batches that get written when they reach the size batchSize or
+// when the time since adding the first record to the current batch reaches
+// batchDelay.
+// TODO needs to be implemented
 type writeStrategyBatch struct {
 	impl Destination
 
