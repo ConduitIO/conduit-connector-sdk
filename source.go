@@ -32,6 +32,10 @@ import (
 // Source fetches records from 3rd party resources and sends them to Conduit.
 // All implementations must embed UnimplementedSource for forward compatibility.
 type Source interface {
+	// Parameters is a map of named Parameters that describe how to configure
+	// the Source.
+	Parameters() map[string]Parameter
+
 	// Configure is the first function to be called in a connector. It provides the
 	// connector with the configuration that needs to be validated and stored.
 	// In case the configuration is not valid it should return an error.
