@@ -14,27 +14,23 @@
 
 package sdk
 
-import "fmt"
-
-// Util provides utilities for implementing connectors.
-var Util struct {
-	// SourceUtil provides utility methods for implementing a source.
-	Source SourceUtil
-	// SourceUtil provides utility methods for implementing a destination.
-	Destination DestinationUtil
+// SourceMiddleware wraps a Source and adds functionality to it.
+type SourceMiddleware interface {
+	Wrap(Source) Source
 }
 
-func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[string]Parameter {
-	params := make(map[string]Parameter, len(p1)+len(p2))
-	for k, v := range p1 {
-		params[k] = v
+// DefaultSourceMiddleware returns a slice of middleware that should be added to
+// all sources unless there's a good reason not to.
+func DefaultSourceMiddleware() []SourceMiddleware {
+	return []SourceMiddleware{
+		// TODO add default middleware (e.g. rate limit)
 	}
-	for k, v := range p2 {
-		_, ok := params[k]
-		if ok {
-			panic(fmt.Errorf("parameter %q declared twice", k))
-		}
-		params[k] = v
+}
+
+// SourceWithMiddleware wraps the source into the supplied middleware.
+func SourceWithMiddleware(d Source, middleware ...SourceMiddleware) Source {
+	for _, m := range middleware {
+		d = m.Wrap(d)
 	}
-	return params
+	return d
 }

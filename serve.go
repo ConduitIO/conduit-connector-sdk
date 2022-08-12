@@ -58,7 +58,9 @@ func serve(c Connector) error {
 	}
 
 	return server.Serve(
-		func() cpluginv1.SpecifierPlugin { return NewSpecifierPlugin(c.NewSpecification()) },
+		func() cpluginv1.SpecifierPlugin {
+			return NewSpecifierPlugin(c.NewSpecification(), c.NewSource(), c.NewDestination())
+		},
 		func() cpluginv1.SourcePlugin { return NewSourcePlugin(c.NewSource()) },
 		func() cpluginv1.DestinationPlugin { return NewDestinationPlugin(c.NewDestination()) },
 	)

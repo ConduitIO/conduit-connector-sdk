@@ -368,11 +368,7 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []
 		is.NoErr(err)
 	}()
 
-	// try to write using WriteAsync and fallback to Write if it's not supported
-	err = d.writeAsync(ctx, dest, records)
-	if errors.Is(err, ErrUnimplemented) {
-		err = d.write(ctx, dest, records)
-	}
+	_, err = dest.Write(ctx, records)
 	is.NoErr(err)
 
 	return records
@@ -447,61 +443,6 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	return output
 }
 
-// writeAsync writes records to destination using Destination.WriteAsync.
-func (d ConfigurableAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destination, records []Record) error {
-	var waitForAck sync.WaitGroup
-	var ackErr error
-
-	for _, r := range records {
-		waitForAck.Add(1)
-		ack := func(err error) error {
-			defer waitForAck.Done()
-			if ackErr == nil { // only overwrite a nil error
-				ackErr = err
-			}
-			return nil
-		}
-		err := dest.WriteAsync(ctx, r, ack)
-		if err != nil {
-			return err
-		}
-	}
-	// flush to make sure the records get written to the destination
-	err := dest.Flush(ctx)
-	if err != nil {
-		return err
-	}
-
-	// TODO create timeout for wait to prevent deadlock for badly written connectors
-	waitForAck.Wait()
-	if ackErr != nil {
-		return ackErr
-	}
-
-	// records were successfully written
-	return nil
-}
-
-// write writes records to destination using Destination.Write.
-func (d ConfigurableAcceptanceTestDriver) write(ctx context.Context, dest Destination, records []Record) error {
-	for _, r := range records {
-		err := dest.Write(ctx, r)
-		if err != nil {
-			return err
-		}
-	}
-
-	// flush to make sure the records get written to the destination, but allow
-	// it to be unimplemented
-	err := dest.Flush(ctx)
-	if err != nil && !errors.Is(err, ErrUnimplemented) {
-		return err
-	}
-
-	// records were successfully written
-	return nil
-}
-
 type acceptanceTest struct {
 	driver AcceptanceTestDriver
 }
@@ -570,44 +511,30 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 	is.True(spec.Author != "")                             // Specification.Author is missing
 	is.True(strings.TrimSpace(spec.Author) == spec.Author) // Specification.Author starts or ends with whitespace
 
-	isParamsCorrect := func(t *testing.T, params map[string]Parameter) {
-		is := is.NewRelaxed(t)
-		paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
-
-		for name, p := range params {
-			is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
-			is.True(p.Description != "")              // parameter description is empty
-		}
-	}
-
-	t.Run("sourceParams", func(t *testing.T) {
-		a.skipIfNoSource(t)
-		is := is.NewRelaxed(t)
-
-		// we enforce that there is at least 1 parameter, any real source will
-		// require some configuration
-		is.True(spec.SourceParams != nil)   // Specification.SourceParams is missing
-		is.True(len(spec.SourceParams) > 0) // Specification.SourceParams is empty
-
-		isParamsCorrect(t, spec.SourceParams)
-	})
-
-	t.Run("destinationParams", func(t *testing.T) {
-		a.skipIfNoDestination(t)
-		is := is.NewRelaxed(t)
-
-		// we enforce that there is at least 1 parameter, any real destination
-		// will require some configuration
-		is.True(spec.DestinationParams != nil)   // Specification.DestinationParams is missing
-		is.True(len(spec.DestinationParams) > 0) // Specification.DestinationParams is empty
-
-		isParamsCorrect(t, spec.DestinationParams)
-	})
-
 	semverRegex := regexp.MustCompile(`v([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` +
 		`(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?` +
 		`(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?`)
 	is.True(semverRegex.MatchString(spec.Version)) // Specification.Version is not a valid semantic version (vX.Y.Z)
+}
+
+func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
+	a.skipIfNoSource(t)
+	is := is.New(t)
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	source := a.driver.Connector().NewSource()
+	params := source.Parameters()
+
+	// we enforce that there is at least 1 parameter, any real source will
+	// require some configuration
+	is.True(params != nil)   // Source.Parameters() shouldn't return nil
+	is.True(len(params) > 0) // Source.Parameters() shouldn't return empty map
+
+	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
+	for name, p := range params {
+		is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
+		is.True(p.Description != "")              // parameter description is empty
+	}
 }
 
 func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
@@ -626,15 +553,14 @@ func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 }
 
 func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
-	a.skipIfNoSpecification(t)
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
 
-	spec := a.driver.Connector().NewSpecification()
+	srcSpec := a.driver.Connector().NewSource()
 	origCfg := a.driver.SourceConfig(t)
 
-	for name, p := range spec.SourceParams {
+	for name, p := range srcSpec.Parameters() {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(fmt.Sprintf("without required param: %s", name), func(t *testing.T) {
@@ -818,6 +744,26 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
 }
 
+func (a acceptanceTest) TestDestination_Parameters_Success(t *testing.T) {
+	a.skipIfNoDestination(t)
+	is := is.New(t)
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	dest := a.driver.Connector().NewDestination()
+	params := dest.Parameters()
+
+	// we enforce that there is at least 1 parameter, any real destination will
+	// require some configuration
+	is.True(params != nil)   // Destination.Parameters() shouldn't return nil
+	is.True(len(params) > 0) // Destination.Parameters() shouldn't return empty map
+
+	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
+	for name, p := range params {
+		is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
+		is.True(p.Description != "")              // parameter description is empty
+	}
+}
+
 func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
@@ -834,15 +780,14 @@ func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 }
 
 func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
-	a.skipIfNoSpecification(t)
 	a.skipIfNoDestination(t)
 	is := is.New(t)
 	ctx := context.Background()
 
-	spec := a.driver.Connector().NewSpecification()
+	destSpec := a.driver.Connector().NewDestination()
 	origCfg := a.driver.DestinationConfig(t)
 
-	for name, p := range spec.DestinationParams {
+	for name, p := range destSpec.Parameters() {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
@@ -862,32 +807,6 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	}
 }
 
-func (a acceptanceTest) TestDestination_WriteOrWriteAsync(t *testing.T) {
-	a.skipIfNoDestination(t)
-	is := is.New(t)
-	ctx := context.Background()
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
-
-	dest, cleanup := a.openDestination(ctx, t)
-	defer cleanup()
-
-	writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
-	defer cancel()
-	errWrite := dest.Write(writeCtx, a.driver.GenerateRecord(t, OperationCreate))
-
-	writeCtx, cancel = context.WithTimeout(ctx, a.driver.WriteTimeout())
-	defer cancel()
-	errWriteAsync := dest.WriteAsync(writeCtx, a.driver.GenerateRecord(t, OperationCreate), func(err error) error { return nil })
-
-	is.True((errors.Is(errWrite, ErrUnimplemented)) != (errors.Is(errWriteAsync, ErrUnimplemented))) // either Write or WriteAsync should be implemented, not both
-
-	// Flush in case it's an async write and the connector expects this call
-	err := dest.Flush(ctx)
-	if !errors.Is(err, ErrUnimplemented) {
-		is.NoErr(err)
-	}
-}
-
 func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
@@ -899,59 +818,12 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 
 	want := a.generateRecords(t, OperationSnapshot, 20)
 
-	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
-		defer cancel()
-		err := dest.Write(writeCtx, r)
-		if i == 0 && errors.Is(err, ErrUnimplemented) {
-			t.Skip("Write not implemented")
-		}
-		is.NoErr(err)
-	}
+	writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
+	defer cancel()
 
-	// Flush is optional, we allow it to be unimplemented
-	err := dest.Flush(ctx)
-	if !errors.Is(err, ErrUnimplemented) {
-		is.NoErr(err)
-	}
-
-	got := a.driver.ReadFromDestination(t, want)
-	a.isEqualRecords(is, want, got)
-}
-
-func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
-	a.skipIfNoDestination(t)
-	is := is.New(t)
-	ctx := context.Background()
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
-
-	dest, cleanup := a.openDestination(ctx, t)
-	defer cleanup()
-
-	want := a.generateRecords(t, OperationSnapshot, 20)
-
-	var ackWg sync.WaitGroup
-	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
-		defer cancel()
-
-		ackWg.Add(1)
-		err := dest.WriteAsync(writeCtx, r, func(err error) error {
-			defer ackWg.Done()
-			return err // TODO check error, but not here, we might not be in the right goroutine
-		})
-		if i == 0 && errors.Is(err, ErrUnimplemented) {
-			t.Skip("WriteAsync not implemented")
-		}
-		is.NoErr(err)
-	}
-
-	err := dest.Flush(ctx)
+	n, err := dest.Write(writeCtx, want)
 	is.NoErr(err)
-
-	// wait for acks to get called
-	// TODO timeout if it takes too long
-	ackWg.Wait()
+	is.Equal(n, len(want))
 
 	got := a.driver.ReadFromDestination(t, want)
 	a.isEqualRecords(is, want, got)

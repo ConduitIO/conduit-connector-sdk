@@ -75,6 +75,20 @@ func (mr *MockSourceMockRecorder) Open(arg0, arg1 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Open", reflect.TypeOf((*MockSource)(nil).Open), arg0, arg1)
 }
 
+// Parameters mocks base method.
+func (m *MockSource) Parameters() map[string]Parameter {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Parameters")
+	ret0, _ := ret[0].(map[string]Parameter)
+	return ret0
+}
+
+// Parameters indicates an expected call of Parameters.
+func (mr *MockSourceMockRecorder) Parameters() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Parameters", reflect.TypeOf((*MockSource)(nil).Parameters))
+}
+
 // Read mocks base method.
 func (m *MockSource) Read(arg0 context.Context) (Record, error) {
 	m.ctrl.T.Helper()
