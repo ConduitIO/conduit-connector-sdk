@@ -527,8 +527,8 @@ func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
 
 	// we enforce that there is at least 1 parameter, any real source will
 	// require some configuration
-	is.True(params != nil)   // Source.Parameters() returns empty map
-	is.True(len(params) > 0) // Source.Parameters() returns empty map
+	is.True(params != nil)   // Source.Parameters() shouldn't return nil
+	is.True(len(params) > 0) // Source.Parameters() shouldn't return empty map
 
 	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
 	for name, p := range params {
@@ -754,8 +754,8 @@ func (a acceptanceTest) TestDestination_Parameters_Success(t *testing.T) {
 
 	// we enforce that there is at least 1 parameter, any real destination will
 	// require some configuration
-	is.True(params != nil)   // Destination.Parameters() returns empty map
-	is.True(len(params) > 0) // Destination.Parameters() returns empty map
+	is.True(params != nil)   // Destination.Parameters() shouldn't return nil
+	is.True(len(params) > 0) // Destination.Parameters() shouldn't return empty map
 
 	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
 	for name, p := range params {

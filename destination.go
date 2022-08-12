@@ -127,6 +127,13 @@ func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, c
 		batchDelay = delayDur
 	}
 
+	if batchSize < 0 {
+		return fmt.Errorf("invalid %q: must not be negative", configDestinationBatchSize)
+	}
+	if batchDelay < 0 {
+		return fmt.Errorf("invalid %q: must not be negative", configDestinationBatchDelay)
+	}
+
 	if batchSize > 0 || batchDelay > 0 {
 		a.writeStrategy = &writeStrategyBatch{
 			impl:       a.impl,

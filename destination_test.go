@@ -125,7 +125,7 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 
 	dst.EXPECT().Configure(gomock.Any(), map[string]string{}).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
-	dst.EXPECT().Write(gomock.Any(), []Record{want}).Return(1, nil).Times(2)
+	dst.EXPECT().Write(gomock.Any(), []Record{want}).Return(1, nil).Times(10)
 
 	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
 
@@ -142,8 +142,8 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 		is.NoErr(err)
 	}()
 
-	for i := 0; i < 2; i++ {
-		// write the same record twice
+	// write 10 records
+	for i := 0; i < 10; i++ {
 		reqStream <- cpluginv1.DestinationRunRequest{
 			Record: cpluginv1.Record{
 				Position:  want.Position,
@@ -163,7 +163,7 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 		})
 	}
 
-	// close stream after 2 records
+	// close stream
 	close(reqStream)
 	close(respStream)
 
