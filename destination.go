@@ -327,17 +327,18 @@ type DestinationUtil struct{}
 // operation on the record and based on that choose which handler to call.
 //
 // Example usage:
-//   func (d *Destination) Write(ctx context.Context, r sdk.Record) error {
-//     return d.Util.Route(ctx, r,
-//       d.handleInsert,
-//       d.handleUpdate,
-//       d.handleDelete,
-//       d.handleSnapshot, // we could also reuse d.handleInsert
-//     )
-//   }
-//   func (d *Destination) handleInsert(ctx context.Context, r sdk.Record) error {
-//     ...
-//   }
+//
+//	func (d *Destination) Write(ctx context.Context, r sdk.Record) error {
+//	  return d.Util.Route(ctx, r,
+//	    d.handleInsert,
+//	    d.handleUpdate,
+//	    d.handleDelete,
+//	    d.handleSnapshot, // we could also reuse d.handleInsert
+//	  )
+//	}
+//	func (d *Destination) handleInsert(ctx context.Context, r sdk.Record) error {
+//	  ...
+//	}
 func (DestinationUtil) Route(
 	ctx context.Context,
 	rec Record,

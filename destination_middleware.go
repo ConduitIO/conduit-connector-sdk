@@ -60,6 +60,7 @@ type ctxKeyBatchEnabled struct{}
 //     destination.
 //   - `sdk.batch.delay` - Maximum delay before an incomplete batch is written
 //     to the destination.
+//
 // To change the defaults of these parameters use the fields of this struct.
 type DestinationWithBatch struct {
 	// DefaultBatchSize is the default value for the batch size.
@@ -151,6 +152,7 @@ const (
 //     second (0 means no rate limit).
 //   - `sdk.rate.burst` - Allow bursts of at most X writes (0 means that bursts
 //     are not allowed).
+//
 // To change the defaults of these parameters use the fields of this struct.
 type DestinationWithRateLimit struct {
 	// DefaultRatePerSecond is the default value for the rate per second.

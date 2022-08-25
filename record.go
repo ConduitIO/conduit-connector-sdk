@@ -102,7 +102,8 @@ type Metadata map[string]string
 
 // Bytes returns the JSON encoding of the Record.
 // TODO in the future the behavior of this function will be configurable through
-//  the SDK.
+//
+//	the SDK.
 func (r Record) Bytes() []byte {
 	if r.Metadata == nil {
 		// since we are dealing with a Record value this will not be seen
