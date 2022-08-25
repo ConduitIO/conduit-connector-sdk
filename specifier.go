@@ -53,6 +53,15 @@ type Parameter struct {
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that
 // converts it into a cpluginv1.SpecifierPlugin.
 func NewSpecifierPlugin(specs Specification, source Source, dest Destination) cpluginv1.SpecifierPlugin {
+	if source == nil {
+		// prevent nil pointer
+		source = UnimplementedSource{}
+	}
+	if dest == nil {
+		// prevent nil pointer
+		dest = UnimplementedDestination{}
+	}
+
 	return &specifierPluginAdapter{
 		specs:             specs,
 		sourceParams:      source.Parameters(),
