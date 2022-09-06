@@ -1,23 +1,24 @@
 # Acceptance tests
 
-This document describes one possible approach for writing acceptance tests for Conduit
-connectors. We discovered the need to revisit this when integrating the OpenCDC record
-into the SDK, since the new record format fully enables the implementation of mutating
-connectors.
+This document describes one possible approach for writing acceptance tests for
+Conduit connectors. We discovered the need to revisit this when integrating the
+OpenCDC record into the SDK, since the new record format fully enables the
+implementation of mutating connectors.
 
-The main challenge is that 3rd party systems have different capabilities, it is not
-always possible to write a fully fledged mutable connector. Therefore the acceptance
-tests need to be flexible and adjust their expectations based on what the 3rd party
-system is capable of. At first it's probably simplest to let the developer specify
-which category the connector falls into and which tests should be run. In the future
-it would be ideal if we can detect the category automatically.
+The main challenge is that 3rd party systems have different capabilities, it is
+not always possible to write a fully fledged mutable connector. Therefore, the
+acceptance tests need to be flexible and adjust their expectations based on what
+the 3rd party system is capable of. At first, it's probably simplest to let the
+developer specify which category the connector falls into and which tests should
+be run. In the future it would be ideal if we can detect the category
+automatically.
 
-We also need to confirm that the way we randomly generate records and how we assert
-them makes sense for all connectors.
+We also need to confirm that the way we randomly generate records and how we
+assert them makes sense for all connectors.
 
-This document should serve as a basis for discussion, it does not explain the current
-implementation, nor should it be taken as the one single truth for how we should
-approach the writing of acceptance tests.
+This document should serve as a basis for discussion, it does not explain the
+current implementation, nor should it be taken as the one single truth for how
+we should approach the writing of acceptance tests.
 
 ## Source
 
@@ -42,7 +43,15 @@ flowchart TD;
     srcD2 -- Yes --> srcMutating;
 ```
 
-All source tests are executed with structured records. The reason is that not all destinations are able to consume unstructured raw data, while structured data should be supported by any destination connector. We should give the user control over field names in the structured record in case the connector expects specific field names that match the target structure.
+All source tests are executed with structured records. The reason is that not
+all destinations are able to consume unstructured raw data, while structured
+data should be supported by any destination connector. We should give the user
+control over field names in the structured record in case the connector expects
+specific field names that match the target structure.
+
+The table below contains a list of all source related acceptance tests. A
+:white_check_mark: means we expect a certain source type to pass that test,
+otherwise the passing of the test is optional.
 
 | Test                                                 | ![Signaling source](https://img.shields.io/badge/-Signaling%20source-yellow?style=flat-square) | ![Appending source](https://img.shields.io/badge/-Appending%20source-yellowgreen?style=flat-square) | ![Mutating source](https://img.shields.io/badge/-Mutating%20source-green?style=flat-square) |
 |------------------------------------------------------|------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
@@ -91,7 +100,9 @@ Expected to pass:
 ![Appending source](https://img.shields.io/badge/-Appending%20source-yellowgreen?style=flat-square)
 ![Mutating source](https://img.shields.io/badge/-Mutating%20source-green?style=flat-square)
 
-Records in these tests contain operation "create" or "snapshot", the reason is that ![Mutating destination](https://img.shields.io/badge/-Mutating%20destination-green?style=flat-square) won't append the record if it receives a "delete" or "update".
+Records in these tests contain operation "create" or "snapshot", the reason is
+that ![Mutating destination](https://img.shields.io/badge/-Mutating%20destination-green?style=flat-square)
+won't append the record if it receives a "delete" or "update".
 
 * **Test 1** - detect 1 record
   1. Open source
@@ -110,7 +121,9 @@ Expected to pass:
 ![Appending source](https://img.shields.io/badge/-Appending%20source-yellowgreen?style=flat-square)
 ![Mutating source](https://img.shields.io/badge/-Mutating%20source-green?style=flat-square)
 
-Signaling connectors only work "in the moment", they are not expected to be able to create a snapshot. Records in these tests contain operation "create" or "snapshot".
+Signaling connectors only work "in the moment", they are not expected to be able
+to create a snapshot. Records in these tests contain operation "create" or
+"snapshot".
 
 * **Test 1** - detect 1 record
   1. Write 1 record to destination
@@ -129,7 +142,9 @@ Expected to pass:
 ![Appending source](https://img.shields.io/badge/-Appending%20source-yellowgreen?style=flat-square)
 ![Mutating source](https://img.shields.io/badge/-Mutating%20source-green?style=flat-square)
 
-Signaling connectors only work "in the moment", they are not expected to be able to create a snapshot. Records in these tests contain operation "create" or "snapshot".
+Signaling connectors only work "in the moment", they are not expected to be able
+to create a snapshot. Records in these tests contain operation "create" or
+"snapshot".
 
 * **Test 1** - resume partial snapshot
   1. Write X unrelated records to destination
@@ -162,7 +177,11 @@ Signaling connectors only work "in the moment", they are not expected to be able
 Expected to pass:
 ![Mutating source](https://img.shields.io/badge/-Mutating%20source-green?style=flat-square)
 
-In these tests we should be lenient regarding the expectation of an "update" record. Not all systems are capable of producing a diff, so it's not always possible to populate the `before.payload` field of an OpenCDC record. We should still make sure that `before.key` is populated, because that is the main identifier of an entity in an "update" record.
+In these tests we should be lenient regarding the expectation of an "update"
+record. Not all systems are capable of producing a diff, so it's not always
+possible to populate the `before.payload` field of an OpenCDC record. We should
+still make sure that `before.key` is populated, because that is the main
+identifier of an entity in an "update" record.
 
 * **Test 1** - detect update
   1. Open source
@@ -200,6 +219,10 @@ flowchart TD;
     dstD2 -- Mutate entity --> dstMutating;
 ```
 
+The table below contains a list of all destination related acceptance tests. A
+:white_check_mark: means we expect a certain destination type to pass that test,
+otherwise the passing of the test is optional.
+
 | Test                                                         | ![Appending desstination](https://img.shields.io/badge/-Appending%20destination-yellowgreen?style=flat-square) | ![Mutating destination](https://img.shields.io/badge/-Mutating%20destination-green?style=flat-square) |
 |--------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
 | **General tests**                                            | :white_check_mark:                                                                                             | :white_check_mark:                                                                                    |
@@ -215,7 +238,9 @@ flowchart TD;
 | Test 1 - apply delete                                        |                                                                                                                | :white_check_mark:                                                                                    |
 | Test 2 - apply update                                        |                                                                                                                | :white_check_mark:                                                                                    |
 
-\* A mutating destination should _probably_ support writing raw records, but it shouldn't be a hard requirement. For instance a DB destination connector might need structured data to map values to columns.
+\* A mutating destination should _probably_ support writing raw records, but it
+shouldn't be a hard requirement. For instance a DB destination connector might
+need structured data to map values to columns.
 
 ### General tests
 
