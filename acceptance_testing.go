@@ -37,16 +37,16 @@ import (
 // should pass. It should manually be called from a test case in each
 // implementation:
 //
-//   func TestAcceptance(t *testing.T) {
-//       // set up test dependencies ...
-//       sdk.AcceptanceTest(t, sdk.ConfigurableAcceptanceTestDriver{
-//           Config: sdk.ConfigurableAcceptanceTestDriverConfig{
-//               Connector: myConnector,
-//               SourceConfig: map[string]string{...},      // valid source config
-//               DestinationConfig: map[string]string{...}, // valid destination config
-//           },
-//       })
-//   }
+//	func TestAcceptance(t *testing.T) {
+//	    // set up test dependencies ...
+//	    sdk.AcceptanceTest(t, sdk.ConfigurableAcceptanceTestDriver{
+//	        Config: sdk.ConfigurableAcceptanceTestDriverConfig{
+//	            Connector: myConnector,
+//	            SourceConfig: map[string]string{...},      // valid source config
+//	            DestinationConfig: map[string]string{...}, // valid destination config
+//	        },
+//	    })
+//	}
 func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 	acceptanceTest{
 		driver: driver,
