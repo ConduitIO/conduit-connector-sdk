@@ -32,6 +32,10 @@ import (
 // Source fetches records from 3rd party resources and sends them to Conduit.
 // All implementations must embed UnimplementedSource for forward compatibility.
 type Source interface {
+	// Parameters is a map of named Parameters that describe how to configure
+	// the Source.
+	Parameters() map[string]Parameter
+
 	// Configure is the first function to be called in a connector. It provides the
 	// connector with the configuration that needs to be validated and stored.
 	// In case the configuration is not valid it should return an error.
@@ -267,10 +271,17 @@ func (a *sourcePluginAdapter) waitForClose(ctx context.Context, stop chan struct
 func (a *sourcePluginAdapter) convertRecord(r Record) cpluginv1.Record {
 	return cpluginv1.Record{
 		Position:  r.Position,
+		Operation: cpluginv1.Operation(r.Operation),
 		Metadata:  r.Metadata,
 		Key:       a.convertData(r.Key),
-		Payload:   a.convertData(r.Payload),
-		CreatedAt: r.CreatedAt,
+		Payload:   a.convertChange(r.Payload),
+	}
+}
+
+func (a *sourcePluginAdapter) convertChange(c Change) cpluginv1.Change {
+	return cpluginv1.Change{
+		Before: a.convertData(c.Before),
+		After:  a.convertData(c.After),
 	}
 }
 
@@ -286,5 +297,94 @@ func (a *sourcePluginAdapter) convertData(d Data) cpluginv1.Data {
 		return cpluginv1.StructuredData(v)
 	default:
 		panic("unknown data type")
+	}
+}
+
+// SourceUtil provides utility methods for implementing a source.
+type SourceUtil struct{}
+
+// NewRecordCreate can be used to instantiate a record with OperationCreate.
+func (SourceUtil) NewRecordCreate(
+	position Position,
+	metadata Metadata,
+	key Data,
+	payload Data,
+) Record {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	metadata.SetReadAt(time.Now())
+	return Record{
+		Position:  position,
+		Operation: OperationCreate,
+		Metadata:  metadata,
+		Key:       key,
+		Payload: Change{
+			After: payload,
+		},
+	}
+}
+
+// NewRecordSnapshot can be used to instantiate a record with OperationSnapshot.
+func (SourceUtil) NewRecordSnapshot(
+	position Position,
+	metadata Metadata,
+	key Data,
+	payload Data,
+) Record {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	metadata.SetReadAt(time.Now())
+	return Record{
+		Position:  position,
+		Operation: OperationSnapshot,
+		Metadata:  metadata,
+		Key:       key,
+		Payload: Change{
+			After: payload,
+		},
+	}
+}
+
+// NewRecordUpdate can be used to instantiate a record with OperationUpdate.
+func (SourceUtil) NewRecordUpdate(
+	position Position,
+	metadata Metadata,
+	key Data,
+	payloadBefore Data,
+	payloadAfter Data,
+) Record {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	metadata.SetReadAt(time.Now())
+	return Record{
+		Position:  position,
+		Operation: OperationUpdate,
+		Metadata:  metadata,
+		Key:       key,
+		Payload: Change{
+			Before: payloadBefore,
+			After:  payloadAfter,
+		},
+	}
+}
+
+// NewRecordDelete can be used to instantiate a record with OperationDelete.
+func (SourceUtil) NewRecordDelete(
+	position Position,
+	metadata Metadata,
+	key Data,
+) Record {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	metadata.SetReadAt(time.Now())
+	return Record{
+		Position:  position,
+		Operation: OperationDelete,
+		Metadata:  metadata,
+		Key:       key,
 	}
 }

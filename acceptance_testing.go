@@ -15,12 +15,14 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -35,16 +37,16 @@ import (
 // should pass. It should manually be called from a test case in each
 // implementation:
 //
-//   func TestAcceptance(t *testing.T) {
-//       // set up test dependencies ...
-//       sdk.AcceptanceTest(t, sdk.ConfigurableAcceptanceTestDriver{
-//           Config: sdk.ConfigurableAcceptanceTestDriverConfig{
-//               Connector: myConnector,
-//               SourceConfig: map[string]string{...},      // valid source config
-//               DestinationConfig: map[string]string{...}, // valid destination config
-//           },
-//       })
-//   }
+//	func TestAcceptance(t *testing.T) {
+//	    // set up test dependencies ...
+//	    sdk.AcceptanceTest(t, sdk.ConfigurableAcceptanceTestDriver{
+//	        Config: sdk.ConfigurableAcceptanceTestDriverConfig{
+//	            Connector: myConnector,
+//	            SourceConfig: map[string]string{...},      // valid source config
+//	            DestinationConfig: map[string]string{...}, // valid destination config
+//	        },
+//	    })
+//	}
 func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 	acceptanceTest{
 		driver: driver,
@@ -76,13 +78,13 @@ type AcceptanceTestDriver interface {
 	// suppress false positive goroutine leaks.
 	GoleakOptions(*testing.T) []goleak.Option
 
-	// GenerateRecord will generate a new Record. It's the responsibility
-	// of the AcceptanceTestDriver implementation to provide records with
-	// appropriate contents (e.g. appropriate type of payload).
+	// GenerateRecord will generate a new Record for a certain Operation. It's
+	// the responsibility of the AcceptanceTestDriver implementation to provide
+	// records with appropriate contents (e.g. appropriate type of payload).
 	// The generated record will contain mixed data types in the field Key and
 	// Payload (i.e. RawData and StructuredData), unless configured otherwise
 	// (see ConfigurableAcceptanceTestDriverConfig.GenerateDataType).
-	GenerateRecord(*testing.T) Record
+	GenerateRecord(*testing.T, Operation) Record
 
 	// WriteToSource receives a slice of records that should be prepared in the
 	// 3rd party system so that the source will read them. The returned slice
@@ -217,13 +219,23 @@ func (d ConfigurableAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.O
 	return d.Config.GoleakOptions
 }
 
-func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T) Record {
+func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T, op Operation) Record {
+	// TODO we currently only generate records with operation "create" and
+	//  "snapshot", because this is the only operation we know all connectors
+	//  should be able to handle. We should make acceptance tests more
+	//  sophisticated and also check how the connector handles other operations,
+	//  specifically "update" and "delete".
+	//  Once we generate different operations we need to adjust how we compare
+	//  records!
 	return Record{
 		Position:  Position(d.randString(32)), // position doesn't matter, as long as it's unique
+		Operation: op,
 		Metadata:  map[string]string{d.randString(32): d.randString(32)},
-		CreatedAt: time.Now().UTC(),
 		Key:       d.GenerateData(t),
-		Payload:   d.GenerateData(t),
+		Payload: Change{
+			Before: nil,
+			After:  d.GenerateData(t),
+		},
 	}
 }
 
@@ -356,11 +368,7 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []
 		is.NoErr(err)
 	}()
 
-	// try to write using WriteAsync and fallback to Write if it's not supported
-	err = d.writeAsync(ctx, dest, records)
-	if errors.Is(err, ErrUnimplemented) {
-		err = d.write(ctx, dest, records)
-	}
+	_, err = dest.Write(ctx, records)
 	is.NoErr(err)
 
 	return records
@@ -435,61 +443,6 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	return output
 }
 
-// writeAsync writes records to destination using Destination.WriteAsync.
-func (d ConfigurableAcceptanceTestDriver) writeAsync(ctx context.Context, dest Destination, records []Record) error {
-	var waitForAck sync.WaitGroup
-	var ackErr error
-
-	for _, r := range records {
-		waitForAck.Add(1)
-		ack := func(err error) error {
-			defer waitForAck.Done()
-			if ackErr == nil { // only overwrite a nil error
-				ackErr = err
-			}
-			return nil
-		}
-		err := dest.WriteAsync(ctx, r, ack)
-		if err != nil {
-			return err
-		}
-	}
-	// flush to make sure the records get written to the destination
-	err := dest.Flush(ctx)
-	if err != nil {
-		return err
-	}
-
-	// TODO create timeout for wait to prevent deadlock for badly written connectors
-	waitForAck.Wait()
-	if ackErr != nil {
-		return ackErr
-	}
-
-	// records were successfully written
-	return nil
-}
-
-// write writes records to destination using Destination.Write.
-func (d ConfigurableAcceptanceTestDriver) write(ctx context.Context, dest Destination, records []Record) error {
-	for _, r := range records {
-		err := dest.Write(ctx, r)
-		if err != nil {
-			return err
-		}
-	}
-
-	// flush to make sure the records get written to the destination, but allow
-	// it to be unimplemented
-	err := dest.Flush(ctx)
-	if err != nil && !errors.Is(err, ErrUnimplemented) {
-		return err
-	}
-
-	// records were successfully written
-	return nil
-}
-
 type acceptanceTest struct {
 	driver AcceptanceTestDriver
 }
@@ -558,44 +511,30 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 	is.True(spec.Author != "")                             // Specification.Author is missing
 	is.True(strings.TrimSpace(spec.Author) == spec.Author) // Specification.Author starts or ends with whitespace
 
-	isParamsCorrect := func(t *testing.T, params map[string]Parameter) {
-		is := is.NewRelaxed(t)
-		paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
-
-		for name, p := range params {
-			is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
-			is.True(p.Description != "")              // parameter description is empty
-		}
-	}
-
-	t.Run("sourceParams", func(t *testing.T) {
-		a.skipIfNoSource(t)
-		is := is.NewRelaxed(t)
-
-		// we enforce that there is at least 1 parameter, any real source will
-		// require some configuration
-		is.True(spec.SourceParams != nil)   // Specification.SourceParams is missing
-		is.True(len(spec.SourceParams) > 0) // Specification.SourceParams is empty
-
-		isParamsCorrect(t, spec.SourceParams)
-	})
-
-	t.Run("destinationParams", func(t *testing.T) {
-		a.skipIfNoDestination(t)
-		is := is.NewRelaxed(t)
-
-		// we enforce that there is at least 1 parameter, any real destination
-		// will require some configuration
-		is.True(spec.DestinationParams != nil)   // Specification.DestinationParams is missing
-		is.True(len(spec.DestinationParams) > 0) // Specification.DestinationParams is empty
-
-		isParamsCorrect(t, spec.DestinationParams)
-	})
-
 	semverRegex := regexp.MustCompile(`v([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` +
 		`(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?` +
 		`(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?`)
 	is.True(semverRegex.MatchString(spec.Version)) // Specification.Version is not a valid semantic version (vX.Y.Z)
+}
+
+func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
+	a.skipIfNoSource(t)
+	is := is.New(t)
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	source := a.driver.Connector().NewSource()
+	params := source.Parameters()
+
+	// we enforce that there is at least 1 parameter, any real source will
+	// require some configuration
+	is.True(params != nil)   // Source.Parameters() shouldn't return nil
+	is.True(len(params) > 0) // Source.Parameters() shouldn't return empty map
+
+	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
+	for name, p := range params {
+		is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
+		is.True(p.Description != "")              // parameter description is empty
+	}
 }
 
 func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
@@ -614,15 +553,14 @@ func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 }
 
 func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
-	a.skipIfNoSpecification(t)
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := context.Background()
 
-	spec := a.driver.Connector().NewSpecification()
+	srcSpec := a.driver.Connector().NewSource()
 	origCfg := a.driver.SourceConfig(t)
 
-	for name, p := range spec.SourceParams {
+	for name, p := range srcSpec.Parameters() {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(fmt.Sprintf("without required param: %s", name), func(t *testing.T) {
@@ -651,7 +589,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionSnapshot(t *testing.T) {
 	// Write expectations before source is started, this means the source will
 	// have to first read the existing data (i.e. snapshot), but we will
 	// interrupt it and try to resume.
-	want := a.driver.WriteToSource(t, a.generateRecords(t, 10))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, OperationSnapshot, 10))
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
@@ -712,7 +650,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 	// Write expectations after source is open, this means the source is already
 	// listening to ongoing changes (i.e. CDC), we will interrupt it and try to
 	// resume.
-	want := a.driver.WriteToSource(t, a.generateRecords(t, 10))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, OperationCreate, 10))
 
 	// read all records, but ack only half of them
 	got, err := a.readMany(ctx, t, source, len(want))
@@ -758,7 +696,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	}
 
 	// write expectation before source exists
-	want := a.driver.WriteToSource(t, a.generateRecords(t, 10))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, OperationSnapshot, 10))
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
@@ -776,7 +714,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 
 	// while connector is running write more data and make sure the connector
 	// detects it
-	want = a.driver.WriteToSource(t, a.generateRecords(t, 20))
+	want = a.driver.WriteToSource(t, a.generateRecords(t, OperationCreate, 20))
 
 	t.Run("cdc", func(t *testing.T) {
 		is := is.New(t)
@@ -806,6 +744,26 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
 }
 
+func (a acceptanceTest) TestDestination_Parameters_Success(t *testing.T) {
+	a.skipIfNoDestination(t)
+	is := is.New(t)
+	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+
+	dest := a.driver.Connector().NewDestination()
+	params := dest.Parameters()
+
+	// we enforce that there is at least 1 parameter, any real destination will
+	// require some configuration
+	is.True(params != nil)   // Destination.Parameters() shouldn't return nil
+	is.True(len(params) > 0) // Destination.Parameters() shouldn't return empty map
+
+	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
+	for name, p := range params {
+		is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
+		is.True(p.Description != "")              // parameter description is empty
+	}
+}
+
 func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
@@ -822,15 +780,14 @@ func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 }
 
 func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
-	a.skipIfNoSpecification(t)
 	a.skipIfNoDestination(t)
 	is := is.New(t)
 	ctx := context.Background()
 
-	spec := a.driver.Connector().NewSpecification()
+	destSpec := a.driver.Connector().NewDestination()
 	origCfg := a.driver.DestinationConfig(t)
 
-	for name, p := range spec.DestinationParams {
+	for name, p := range destSpec.Parameters() {
 		if p.Required {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
@@ -850,32 +807,6 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	}
 }
 
-func (a acceptanceTest) TestDestination_WriteOrWriteAsync(t *testing.T) {
-	a.skipIfNoDestination(t)
-	is := is.New(t)
-	ctx := context.Background()
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
-
-	dest, cleanup := a.openDestination(ctx, t)
-	defer cleanup()
-
-	writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
-	defer cancel()
-	errWrite := dest.Write(writeCtx, a.driver.GenerateRecord(t))
-
-	writeCtx, cancel = context.WithTimeout(ctx, a.driver.WriteTimeout())
-	defer cancel()
-	errWriteAsync := dest.WriteAsync(writeCtx, a.driver.GenerateRecord(t), func(err error) error { return nil })
-
-	is.True((errors.Is(errWrite, ErrUnimplemented)) != (errors.Is(errWriteAsync, ErrUnimplemented))) // either Write or WriteAsync should be implemented, not both
-
-	// Flush in case it's an async write and the connector expects this call
-	err := dest.Flush(ctx)
-	if !errors.Is(err, ErrUnimplemented) {
-		is.NoErr(err)
-	}
-}
-
 func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
@@ -885,61 +816,14 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	dest, cleanup := a.openDestination(ctx, t)
 	defer cleanup()
 
-	want := a.generateRecords(t, 20)
+	want := a.generateRecords(t, OperationSnapshot, 20)
 
-	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
-		defer cancel()
-		err := dest.Write(writeCtx, r)
-		if i == 0 && errors.Is(err, ErrUnimplemented) {
-			t.Skip("Write not implemented")
-		}
-		is.NoErr(err)
-	}
+	writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
+	defer cancel()
 
-	// Flush is optional, we allow it to be unimplemented
-	err := dest.Flush(ctx)
-	if !errors.Is(err, ErrUnimplemented) {
-		is.NoErr(err)
-	}
-
-	got := a.driver.ReadFromDestination(t, want)
-	a.isEqualRecords(is, want, got)
-}
-
-func (a acceptanceTest) TestDestination_WriteAsync_Success(t *testing.T) {
-	a.skipIfNoDestination(t)
-	is := is.New(t)
-	ctx := context.Background()
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
-
-	dest, cleanup := a.openDestination(ctx, t)
-	defer cleanup()
-
-	want := a.generateRecords(t, 20)
-
-	var ackWg sync.WaitGroup
-	for i, r := range want {
-		writeCtx, cancel := context.WithTimeout(ctx, a.driver.WriteTimeout())
-		defer cancel()
-
-		ackWg.Add(1)
-		err := dest.WriteAsync(writeCtx, r, func(err error) error {
-			defer ackWg.Done()
-			return err // TODO check error, but not here, we might not be in the right goroutine
-		})
-		if i == 0 && errors.Is(err, ErrUnimplemented) {
-			t.Skip("WriteAsync not implemented")
-		}
-		is.NoErr(err)
-	}
-
-	err := dest.Flush(ctx)
+	n, err := dest.Write(writeCtx, want)
 	is.NoErr(err)
-
-	// wait for acks to get called
-	// TODO timeout if it takes too long
-	ackWg.Wait()
+	is.Equal(n, len(want))
 
 	got := a.driver.ReadFromDestination(t, want)
 	a.isEqualRecords(is, want, got)
@@ -1019,10 +903,10 @@ func (a acceptanceTest) openDestination(ctx context.Context, t *testing.T) (dest
 	return dest, cleanup
 }
 
-func (a acceptanceTest) generateRecords(t *testing.T, count int) []Record {
+func (a acceptanceTest) generateRecords(t *testing.T, op Operation, count int) []Record {
 	records := make([]Record, count)
 	for i := range records {
-		records[i] = a.driver.GenerateRecord(t)
+		records[i] = a.driver.GenerateRecord(t, op)
 	}
 	return records
 }
@@ -1074,27 +958,74 @@ func (a acceptanceTest) isEqualRecords(is *is.I, want, got []Record) {
 		return
 	}
 
-	// transform slices into maps so we can disregard the order
-	wantMap := make(map[string]Record, len(want))
-	gotMap := make(map[string]Record, len(got))
-	for i := 0; i < len(want); i++ {
-		wantMap[string(want[i].Payload.Bytes())] = want[i]
-		gotMap[string(got[i].Payload.Bytes())] = got[i]
+	a.sortMatchingRecords(want, got)
+
+	if bytes.Equal(want[0].Bytes(), got[0].Payload.After.Bytes()) {
+		// the payload of the actual record matches the whole record in the
+		// expectation, the destination apparently writes records as a whole and
+		// retrieves them as a whole in the payload
+		// this is valid behavior, we need to adjust the expectations
+		for i, wantRec := range want {
+			want[i] = Record{
+				Position:  nil,
+				Operation: OperationSnapshot, // we allow operations Snapshot or Create
+				Metadata:  nil,               // no expectation for metadata
+				Key:       got[i].Key,        // no expectation for key
+				Payload: Change{
+					Before: nil,
+					After:  RawData(wantRec.Bytes()), // the payload should contain the whole expected record
+				},
+			}
+		}
 	}
 
-	is.Equal(len(got), len(gotMap)) // record payloads are not unique
-
-	for key, wantRec := range wantMap {
-		gotRec, ok := gotMap[key]
-		is.True(ok) // expected record not found
-
-		a.isEqualRecord(is, wantRec, gotRec)
+	for i := range want {
+		a.isEqualRecord(is, want[i], got[i])
 	}
 }
 
+// sortMatchingRecords will try to reorder records in both slices in a way that
+// puts the equivalent records into the same position. It uses two strategies:
+//   - It starts of by sorting records based on the output of
+//     Record.Payload.After.Bytes(). If the first records contain the same
+//     payload bytes after that it assumes the sort is fine and returns,
+//     otherwise it falls back to the next strategy.
+//   - It then sorts only the want slice using the output of Record.Bytes().
+//     This assumes that the destination writes whole records and not only the
+//     payload. It does not check if the first records match after this.
+func (a acceptanceTest) sortMatchingRecords(want, got []Record) {
+	sort.Slice(want, func(i, j int) bool {
+		return string(want[i].Payload.After.Bytes()) < string(want[j].Payload.After.Bytes())
+	})
+	sort.Slice(got, func(i, j int) bool {
+		return string(got[i].Payload.After.Bytes()) < string(got[j].Payload.After.Bytes())
+	})
+
+	// check if first record payload matches to ensure we have the right order
+	if bytes.Equal(want[0].Payload.After.Bytes(), got[0].Payload.After.Bytes()) {
+		return // all good
+	}
+
+	// record payloads didn't match, we assume the destination writes whole
+	// records, we should sort the want records based on their bytes then
+	sort.Slice(want, func(i, j int) bool {
+		return string(want[i].Bytes()) < string(want[j].Bytes())
+	})
+}
+
 func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
+	if want.Operation == OperationSnapshot &&
+		got.Operation == OperationCreate {
+		// This is a special case and we accept it. Not all connectors will
+		// create records with operation "snapshot", but they will still able to
+		// produce records that were written before the source was open in
+		// normal CDC mode (e.g. Kafka connector).
+	} else {
+		is.Equal(want.Operation, got.Operation) // record operation did not match (want != got)
+	}
+
 	a.isEqualData(is, want.Key, got.Key)
-	a.isEqualData(is, want.Payload, got.Payload)
+	a.isEqualChange(is, want.Payload, got.Payload)
 
 	// check metadata fields, if they are there they should match
 	if len(got.Metadata) == 0 {
@@ -1107,8 +1038,11 @@ func (a acceptanceTest) isEqualRecord(is *is.I, want, got Record) {
 			}
 		}
 	}
+}
 
-	is.True(!want.CreatedAt.After(got.CreatedAt)) // the expected CreatedAt timestamp shouldn't be after the actual CreatedAt timestamp
+func (a acceptanceTest) isEqualChange(is *is.I, want, got Change) {
+	a.isEqualData(is, want.Before, got.Before)
+	a.isEqualData(is, want.After, got.After)
 }
 
 // isEqualData will match the two data objects in their entirety if the types

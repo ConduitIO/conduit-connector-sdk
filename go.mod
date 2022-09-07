@@ -3,12 +3,13 @@ module github.com/conduitio/conduit-connector-sdk
 go 1.18
 
 require (
-	github.com/conduitio/conduit-connector-protocol v0.2.1-0.20220608133528-f466a956bd4d
+	github.com/conduitio/conduit-connector-protocol v0.2.1-0.20220802135043-4b89a6c94401
 	github.com/golang/mock v1.6.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/matryer/is v1.4.0
-	github.com/rs/zerolog v1.27.0
+	github.com/rs/zerolog v1.28.0
 	go.uber.org/goleak v1.1.12
+	golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
 )
 
@@ -22,7 +23,7 @@ require (
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/mitchellh/go-testing-interface v1.0.0 // indirect
 	github.com/oklog/run v1.0.0 // indirect
-	go.buf.build/library/go-grpc/conduitio/conduit-connector-protocol v1.4.2 // indirect
+	go.buf.build/grpc/go/conduitio/conduit-connector-protocol v1.3.3 // indirect
 	golang.org/x/net v0.0.0-20211108170745-6635138e15ea // indirect
 	golang.org/x/sys v0.0.0-20220405052023-b1e9470b6e64 // indirect
 	golang.org/x/text v0.3.7 // indirect

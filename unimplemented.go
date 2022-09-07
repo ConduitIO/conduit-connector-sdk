@@ -19,6 +19,11 @@ import "context"
 // UnimplementedDestination should be embedded to have forward compatible implementations.
 type UnimplementedDestination struct{}
 
+// Parameters needs to be overridden in the actual implementation.
+func (UnimplementedDestination) Parameters() map[string]Parameter {
+	return nil
+}
+
 // Configure needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Configure(context.Context, map[string]string) error {
 	return ErrUnimplemented
@@ -29,22 +34,9 @@ func (UnimplementedDestination) Open(context.Context) error {
 	return ErrUnimplemented
 }
 
-// Write needs to be overridden in the actual implementation, unless WriteAsync
-// is implemented.
-func (UnimplementedDestination) Write(context.Context, Record) error {
-	return ErrUnimplemented
-}
-
-// WriteAsync needs to be overridden in the actual implementation, unless Write
-// is implemented.
-func (UnimplementedDestination) WriteAsync(context.Context, Record, AckFunc) error {
-	return ErrUnimplemented
-}
-
-// Flush needs to be overridden in the actual implementation if WriteAsync is
-// implemented, otherwise it is optional.
-func (UnimplementedDestination) Flush(context.Context) error {
-	return ErrUnimplemented
+// Write needs to be overridden in the actual implementation.
+func (UnimplementedDestination) Write(context.Context, []Record) (int, error) {
+	return 0, ErrUnimplemented
 }
 
 // Teardown needs to be overridden in the actual implementation.
@@ -55,6 +47,11 @@ func (UnimplementedDestination) mustEmbedUnimplementedDestination() {}
 
 // UnimplementedSource should be embedded to have forward compatible implementations.
 type UnimplementedSource struct{}
+
+// Parameters needs to be overridden in the actual implementation.
+func (UnimplementedSource) Parameters() map[string]Parameter {
+	return nil
+}
 
 // Configure needs to be overridden in the actual implementation.
 func (UnimplementedSource) Configure(context.Context, map[string]string) error {

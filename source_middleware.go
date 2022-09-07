@@ -14,18 +14,23 @@
 
 package sdk
 
-import "errors"
+// SourceMiddleware wraps a Source and adds functionality to it.
+type SourceMiddleware interface {
+	Wrap(Source) Source
+}
 
-var (
-	// ErrBackoffRetry can be returned by Source.Read to signal the SDK there is
-	// no record to fetch right now and it should try again later.
-	ErrBackoffRetry = errors.New("backoff retry")
+// DefaultSourceMiddleware returns a slice of middleware that should be added to
+// all sources unless there's a good reason not to.
+func DefaultSourceMiddleware() []SourceMiddleware {
+	return []SourceMiddleware{
+		// TODO add default middleware (e.g. rate limit)
+	}
+}
 
-	// ErrUnimplemented is returned in functions of plugins that don't implement
-	// a certain method.
-	ErrUnimplemented = errors.New("action not implemented")
-
-	// ErrMetadataFieldNotFound is returned in metadata utility functions when a
-	// metadata field is not found.
-	ErrMetadataFieldNotFound = errors.New("metadata field not found")
-)
+// SourceWithMiddleware wraps the source into the supplied middleware.
+func SourceWithMiddleware(d Source, middleware ...SourceMiddleware) Source {
+	for _, m := range middleware {
+		d = m.Wrap(d)
+	}
+	return d
+}

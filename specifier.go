@@ -20,33 +20,31 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 )
 
-// Specification is returned by a plugin when Specify is called.
-// It contains information about the configuration parameters for plugins
-// and allows them to describe their parameters.
+// Specification contains general information regarding the plugin like its name
+// and what it does.
 type Specification struct {
 	// Name is the name of the plugin.
 	Name string
-	// Summary is a brief description of the plugin and what it does.
+	// Summary is a brief description of the plugin and what it does. Try not to
+	// exceed 200 characters.
 	Summary string
 	// Description is a more long form area appropriate for README-like text
-	// that the author can provide for documentation about the specified
-	// Parameters.
+	// that the author can provide for explaining the behavior of the connector
+	// or specific parameters.
 	Description string
-	// Version string. Should be prepended with `v` like Go, e.g. `v1.54.3`
+	// Version string. Should be prepended with `v` like Go, e.g. `v1.54.3`.
 	Version string
 	// Author declares the entity that created or maintains this plugin.
 	Author string
-	// DestinationParams and SourceParams is a map of named Parameters that
-	// describe how to configure the plugin's Destination or Source.
-	DestinationParams map[string]Parameter
-	SourceParams      map[string]Parameter
 }
 
-// Parameter is a helper struct for defining plugin Specifications.
+// Parameter defines a single connector parameter.
 type Parameter struct {
 	// Default is the default value of the parameter, if any.
 	Default string
-	// Required is whether it must be provided in the Config or not.
+	// Required controls if the parameter will be shown as required or optional.
+	// Note that no validation will be added to the field because of this, this
+	// is purely for informational purposes.
 	Required bool
 	// Description holds a description of the field and how to configure it.
 	Description string
@@ -54,12 +52,27 @@ type Parameter struct {
 
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that
 // converts it into a cpluginv1.SpecifierPlugin.
-func NewSpecifierPlugin(specs Specification) cpluginv1.SpecifierPlugin {
-	return &specifierPluginAdapter{specs: specs}
+func NewSpecifierPlugin(specs Specification, source Source, dest Destination) cpluginv1.SpecifierPlugin {
+	if source == nil {
+		// prevent nil pointer
+		source = UnimplementedSource{}
+	}
+	if dest == nil {
+		// prevent nil pointer
+		dest = UnimplementedDestination{}
+	}
+
+	return &specifierPluginAdapter{
+		specs:             specs,
+		sourceParams:      source.Parameters(),
+		destinationParams: dest.Parameters(),
+	}
 }
 
 type specifierPluginAdapter struct {
-	specs Specification
+	specs             Specification
+	sourceParams      map[string]Parameter
+	destinationParams map[string]Parameter
 }
 
 func (s *specifierPluginAdapter) Specify(ctx context.Context, req cpluginv1.SpecifierSpecifyRequest) (cpluginv1.SpecifierSpecifyResponse, error) {
@@ -69,8 +82,8 @@ func (s *specifierPluginAdapter) Specify(ctx context.Context, req cpluginv1.Spec
 		Description:       s.specs.Description,
 		Version:           s.specs.Version,
 		Author:            s.specs.Author,
-		DestinationParams: s.convertParameters(s.specs.DestinationParams),
-		SourceParams:      s.convertParameters(s.specs.SourceParams),
+		SourceParams:      s.convertParameters(s.sourceParams),
+		DestinationParams: s.convertParameters(s.destinationParams),
 	}, nil
 }
 
