@@ -102,7 +102,7 @@ A [Destination] is responsible for writing [Record] to third party systems.
 Every [Destination] implementation needs to include an
 [UnimplementedDestination] to satisfy the interface. This allows us to
 potentially change the interface in the future while remaining backwards
-compatible with existing [Source] implementations.
+compatible with existing [Destination] implementations.
 
 	type Destination struct {
 	  sdk.UnimplementedSource
