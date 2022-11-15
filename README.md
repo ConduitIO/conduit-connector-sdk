@@ -29,11 +29,15 @@ connector that receives data from Conduit and writes it to a 3rd party resource)
 [`sdk.Destination`](https://pkg.go.dev/github.com/conduitio/conduit-connector-sdk#Destination). You can implement both to
 make a connector that can be used both as a source or a destination.
 
-Apart from the source and/or destination you should create constructor functions that return a `sdk.Source`,
-`sdk.Destination` and `sdk.Specification` respectively.
+Apart from the source and/or destination you should create a global variable of type
+[`sdk.Connector`](https://pkg.go.dev/github.com/conduitio/conduit-connector-sdk#Connector) that contains references to
+constructors for [`sdk.Source`](https://pkg.go.dev/github.com/conduitio/conduit-connector-sdk#Source),
+[`sdk.Destination`](https://pkg.go.dev/github.com/conduitio/conduit-connector-sdk#Destination) and
+[`sdk.Specification`](https://pkg.go.dev/github.com/conduitio/conduit-connector-sdk#Specification).
 
-The last part is the entrypoint, it needs to call `sdk.Serve` and pass in the constructor functions mentioned before. If
-the connector does not implement a source or destination you should pass in `nil` instead.
+The last part is the entrypoint, it needs to call
+[`sdk.Serve`](https://pkg.go.dev/github.com/conduitio/conduit-connector-sdk#Serve) and pass in the connector
+mentioned above.
 
 ```go
 package main
@@ -44,11 +48,7 @@ import (
 )
 
 func main() {
-	sdk.Serve(
-		demo.Specification,  // func Specification() sdk.Specification { ... }
-		demo.NewSource,      // func NewSource() sdk.Source { ... }
-		demo.NewDestination, // func NewDestination() sdk.Destination { ... }
-	)
+	sdk.Serve(demo.Connector)
 }
 ```
 
@@ -76,6 +76,8 @@ Here is an example request to `POST /v1/connectors` (find more about the [Condui
   }
 }
 ```
+
+Find out more information on building a connector in the [Go doc reference](https://pkg.go.dev/github.com/conduitio/conduit-connector-sdk).
 
 ## FAQ
 
