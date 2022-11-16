@@ -80,7 +80,7 @@ func (v ValidationRequired) value() string {
 }
 
 type ValidationLessThan struct {
-	Value float32
+	Value float64
 }
 
 func (v ValidationLessThan) validate(key string, value string) error {
@@ -97,7 +97,7 @@ func (v ValidationLessThan) value() string {
 }
 
 type ValidationGreaterThan struct {
-	Value float32
+	Value float64
 }
 
 func (v ValidationGreaterThan) validate(key string, value string) error {
