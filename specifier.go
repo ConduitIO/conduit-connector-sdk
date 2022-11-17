@@ -104,6 +104,6 @@ func (s *specifierPluginAdapter) convertParameter(p Parameter) cpluginv1.Specifi
 		Required:    p.Required,
 		Description: p.Description,
 		Type:        cpluginv1.ParameterType(p.Type),
-		Validations: ConvertValidations(p.Validations),
+		Validations: convertValidations(p.Validations),
 	}
 }
