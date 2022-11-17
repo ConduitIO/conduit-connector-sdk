@@ -43,7 +43,7 @@ type Parameter struct {
 	// Default is the default value of the parameter, if any.
 	Default string
 	// Required controls if the parameter will be shown as required or optional.
-	// Deprecated: add a validation of type TYPE_REQUIRED to the validations list.
+	// Deprecated: add ValidationRequired to Parameter.Validations instead.
 	Required bool
 	// Description holds a description of the field and how to configure it.
 	Description string
