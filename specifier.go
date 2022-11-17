@@ -43,11 +43,14 @@ type Parameter struct {
 	// Default is the default value of the parameter, if any.
 	Default string
 	// Required controls if the parameter will be shown as required or optional.
-	// Note that no validation will be added to the field because of this, this
-	// is purely for informational purposes.
+	// Deprecated: add ValidationRequired to Parameter.Validations instead.
 	Required bool
 	// Description holds a description of the field and how to configure it.
 	Description string
+	// Type defines the parameter data type.
+	Type ParameterType
+	// Validations slice of validations to be checked for the parameter.
+	Validations []Validation
 }
 
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that
@@ -100,5 +103,7 @@ func (s *specifierPluginAdapter) convertParameter(p Parameter) cpluginv1.Specifi
 		Default:     p.Default,
 		Required:    p.Required,
 		Description: p.Description,
+		Type:        cpluginv1.ParameterType(p.Type),
+		Validations: convertValidations(p.Validations),
 	}
 }
