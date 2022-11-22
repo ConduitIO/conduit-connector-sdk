@@ -27,6 +27,7 @@ import (
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
+	"go.uber.org/multierr"
 )
 
 // Destination receives records from Conduit and writes them to 3rd party
@@ -88,13 +89,14 @@ type destinationPluginAdapter struct {
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.DestinationConfigureRequest) (cpluginv1.DestinationConfigureResponse, error) {
 	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
 
-	err := a.impl.Configure(ctx, req.Config)
-	if err != nil {
-		return cpluginv1.DestinationConfigureResponse{}, err
-	}
+	var multiErr error
+	// run builtin validations
+	multiErr = multierr.Append(multiErr, applyConfigValidations(a.impl.Parameters(), req.Config))
+	// // run custom validations written by developer
+	multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, req.Config))
+	multiErr = multierr.Append(multiErr, a.configureWriteStrategy(ctx, req.Config))
 
-	err = a.configureWriteStrategy(ctx, req.Config)
-	return cpluginv1.DestinationConfigureResponse{}, err
+	return cpluginv1.DestinationConfigureResponse{}, multiErr
 }
 
 func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config map[string]string) error {

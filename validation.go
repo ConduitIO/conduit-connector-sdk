@@ -15,10 +15,27 @@
 package sdk
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
+	"go.uber.org/multierr"
+	"golang.org/x/exp/slices"
+)
+
+var (
+	ErrInvalidParamValue         = errors.New("invalid parameter value")
+	ErrInvalidParamType          = errors.New("invalid parameter type")
+	ErrRequiredParameterMissing  = errors.New("required parameter is not provided")
+	ErrLessThanValidationFail    = errors.New("less-than validation failed")
+	ErrGreaterThanValidationFail = errors.New("greater-than validation failed")
+	ErrInclusionValidationFail   = errors.New("inclusion validation failed")
+	ErrExclusionValidationFail   = errors.New("exclusion validation failed")
+	ErrRegexValidationFail       = errors.New("regex validation failed")
 )
 
 const (
@@ -29,7 +46,6 @@ const (
 	ParameterTypeDuration
 )
 
-type ValidationType int
 type ParameterType int
 
 func _() {
@@ -51,7 +67,9 @@ type ValidationRequired struct {
 }
 
 func (v ValidationRequired) validate(value string) error {
-	// TBD
+	if value == "" {
+		return ErrRequiredParameterMissing
+	}
 	return nil
 }
 
@@ -67,7 +85,13 @@ type ValidationLessThan struct {
 }
 
 func (v ValidationLessThan) validate(value string) error {
-	// TBD
+	val, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fmt.Errorf("%q value should be a float: %w", value, ErrInvalidParamValue)
+	}
+	if !(val < v.Value) {
+		return fmt.Errorf("%q should be less than %.4f: %w", value, v.Value, ErrLessThanValidationFail)
+	}
 	return nil
 }
 
@@ -83,7 +107,13 @@ type ValidationGreaterThan struct {
 }
 
 func (v ValidationGreaterThan) validate(value string) error {
-	// TBD
+	val, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fmt.Errorf("%q value should be a float: %w", value, ErrInvalidParamValue)
+	}
+	if !(val > v.Value) {
+		return fmt.Errorf("%q should be greater than %.4f: %w", value, v.Value, ErrGreaterThanValidationFail)
+	}
 	return nil
 }
 
@@ -99,7 +129,9 @@ type ValidationInclusion struct {
 }
 
 func (v ValidationInclusion) validate(value string) error {
-	// TBD
+	if !slices.Contains(v.List, value) {
+		return fmt.Errorf("%q value must be included in the list {%s}: %w", value, strings.Join(v.List, ","), ErrInclusionValidationFail)
+	}
 	return nil
 }
 
@@ -115,7 +147,9 @@ type ValidationExclusion struct {
 }
 
 func (v ValidationExclusion) validate(value string) error {
-	// TBD
+	if slices.Contains(v.List, value) {
+		return fmt.Errorf("%q value must be excluded from the list {%s}: %w", value, strings.Join(v.List, ","), ErrExclusionValidationFail)
+	}
 	return nil
 }
 
@@ -131,7 +165,14 @@ type ValidationRegex struct {
 }
 
 func (v ValidationRegex) validate(value string) error {
-	// TBD
+	r, err := regexp.Compile(v.Pattern)
+	if err != nil {
+		return fmt.Errorf("regex pattern compilation failed: %w", ErrInvalidParamValue)
+	}
+	if !r.MatchString(value) {
+		return fmt.Errorf("%q should match the regex %q: %w", value, v.Pattern, ErrRegexValidationFail)
+	}
+
 	return nil
 }
 
@@ -148,4 +189,72 @@ func convertValidations(validations []Validation) []cpluginv1.ParameterValidatio
 		out[i] = v.toCPluginV1()
 	}
 	return out
+}
+
+// ApplyConfigValidations a utility function that applies all the validations for parameters, return an error that
+// consists of a combination of errors from the configurations.
+func applyConfigValidations(params map[string]Parameter, config map[string]string) error {
+	multiErr := assignParamDefaults(params, config)
+
+	for pKey, param := range params {
+		if config[pKey] != "" {
+			multiErr = multierr.Append(multiErr, validateParamType(param, pKey, config[pKey]))
+		}
+		multiErr = multierr.Append(multiErr, validateParamValue(pKey, config[pKey], param))
+	}
+	return multiErr
+}
+
+// validateParamValue validates that a configuration value matches all the validations required for the parameter.
+func validateParamValue(key string, value string, param Parameter) error {
+	var multiErr error
+	var err error
+
+	for _, v := range param.Validations {
+		err = v.validate(value)
+		if err != nil {
+			multiErr = multierr.Append(multiErr, fmt.Errorf("error validating %q: %w", key, err))
+		}
+	}
+	return multiErr
+}
+
+// assignParamDefaults fills any empty configuration with its assigned default value
+// returns an error if a parameter is not recognized.
+func assignParamDefaults(params map[string]Parameter, config map[string]string) error {
+	var multiErr error
+	for key, val := range config {
+		if _, ok := params[key]; !ok {
+			multiErr = multierr.Append(multiErr, fmt.Errorf("unrecognized parameter %q", key))
+		}
+		if val == "" {
+			config[key] = params[key].Default
+		}
+	}
+	return multiErr
+}
+
+// validateParamType validates that a parameter value is parsable to its assigned type.
+func validateParamType(p Parameter, key string, value string) error {
+	switch p.Type {
+	case ParameterTypeNumber:
+		// a number should be parsable into float
+		_, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return fmt.Errorf("%q: %q value is not a number: %w", key, value, ErrInvalidParamType)
+		}
+	case ParameterTypeDuration:
+		_, err := time.ParseDuration(value)
+		if err != nil {
+			return fmt.Errorf("%q: %q value is not a duration: %w", key, value, ErrInvalidParamType)
+		}
+	case ParameterTypeBool:
+		_, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("%q: %q value is not a boolean: %w", key, value, ErrInvalidParamType)
+		}
+		// type ParameterTypeFile and ParameterTypeString don't need type validations, since a file is an array of bytes,
+		// which is a string, and all the configuration values are strings
+	}
+	return nil
 }
