@@ -67,7 +67,7 @@ type ValidationRequired struct {
 }
 
 func (v ValidationRequired) validate(value string) error {
-	if value == "" {
+	if len(strings.TrimSpace(value)) == 0 {
 		return ErrRequiredParameterMissing
 	}
 	return nil
@@ -197,7 +197,7 @@ func applyConfigValidations(params map[string]Parameter, config map[string]strin
 	multiErr := assignParamDefaults(params, config)
 
 	for pKey, param := range params {
-		if config[pKey] != "" {
+		if len(strings.TrimSpace(config[pKey])) != 0 {
 			multiErr = multierr.Append(multiErr, validateParamType(param, pKey, config[pKey]))
 		}
 		multiErr = multierr.Append(multiErr, validateParamValue(pKey, config[pKey], param))
@@ -227,7 +227,7 @@ func assignParamDefaults(params map[string]Parameter, config map[string]string) 
 		if _, ok := params[key]; !ok {
 			multiErr = multierr.Append(multiErr, fmt.Errorf("unrecognized parameter %q", key))
 		}
-		if val == "" {
+		if len(strings.TrimSpace(val)) == 0 {
 			config[key] = params[key].Default
 		}
 	}

@@ -65,6 +65,7 @@ func TestValidation_Param_Type(t *testing.T) {
 			params: map[string]Parameter{
 				"param1": {
 					Default: "3",
+					Type:    ParameterTypeNumber,
 				},
 			},
 			wantErr: false,
