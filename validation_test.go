@@ -39,36 +39,60 @@ func TestValidation_Param_Type(t *testing.T) {
 			params: map[string]Parameter{
 				"param1": {
 					Default: "3.3",
-					Type:    ParameterTypeNumber,
+					Type:    ParameterTypeFloat,
 				},
 			},
 			wantErr: false,
 		},
 		{
-			name: "invalid type number",
+			name: "invalid type float",
 			config: map[string]string{
 				"param1": "not-a-number",
 			},
 			params: map[string]Parameter{
 				"param1": {
 					Default: "3.3",
-					Type:    ParameterTypeNumber,
+					Type:    ParameterTypeFloat,
 				},
 			},
 			wantErr: true,
 		},
 		{
-			name: "valida default type number",
+			name: "valida default type float",
 			config: map[string]string{
 				"param1": "",
 			},
 			params: map[string]Parameter{
 				"param1": {
 					Default: "3",
-					Type:    ParameterTypeNumber,
+					Type:    ParameterTypeFloat,
 				},
 			},
 			wantErr: false,
+		},
+		{
+			name: "valid type int",
+			config: map[string]string{
+				"param1": "3",
+			},
+			params: map[string]Parameter{
+				"param1": {
+					Type: ParameterTypeInt,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid type int",
+			config: map[string]string{
+				"param1": "3.3",
+			},
+			params: map[string]Parameter{
+				"param1": {
+					Type: ParameterTypeInt,
+				},
+			},
+			wantErr: true,
 		},
 		{
 			name: "valid type bool",
@@ -382,7 +406,7 @@ func TestValidation_Multi_Error(t *testing.T) {
 
 	params := map[string]Parameter{
 		"limit": {
-			Type: ParameterTypeNumber,
+			Type: ParameterTypeInt,
 			Validations: []Validation{
 				ValidationGreaterThan{0},
 				ValidationRegex{"^[0-9]"},

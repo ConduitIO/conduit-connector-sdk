@@ -3,7 +3,7 @@ module github.com/conduitio/conduit-connector-sdk
 go 1.18
 
 require (
-	github.com/conduitio/conduit-connector-protocol v0.3.1-0.20221109134020-68c054460060
+	github.com/conduitio/conduit-connector-protocol v0.3.1-0.20221122174508-e7ab80ea57a1
 	github.com/golang/mock v1.6.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/matryer/is v1.4.0
@@ -25,12 +25,12 @@ require (
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/mitchellh/go-testing-interface v1.0.0 // indirect
 	github.com/oklog/run v1.0.0 // indirect
-	go.buf.build/grpc/go/conduitio/conduit-connector-protocol v1.4.4 // indirect
+	go.buf.build/grpc/go/conduitio/conduit-connector-protocol v1.4.5 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	golang.org/x/net v0.1.0 // indirect
 	golang.org/x/sys v0.1.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	google.golang.org/genproto v0.0.0-20211104193956-4c6863e31247 // indirect
-	google.golang.org/grpc v1.43.0 // indirect
+	google.golang.org/grpc v1.50.1 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 )

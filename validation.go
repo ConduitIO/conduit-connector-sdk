@@ -40,7 +40,8 @@ var (
 
 const (
 	ParameterTypeString ParameterType = iota + 1
-	ParameterTypeNumber
+	ParameterTypeInt
+	ParameterTypeFloat
 	ParameterTypeBool
 	ParameterTypeFile
 	ParameterTypeDuration
@@ -52,7 +53,8 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	var cTypes [1]struct{}
 	_ = cTypes[int(ParameterTypeString)-int(cpluginv1.ParameterTypeString)]
-	_ = cTypes[int(ParameterTypeNumber)-int(cpluginv1.ParameterTypeNumber)]
+	_ = cTypes[int(ParameterTypeInt)-int(cpluginv1.ParameterTypeInt)]
+	_ = cTypes[int(ParameterTypeFloat)-int(cpluginv1.ParameterTypeFloat)]
 	_ = cTypes[int(ParameterTypeBool)-int(cpluginv1.ParameterTypeBool)]
 	_ = cTypes[int(ParameterTypeFile)-int(cpluginv1.ParameterTypeFile)]
 	_ = cTypes[int(ParameterTypeDuration)-int(cpluginv1.ParameterTypeDuration)]
@@ -87,7 +89,7 @@ type ValidationLessThan struct {
 func (v ValidationLessThan) validate(value string) error {
 	val, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		return fmt.Errorf("%q value should be a float: %w", value, ErrInvalidParamValue)
+		return fmt.Errorf("%q value should be a number: %w", value, ErrInvalidParamValue)
 	}
 	if !(val < v.Value) {
 		return fmt.Errorf("%q should be less than %.4f: %w", value, v.Value, ErrLessThanValidationFail)
@@ -109,7 +111,7 @@ type ValidationGreaterThan struct {
 func (v ValidationGreaterThan) validate(value string) error {
 	val, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		return fmt.Errorf("%q value should be a float: %w", value, ErrInvalidParamValue)
+		return fmt.Errorf("%q value should be a number: %w", value, ErrInvalidParamValue)
 	}
 	if !(val > v.Value) {
 		return fmt.Errorf("%q should be greater than %.4f: %w", value, v.Value, ErrGreaterThanValidationFail)
@@ -237,11 +239,15 @@ func assignParamDefaults(params map[string]Parameter, config map[string]string) 
 // validateParamType validates that a parameter value is parsable to its assigned type.
 func validateParamType(p Parameter, key string, value string) error {
 	switch p.Type {
-	case ParameterTypeNumber:
-		// a number should be parsable into float
+	case ParameterTypeInt:
+		_, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("%q: %q value is not an integer: %w", key, value, ErrInvalidParamType)
+		}
+	case ParameterTypeFloat:
 		_, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			return fmt.Errorf("%q: %q value is not a number: %w", key, value, ErrInvalidParamType)
+			return fmt.Errorf("%q: %q value is not a float: %w", key, value, ErrInvalidParamType)
 		}
 	case ParameterTypeDuration:
 		_, err := time.ParseDuration(value)
