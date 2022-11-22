@@ -92,7 +92,7 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.
 	var multiErr error
 	// run builtin validations
 	multiErr = multierr.Append(multiErr, applyConfigValidations(a.impl.Parameters(), req.Config))
-	// // run custom validations written by developer
+	// run custom validations written by developer
 	multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, req.Config))
 	multiErr = multierr.Append(multiErr, a.configureWriteStrategy(ctx, req.Config))
 
