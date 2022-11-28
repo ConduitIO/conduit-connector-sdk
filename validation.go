@@ -196,13 +196,14 @@ func convertValidations(validations []Validation) []cpluginv1.ParameterValidatio
 // ApplyConfigValidations a utility function that applies all the validations for parameters, return an error that
 // consists of a combination of errors from the configurations.
 func applyConfigValidations(params map[string]Parameter, config map[string]string) error {
-	multiErr := assignParamDefaults(params, config)
+	// cfg is the config map with default values assigned
+	cfg, multiErr := assignParamDefaults(params, config)
 
 	for pKey, param := range params {
-		if len(strings.TrimSpace(config[pKey])) != 0 {
-			multiErr = multierr.Append(multiErr, validateParamType(param, pKey, config[pKey]))
+		if len(strings.TrimSpace(cfg[pKey])) != 0 {
+			multiErr = multierr.Append(multiErr, validateParamType(param, pKey, cfg[pKey]))
 		}
-		multiErr = multierr.Append(multiErr, validateParamValue(pKey, config[pKey], param))
+		multiErr = multierr.Append(multiErr, validateParamValue(pKey, cfg[pKey], param))
 	}
 	return multiErr
 }
@@ -223,17 +224,20 @@ func validateParamValue(key string, value string, param Parameter) error {
 
 // assignParamDefaults fills any empty configuration with its assigned default value
 // returns an error if a parameter is not recognized.
-func assignParamDefaults(params map[string]Parameter, config map[string]string) error {
+func assignParamDefaults(params map[string]Parameter, config map[string]string) (map[string]string, error) {
+	output := make(map[string]string)
 	var multiErr error
 	for key, val := range config {
 		if _, ok := params[key]; !ok {
 			multiErr = multierr.Append(multiErr, fmt.Errorf("unrecognized parameter %q", key))
+			continue
 		}
+		output[key] = val
 		if len(strings.TrimSpace(val)) == 0 {
-			config[key] = params[key].Default
+			output[key] = params[key].Default
 		}
 	}
-	return multiErr
+	return output, multiErr
 }
 
 // validateParamType validates that a parameter value is parsable to its assigned type.
