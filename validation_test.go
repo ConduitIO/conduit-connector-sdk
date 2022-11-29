@@ -16,6 +16,7 @@ package sdk
 
 import (
 	"errors"
+	"regexp"
 	"testing"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
@@ -58,7 +59,7 @@ func TestValidation_Param_Type(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "valida default type float",
+			name: "valid default type float",
 			config: map[string]string{
 				"param1": "",
 			},
@@ -143,6 +144,18 @@ func TestValidation_Param_Type(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "empty value is valid for all types",
+			config: map[string]string{
+				"param1": "",
+			},
+			params: map[string]Parameter{
+				"param1": {
+					Type: ParameterTypeDuration,
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "invalid type duration",
 			config: map[string]string{
 				"param1": "not-a-duration",
@@ -181,12 +194,11 @@ func TestValidation_Param_Type(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := applyConfigValidations(tt.params, tt.config)
+			err := validator(tt.params).applyConfigValidations(tt.config)
 			if err != nil && tt.wantErr {
 				is.True(errors.Is(err, ErrInvalidParamType))
 			} else if err != nil || tt.wantErr {
 				t.Errorf("UtilityFunc() error = %v, wantErr %v", err, tt.wantErr)
-				return
 			}
 		})
 	}
@@ -334,7 +346,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
-					ValidationRegex{"[a-z]-[1-9]"},
+					ValidationRegex{regexp.MustCompile("[a-z]-[1-9]")},
 				}},
 			},
 			wantErr: true,
@@ -347,7 +359,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
-					ValidationRegex{"[a-z]-[1-9]"},
+					ValidationRegex{regexp.MustCompile("[a-z]-[1-9]")},
 				}},
 			},
 			wantErr: false,
@@ -355,12 +367,11 @@ func TestValidation_Param_Value(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := applyConfigValidations(tt.params, tt.config)
+			err := validator(tt.params).applyConfigValidations(tt.config)
 			if err != nil && tt.wantErr {
 				is.True(errors.Is(err, tt.err))
 			} else if err != nil || tt.wantErr {
 				t.Errorf("UtilityFunc() error = %v, wantErr %v", err, tt.wantErr)
-				return
 			}
 		})
 	}
@@ -374,7 +385,7 @@ func TestValidation_toCPluginV1(t *testing.T) {
 		ValidationGreaterThan{0},
 		ValidationInclusion{[]string{"1", "2"}},
 		ValidationExclusion{[]string{"3", "4"}},
-		ValidationRegex{"[a-z]*"},
+		ValidationRegex{regexp.MustCompile("[a-z]*")},
 	}
 	want := []cpluginv1.ParameterValidation{
 		{
@@ -409,7 +420,7 @@ func TestValidation_Multi_Error(t *testing.T) {
 			Type: ParameterTypeInt,
 			Validations: []Validation{
 				ValidationGreaterThan{0},
-				ValidationRegex{"^[0-9]"},
+				ValidationRegex{regexp.MustCompile("^[0-9]")},
 			}},
 		"option": {
 			Type: ParameterTypeString,
@@ -428,7 +439,7 @@ func TestValidation_Multi_Error(t *testing.T) {
 		"option": "five",
 	}
 
-	err := applyConfigValidations(params, config)
+	err := validator(params).applyConfigValidations(config)
 	is.True(err != nil)
 
 	errs := multierr.Errors(err)
@@ -456,4 +467,42 @@ func TestValidation_Multi_Error(t *testing.T) {
 	for _, counter := range counters {
 		is.Equal(counter, 1)
 	}
+}
+
+func TestValidation_initConfig(t *testing.T) {
+	is := is.New(t)
+
+	params := map[string]Parameter{
+		"param1": {
+			Type:    ParameterTypeString,
+			Default: "param1",
+		},
+		"param2": {
+			Type:    ParameterTypeString,
+			Default: "param2",
+		},
+		"param3": {
+			Type:    ParameterTypeString,
+			Default: "param3",
+		},
+		"param4": {
+			Type:    ParameterTypeString,
+			Default: "param4",
+		},
+	}
+	config := map[string]string{
+		"param1": "not-default",
+		"param2": "",
+	}
+
+	want := map[string]string{
+		"param1": "not-default",
+		"param2": "param2",
+		"param3": "param3",
+		"param4": "param4",
+	}
+
+	got, err := validator(params).initConfig(config)
+	is.NoErr(err)
+	is.Equal(got, want)
 }

@@ -69,7 +69,7 @@ type ValidationRequired struct {
 }
 
 func (v ValidationRequired) validate(value string) error {
-	if len(strings.TrimSpace(value)) == 0 {
+	if value == "" {
 		return ErrRequiredParameterMissing
 	}
 	return nil
@@ -92,7 +92,8 @@ func (v ValidationLessThan) validate(value string) error {
 		return fmt.Errorf("%q value should be a number: %w", value, ErrInvalidParamValue)
 	}
 	if !(val < v.Value) {
-		return fmt.Errorf("%q should be less than %.4f: %w", value, v.Value, ErrLessThanValidationFail)
+		formatted := strconv.FormatFloat(v.Value, 'f', -1, 64)
+		return fmt.Errorf("%q should be less than %s: %w", value, formatted, ErrLessThanValidationFail)
 	}
 	return nil
 }
@@ -114,7 +115,8 @@ func (v ValidationGreaterThan) validate(value string) error {
 		return fmt.Errorf("%q value should be a number: %w", value, ErrInvalidParamValue)
 	}
 	if !(val > v.Value) {
-		return fmt.Errorf("%q should be greater than %.4f: %w", value, v.Value, ErrGreaterThanValidationFail)
+		formatted := strconv.FormatFloat(v.Value, 'f', -1, 64)
+		return fmt.Errorf("%q should be greater than %s: %w", value, formatted, ErrGreaterThanValidationFail)
 	}
 	return nil
 }
@@ -132,7 +134,7 @@ type ValidationInclusion struct {
 
 func (v ValidationInclusion) validate(value string) error {
 	if !slices.Contains(v.List, value) {
-		return fmt.Errorf("%q value must be included in the list {%s}: %w", value, strings.Join(v.List, ","), ErrInclusionValidationFail)
+		return fmt.Errorf("%q value must be included in the list [%s]: %w", value, strings.Join(v.List, ","), ErrInclusionValidationFail)
 	}
 	return nil
 }
@@ -150,7 +152,7 @@ type ValidationExclusion struct {
 
 func (v ValidationExclusion) validate(value string) error {
 	if slices.Contains(v.List, value) {
-		return fmt.Errorf("%q value must be excluded from the list {%s}: %w", value, strings.Join(v.List, ","), ErrExclusionValidationFail)
+		return fmt.Errorf("%q value must be excluded from the list [%s]: %w", value, strings.Join(v.List, ","), ErrExclusionValidationFail)
 	}
 	return nil
 }
@@ -163,16 +165,12 @@ func (v ValidationExclusion) toCPluginV1() cpluginv1.ParameterValidation {
 }
 
 type ValidationRegex struct {
-	Pattern string
+	Regex *regexp.Regexp
 }
 
 func (v ValidationRegex) validate(value string) error {
-	r, err := regexp.Compile(v.Pattern)
-	if err != nil {
-		return fmt.Errorf("regex pattern compilation failed: %w", ErrInvalidParamValue)
-	}
-	if !r.MatchString(value) {
-		return fmt.Errorf("%q should match the regex %q: %w", value, v.Pattern, ErrRegexValidationFail)
+	if !v.Regex.MatchString(value) {
+		return fmt.Errorf("%q should match the regex %q: %w", value, v.Regex.String(), ErrRegexValidationFail)
 	}
 
 	return nil
@@ -181,7 +179,7 @@ func (v ValidationRegex) validate(value string) error {
 func (v ValidationRegex) toCPluginV1() cpluginv1.ParameterValidation {
 	return cpluginv1.ParameterValidation{
 		Type:  cpluginv1.ValidationTypeRegex,
-		Value: v.Pattern,
+		Value: v.Regex.String(),
 	}
 }
 
@@ -193,27 +191,33 @@ func convertValidations(validations []Validation) []cpluginv1.ParameterValidatio
 	return out
 }
 
-// ApplyConfigValidations a utility function that applies all the validations for parameters, return an error that
-// consists of a combination of errors from the configurations.
-func applyConfigValidations(params map[string]Parameter, config map[string]string) error {
-	// cfg is the config map with default values assigned
-	cfg, multiErr := assignParamDefaults(params, config)
+// private struct to group all validation functions
+type validator map[string]Parameter
 
-	for pKey, param := range params {
-		if len(strings.TrimSpace(cfg[pKey])) != 0 {
-			multiErr = multierr.Append(multiErr, validateParamType(param, pKey, cfg[pKey]))
+// applyConfigValidations is a utility function that applies all the validations for parameters, returns an error that
+// consists of a combination of errors from the configurations.
+func (v validator) applyConfigValidations(config map[string]string) error {
+	// cfg is the config map with default values assigned
+	cfg, multiErr := v.initConfig(config)
+
+	var err error
+	for pKey := range v {
+		err = v.validateParamType(pKey, cfg[pKey])
+		multiErr = multierr.Append(multiErr, err)
+		// validate param value only if param type is valid
+		if err == nil {
+			multiErr = multierr.Append(multiErr, v.validateParamValue(pKey, cfg[pKey]))
 		}
-		multiErr = multierr.Append(multiErr, validateParamValue(pKey, cfg[pKey], param))
 	}
 	return multiErr
 }
 
 // validateParamValue validates that a configuration value matches all the validations required for the parameter.
-func validateParamValue(key string, value string, param Parameter) error {
+func (v validator) validateParamValue(key string, value string) error {
 	var multiErr error
 	var err error
 
-	for _, v := range param.Validations {
+	for _, v := range v[key].Validations {
 		err = v.validate(value)
 		if err != nil {
 			multiErr = multierr.Append(multiErr, fmt.Errorf("error validating %q: %w", key, err))
@@ -222,46 +226,61 @@ func validateParamValue(key string, value string, param Parameter) error {
 	return multiErr
 }
 
-// assignParamDefaults fills any empty configuration with its assigned default value
+// initConfig checks for unrecognized params, and fills any empty configuration with its assigned default value
 // returns an error if a parameter is not recognized.
-func assignParamDefaults(params map[string]Parameter, config map[string]string) (map[string]string, error) {
+func (v validator) initConfig(config map[string]string) (map[string]string, error) {
 	output := make(map[string]string)
 	var multiErr error
 	for key, val := range config {
-		if _, ok := params[key]; !ok {
+		// trim key and val
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		// check for unrecognized params
+		if _, ok := v[key]; !ok {
 			multiErr = multierr.Append(multiErr, fmt.Errorf("unrecognized parameter %q", key))
 			continue
 		}
+		// set config map and assign defaults
 		output[key] = val
-		if len(strings.TrimSpace(val)) == 0 {
-			output[key] = params[key].Default
+		if val == "" {
+			output[key] = v[key].Default
+		}
+	}
+	// set defaults for unassigned params
+	for key, param := range v {
+		if _, ok := output[key]; !ok {
+			output[key] = param.Default
 		}
 	}
 	return output, multiErr
 }
 
 // validateParamType validates that a parameter value is parsable to its assigned type.
-func validateParamType(p Parameter, key string, value string) error {
-	switch p.Type {
+func (v validator) validateParamType(key string, value string) error {
+	// empty value is valid for all types
+	if value == "" {
+		return nil
+	}
+	switch v[key].Type {
 	case ParameterTypeInt:
 		_, err := strconv.Atoi(value)
 		if err != nil {
-			return fmt.Errorf("%q: %q value is not an integer: %w", key, value, ErrInvalidParamType)
+			return fmt.Errorf("error validating %q: %q value is not an integer: %w", key, value, ErrInvalidParamType)
 		}
 	case ParameterTypeFloat:
 		_, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			return fmt.Errorf("%q: %q value is not a float: %w", key, value, ErrInvalidParamType)
+			return fmt.Errorf("error validating %q: %q value is not a float: %w", key, value, ErrInvalidParamType)
 		}
 	case ParameterTypeDuration:
 		_, err := time.ParseDuration(value)
 		if err != nil {
-			return fmt.Errorf("%q: %q value is not a duration: %w", key, value, ErrInvalidParamType)
+			return fmt.Errorf("error validating %q: %q value is not a duration: %w", key, value, ErrInvalidParamType)
 		}
 	case ParameterTypeBool:
 		_, err := strconv.ParseBool(value)
 		if err != nil {
-			return fmt.Errorf("%q: %q value is not a boolean: %w", key, value, ErrInvalidParamType)
+			return fmt.Errorf("error validating %q: %q value is not a boolean: %w", key, value, ErrInvalidParamType)
 		}
 		// type ParameterTypeFile and ParameterTypeString don't need type validations, since a file is an array of bytes,
 		// which is a string, and all the configuration values are strings
