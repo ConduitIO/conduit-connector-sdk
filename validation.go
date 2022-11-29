@@ -101,7 +101,7 @@ func (v ValidationLessThan) validate(value string) error {
 func (v ValidationLessThan) toCPluginV1() cpluginv1.ParameterValidation {
 	return cpluginv1.ParameterValidation{
 		Type:  cpluginv1.ValidationTypeLessThan,
-		Value: fmt.Sprintf("%f", v.Value),
+		Value: strconv.FormatFloat(v.Value, 'f', -1, 64),
 	}
 }
 
@@ -124,7 +124,7 @@ func (v ValidationGreaterThan) validate(value string) error {
 func (v ValidationGreaterThan) toCPluginV1() cpluginv1.ParameterValidation {
 	return cpluginv1.ParameterValidation{
 		Type:  cpluginv1.ValidationTypeGreaterThan,
-		Value: fmt.Sprintf("%f", v.Value),
+		Value: strconv.FormatFloat(v.Value, 'f', -1, 64),
 	}
 }
 

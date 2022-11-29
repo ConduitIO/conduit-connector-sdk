@@ -381,7 +381,7 @@ func TestValidation_toCPluginV1(t *testing.T) {
 	is := is.New(t)
 	validations := []Validation{
 		ValidationRequired{},
-		ValidationLessThan{5},
+		ValidationLessThan{5.10},
 		ValidationGreaterThan{0},
 		ValidationInclusion{[]string{"1", "2"}},
 		ValidationExclusion{[]string{"3", "4"}},
@@ -393,10 +393,10 @@ func TestValidation_toCPluginV1(t *testing.T) {
 			Value: "",
 		}, {
 			Type:  cpluginv1.ValidationTypeLessThan,
-			Value: "5.000000",
+			Value: "5.1",
 		}, {
 			Type:  cpluginv1.ValidationTypeGreaterThan,
-			Value: "0.000000",
+			Value: "0",
 		}, {
 			Type:  cpluginv1.ValidationTypeInclusion,
 			Value: "1,2",
