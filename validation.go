@@ -194,20 +194,21 @@ func convertValidations(validations []Validation) []cpluginv1.ParameterValidatio
 // private struct to group all validation functions
 type validator map[string]Parameter
 
-// applyConfigValidations is a utility function that applies all the validations for parameters, returns an error that
+// Validate is a utility function that applies all the validations for parameters, returns an error that
 // consists of a combination of errors from the configurations.
-func (v validator) applyConfigValidations(config map[string]string) error {
+func (v validator) Validate(config map[string]string) error {
 	// cfg is the config map with default values assigned
 	cfg, multiErr := v.initConfig(config)
 
 	var err error
 	for pKey := range v {
 		err = v.validateParamType(pKey, cfg[pKey])
-		multiErr = multierr.Append(multiErr, err)
-		// validate param value only if param type is valid
-		if err == nil {
-			multiErr = multierr.Append(multiErr, v.validateParamValue(pKey, cfg[pKey]))
+		if err != nil {
+			// append error and continue with next parameter
+			multiErr = multierr.Append(multiErr, err)
+			continue
 		}
+		multiErr = multierr.Append(multiErr, v.validateParamValue(pKey, cfg[pKey]))
 	}
 	return multiErr
 }
@@ -240,15 +241,12 @@ func (v validator) initConfig(config map[string]string) (map[string]string, erro
 			multiErr = multierr.Append(multiErr, fmt.Errorf("unrecognized parameter %q", key))
 			continue
 		}
-		// set config map and assign defaults
+		// set config map
 		output[key] = val
-		if val == "" {
-			output[key] = v[key].Default
-		}
 	}
-	// set defaults for unassigned params
+	// assign defaults
 	for key, param := range v {
-		if _, ok := output[key]; !ok {
+		if output[key] == "" {
 			output[key] = param.Default
 		}
 	}
