@@ -26,6 +26,7 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/jpillora/backoff"
+	"go.uber.org/multierr"
 	"gopkg.in/tomb.v2"
 )
 
@@ -108,8 +109,13 @@ type sourcePluginAdapter struct {
 }
 
 func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.SourceConfigureRequest) (cpluginv1.SourceConfigureResponse, error) {
-	err := a.impl.Configure(ctx, req.Config)
-	return cpluginv1.SourceConfigureResponse{}, err
+	var multiErr error
+	// run builtin validations
+	multiErr = multierr.Append(multiErr, validator(a.impl.Parameters()).Validate(req.Config))
+	// run custom validations written by developer
+	multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, req.Config))
+
+	return cpluginv1.SourceConfigureResponse{}, multiErr
 }
 
 func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceStartRequest) (cpluginv1.SourceStartResponse, error) {

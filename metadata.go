@@ -38,12 +38,20 @@ const (
 	// in nanoseconds.
 	MetadataReadAt = cpluginv1.MetadataReadAt
 
-	// MetadataConduitPluginName is a Record.Metadata key for the name of the
-	// plugin that created this record.
-	MetadataConduitPluginName = cpluginv1.MetadataConduitPluginName
-	// MetadataConduitPluginVersion is a Record.Metadata key for the version of
-	// the plugin that created this record.
-	MetadataConduitPluginVersion = cpluginv1.MetadataConduitPluginVersion
+	// MetadataConduitSourcePluginName is a Record.Metadata key for the name of
+	// the source plugin that created this record.
+	MetadataConduitSourcePluginName = cpluginv1.MetadataConduitSourcePluginName
+	// MetadataConduitSourcePluginVersion is a Record.Metadata key for the
+	// version of the source plugin that created this record.
+	MetadataConduitSourcePluginVersion = cpluginv1.MetadataConduitSourcePluginVersion
+	// MetadataConduitDestinationPluginName is a Record.Metadata key for the
+	// name of the destination plugin that has written this record
+	// (only available in records once they are written by a destination).
+	MetadataConduitDestinationPluginName = cpluginv1.MetadataConduitDestinationPluginName
+	// MetadataConduitDestinationPluginVersion is a Record.Metadata key for the
+	// version of the destination plugin that has written this record
+	// (only available in records once they are written by a destination).
+	MetadataConduitDestinationPluginVersion = cpluginv1.MetadataConduitDestinationPluginVersion
 )
 
 // SetOpenCDCVersion sets the metadata value for key MetadataVersion to the
@@ -107,30 +115,56 @@ func (m Metadata) SetReadAt(createdAt time.Time) {
 	m[MetadataReadAt] = strconv.FormatInt(createdAt.UnixNano(), 10)
 }
 
-// GetConduitPluginName returns the value for key
-// MetadataConduitPluginName. If the value is does not exist or is empty the
+// GetConduitSourcePluginName returns the value for key
+// MetadataConduitSourcePluginName. If the value does not exist or is empty the
 // function returns ErrMetadataFieldNotFound.
-func (m Metadata) GetConduitPluginName() (string, error) {
-	return m.getValue(MetadataConduitPluginName)
+func (m Metadata) GetConduitSourcePluginName() (string, error) {
+	return m.getValue(MetadataConduitSourcePluginName)
 }
 
-// SetConduitPluginName sets the metadata value for key
-// MetadataConduitPluginName.
-func (m Metadata) SetConduitPluginName(name string) {
-	m[MetadataConduitPluginName] = name
+// SetConduitSourcePluginName sets the metadata value for key
+// MetadataConduitSourcePluginName.
+func (m Metadata) SetConduitSourcePluginName(name string) {
+	m[MetadataConduitSourcePluginName] = name
 }
 
-// GetConduitPluginVersion returns the value for key
-// MetadataConduitPluginVersion. If the value is does not exist or is empty the
-// function returns ErrMetadataFieldNotFound.
-func (m Metadata) GetConduitPluginVersion() (string, error) {
-	return m.getValue(MetadataConduitPluginVersion)
+// GetConduitSourcePluginVersion returns the value for key
+// MetadataConduitSourcePluginVersion. If the value does not exist or is empty
+// the function returns ErrMetadataFieldNotFound.
+func (m Metadata) GetConduitSourcePluginVersion() (string, error) {
+	return m.getValue(MetadataConduitSourcePluginVersion)
 }
 
-// SetConduitPluginVersion sets the metadata value for key
-// MetadataConduitPluginVersion.
-func (m Metadata) SetConduitPluginVersion(version string) {
-	m[MetadataConduitPluginVersion] = version
+// SetConduitSourcePluginVersion sets the metadata value for key
+// MetadataConduitSourcePluginVersion.
+func (m Metadata) SetConduitSourcePluginVersion(version string) {
+	m[MetadataConduitSourcePluginVersion] = version
+}
+
+// GetConduitDestinationPluginName returns the value for key
+// MetadataConduitDestinationPluginName. If the value does not exist or is empty
+// the function returns ErrMetadataFieldNotFound.
+func (m Metadata) GetConduitDestinationPluginName() (string, error) {
+	return m.getValue(MetadataConduitDestinationPluginName)
+}
+
+// SetConduitDestinationPluginName sets the metadata value for key
+// MetadataConduitDestinationPluginName.
+func (m Metadata) SetConduitDestinationPluginName(name string) {
+	m[MetadataConduitDestinationPluginName] = name
+}
+
+// GetConduitDestinationPluginVersion returns the value for key
+// MetadataConduitDestinationPluginVersion. If the value does not exist or is
+// empty the function returns ErrMetadataFieldNotFound.
+func (m Metadata) GetConduitDestinationPluginVersion() (string, error) {
+	return m.getValue(MetadataConduitDestinationPluginVersion)
+}
+
+// SetConduitDestinationPluginVersion sets the metadata value for key
+// MetadataConduitDestinationPluginVersion.
+func (m Metadata) SetConduitDestinationPluginVersion(version string) {
+	m[MetadataConduitDestinationPluginVersion] = version
 }
 
 // getValue returns the value for a specific key. If the value is does

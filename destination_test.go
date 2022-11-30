@@ -123,6 +123,7 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 		},
 	}
 
+	dst.EXPECT().Parameters()
 	dst.EXPECT().Configure(gomock.Any(), map[string]string{}).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), []Record{want}).Return(1, nil).Times(10)
@@ -181,6 +182,7 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	lastRecord := Record{Position: Position("foo")}
 
 	// ackFunc stores the ackFunc so it can be called at a later time
+	dst.EXPECT().Parameters()
 	dst.EXPECT().Configure(gomock.Any(), map[string]string{}).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), gomock.Any()).Return(1, nil)
