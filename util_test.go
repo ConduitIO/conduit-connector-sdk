@@ -15,10 +15,10 @@
 package sdk
 
 import (
+	"testing"
 	"time"
 
 	"github.com/matryer/is"
-	"testing"
 )
 
 func TestParseConfig_Simple_Struct(t *testing.T) {
@@ -135,7 +135,7 @@ func TestParseConfig_All_Types(t *testing.T) {
 		MyBool1:           true,
 		MyBool2:           true,
 		MyBool3:           true,
-		MyBoolDefault:     false, //default
+		MyBoolDefault:     false, // default
 		MyInt:             -1,
 		MyUint:            0x1,
 		MyInt8:            -1,
