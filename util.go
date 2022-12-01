@@ -14,14 +14,25 @@
 
 package sdk
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/mitchellh/mapstructure"
+)
 
 // Util provides utilities for implementing connectors.
-var Util struct {
+var Util = struct {
 	// SourceUtil provides utility methods for implementing a source.
 	Source SourceUtil
 	// SourceUtil provides utility methods for implementing a destination.
 	Destination DestinationUtil
+	// ParseConfig provided to parse a config map into a struct
+	// Under the hood, this function uses the library mitchellh/mapstructure, so to rename a key, use
+	// the "mapstructure" tag and set a value directly. To embed structs, append ",squash" to your tag.
+	// for more details and docs, check https://pkg.go.dev/github.com/mitchellh/mapstructure
+	ParseConfig func(map[string]interface{}, interface{}) error
+}{
+	ParseConfig: parseConfig,
 }
 
 func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[string]Parameter {
@@ -37,4 +48,9 @@ func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[strin
 		params[k] = v
 	}
 	return params
+}
+
+func parseConfig(raw map[string]interface{}, config interface{}) error {
+	err := mapstructure.Decode(raw, config)
+	return err
 }
