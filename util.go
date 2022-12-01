@@ -30,7 +30,7 @@ var Util = struct {
 	// Under the hood, this function uses the library mitchellh/mapstructure, so to rename a key, use
 	// the "mapstructure" tag and set a value directly. To embed structs, append ",squash" to your tag.
 	// for more details and docs, check https://pkg.go.dev/github.com/mitchellh/mapstructure
-	ParseConfig func(map[string]interface{}, interface{}) error
+	ParseConfig func(map[string]string, interface{}) error
 }{
 	ParseConfig: parseConfig,
 }
@@ -50,7 +50,17 @@ func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[strin
 	return params
 }
 
-func parseConfig(raw map[string]interface{}, config interface{}) error {
-	err := mapstructure.Decode(raw, config)
+func parseConfig(raw map[string]string, config interface{}) error {
+	dConfig := &mapstructure.DecoderConfig{
+		WeaklyTypedInput: true,
+		Result:           &config,
+		DecodeHook:       mapstructure.StringToTimeDurationHookFunc(),
+	}
+
+	decoder, err := mapstructure.NewDecoder(dConfig)
+	if err != nil {
+		return err
+	}
+	err = decoder.Decode(raw)
 	return err
 }
