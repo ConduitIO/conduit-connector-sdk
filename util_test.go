@@ -48,26 +48,40 @@ func TestParseConfig_Embedded_Struct(t *testing.T) {
 	is := is.New(t)
 
 	type Family struct {
-		LastName string
+		LastName string `json:"last.name"`
 	}
 	type Location struct {
 		City string
 	}
 	type Person struct {
-		Family    `json:",squash"`
-		Location  `json:",squash"`
-		FirstName string
+		Family             // last.name
+		Location           // City
+		F1        Family   // F1.last.name
+		L1        Location `json:",squash"` // City
+		L2        Location // L2.City
+		L3        Location `json:"loc3"`       // loc3.City
+		FirstName string   `json:"First.Name"` // First.Name
+		First     string   // First
 	}
 
 	input := map[string]string{
-		"FirstName": "conduit",
-		"lastname":  "meroxa",
-		"City":      "San Francisco",
+		"last.name":    "meroxa",
+		"F1.last.name": "turbine",
+		"City":         "San Francisco",
+		"L2.City":      "Paris",
+		"loc3.City":    "London",
+		"First.Name":   "conduit",
+		"First":        "Mickey",
 	}
 	want := Person{
 		Family:    Family{LastName: "meroxa"},
+		F1:        Family{LastName: "turbine"},
 		Location:  Location{City: "San Francisco"},
+		L1:        Location{City: "San Francisco"},
+		L2:        Location{City: "Paris"},
+		L3:        Location{City: "London"},
 		FirstName: "conduit",
+		First:     "Mickey",
 	}
 
 	var got Person
