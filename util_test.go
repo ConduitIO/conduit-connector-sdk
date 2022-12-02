@@ -104,6 +104,10 @@ func TestParseConfig_All_Types(t *testing.T) {
 
 		MyDuration        time.Duration
 		MyDurationDefault time.Duration
+
+		MySlice      []string
+		MyIntSlice   []int
+		MyFloatSlice []float32
 	}
 
 	input := map[string]string{
@@ -129,6 +133,10 @@ func TestParseConfig_All_Types(t *testing.T) {
 		"myfloat64": "1.1122334455",
 
 		"myduration": "1s",
+
+		"myslice":      "1,2,3,4",
+		"myIntSlice":   "1,2,3,4",
+		"myFloatSlice": "1.1,2.2",
 	}
 	want := Config{
 		MyString:          "string",
@@ -152,6 +160,9 @@ func TestParseConfig_All_Types(t *testing.T) {
 		MyFloat64:         1.1122334455,
 		MyDuration:        1000000000,
 		MyDurationDefault: 0,
+		MySlice:           []string{"1", "2", "3", "4"},
+		MyIntSlice:        []int{1, 2, 3, 4},
+		MyFloatSlice:      []float32{1.1, 2.2},
 	}
 
 	var result Config

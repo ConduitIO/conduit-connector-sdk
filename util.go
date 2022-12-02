@@ -54,7 +54,10 @@ func parseConfig(raw map[string]string, config interface{}) error {
 	dConfig := &mapstructure.DecoderConfig{
 		WeaklyTypedInput: true,
 		Result:           &config,
-		DecodeHook:       mapstructure.StringToTimeDurationHookFunc(),
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			mapstructure.StringToTimeDurationHookFunc(),
+			mapstructure.StringToSliceHookFunc(","),
+		),
 	}
 
 	decoder, err := mapstructure.NewDecoder(dConfig)
