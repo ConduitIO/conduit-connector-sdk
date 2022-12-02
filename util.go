@@ -27,8 +27,8 @@ var Util = struct {
 	// SourceUtil provides utility methods for implementing a destination.
 	Destination DestinationUtil
 	// ParseConfig provided to parse a config map into a struct
-	// Under the hood, this function uses the library mitchellh/mapstructure, so to rename a key, use
-	// the "mapstructure" tag and set a value directly. To embed structs, append ",squash" to your tag.
+	// Under the hood, this function uses the library mitchellh/mapstructure, with the "mapstructure" tag renamed to "json",
+	// so to rename a key, use the "json" tag and set a value directly. To embed structs, append ",squash" to your tag.
 	// for more details and docs, check https://pkg.go.dev/github.com/mitchellh/mapstructure
 	ParseConfig func(map[string]string, interface{}) error
 }{
@@ -58,6 +58,7 @@ func parseConfig(raw map[string]string, config interface{}) error {
 			mapstructure.StringToTimeDurationHookFunc(),
 			mapstructure.StringToSliceHookFunc(","),
 		),
+		TagName: "json",
 	}
 
 	decoder, err := mapstructure.NewDecoder(dConfig)

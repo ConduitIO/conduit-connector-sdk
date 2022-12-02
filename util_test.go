@@ -25,7 +25,7 @@ func TestParseConfig_Simple_Struct(t *testing.T) {
 	is := is.New(t)
 
 	type Person struct {
-		Name string `mapstructure:"person_name"`
+		Name string `json:"person_name"`
 		Age  int
 	}
 
@@ -54,8 +54,8 @@ func TestParseConfig_Embedded_Struct(t *testing.T) {
 		City string
 	}
 	type Person struct {
-		Family    `mapstructure:",squash"`
-		Location  `mapstructure:",squash"`
+		Family    `json:",squash"`
+		Location  `json:",squash"`
 		FirstName string
 	}
 
