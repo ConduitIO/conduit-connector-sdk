@@ -54,10 +54,11 @@ func TestParseConfig_Embedded_Struct(t *testing.T) {
 		City string
 	}
 	type Person struct {
-		Family             // last.name
-		Location           // City
-		F1        Family   // F1.last.name
-		L1        Location `json:",squash"` // City
+		Family          // last.name
+		Location        // City
+		F1       Family // F1.last.name
+		// City
+		L1        Location `json:",squash"` //nolint: staticcheck // json here is a rename for the mapstructure tag
 		L2        Location // L2.City
 		L3        Location `json:"loc3"`       // loc3.City
 		FirstName string   `json:"First.Name"` // First.Name
@@ -183,4 +184,40 @@ func TestParseConfig_All_Types(t *testing.T) {
 	err := Util.ParseConfig(input, &result)
 	is.NoErr(err)
 	is.Equal(want, result)
+}
+
+func TestBreakUpConfig(t *testing.T) {
+	is := is.New(t)
+
+	input := map[string]string{
+		"foo.bar.baz": "1",
+		"test":        "2",
+	}
+	want := map[string]interface{}{
+		"foo": map[string]interface{}{
+			"bar": map[string]interface{}{
+				"baz": "1",
+			},
+			"bar.baz": "1",
+		},
+		"foo.bar.baz": "1",
+		"test":        "2",
+	}
+	got := breakUpConfig(input)
+	is.Equal(want, got)
+}
+
+func TestBreakUpConfig_Conflict_Value(t *testing.T) {
+	is := is.New(t)
+
+	input := map[string]string{
+		"foo":         "1",
+		"foo.bar.baz": "1", // key foo is already taken, will not be broken up
+	}
+	want := map[string]interface{}{
+		"foo":         "1",
+		"foo.bar.baz": "1",
+	}
+	got := breakUpConfig(input)
+	is.Equal(want, got)
 }
