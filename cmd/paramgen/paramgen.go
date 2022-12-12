@@ -491,16 +491,15 @@ func (p *paramsParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType) (
 	// check if a required validation is in the list
 	isRequired := false
 	for _, v := range validations {
-		switch v.(type) {
-		case sdk.ValidationRequired:
+		if _, ok := v.(sdk.ValidationRequired); ok {
 			isRequired = true
 		}
 	}
 
 	// replace field name with parameter name in description so that the user
 	// can write normal go docs referencing the field name
-	desc := strings.Replace(f.Doc.Text(), fieldName, name, -1)
-	desc = strings.Replace(desc, "\n", " ", -1)
+	desc := strings.ReplaceAll(f.Doc.Text(), fieldName, name)
+	desc = strings.ReplaceAll(desc, "\n", " ")
 	desc = strings.Trim(desc, " ")
 
 	return name, sdk.Parameter{

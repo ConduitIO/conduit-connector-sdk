@@ -105,15 +105,19 @@ func processTemplate(str string, args Args) {
 		log.Fatalf("could not create file: %v\n", err)
 	}
 	w := bufio.NewWriter(f)
-	w.WriteString(string(formatted))
+	_, err = w.WriteString(string(formatted))
+	if err != nil {
+		log.Fatalf("error writing to a file: %v\n", err)
+	}
 	w.Flush()
 	log.Printf("output file created: %s\n", outputPath)
 }
 
 func paramsToString(params map[string]sdk.Parameter) string {
 	str := fmt.Sprintf("%#v\n", params)
-	str = strings.Replace(str, "{", "{\n", -1)
-	str = strings.Replace(str, "}}", "},\n}", -1)
+	str = strings.ReplaceAll(str, ",", ",\n")
+	str = strings.ReplaceAll(str, "{", "{\n")
+	str = strings.ReplaceAll(str, "}}", "},\n}")
 	return str
 }
 
@@ -135,7 +139,7 @@ func parseArgs() Args {
 
 	// add .go suffix if it is not in the name
 	if !strings.HasSuffix(args.output, ".go") {
-		args.output = args.output + ".go"
+		args.output += ".go"
 	}
 
 	return args
