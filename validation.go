@@ -216,14 +216,21 @@ func (v validator) Validate(config map[string]string) error {
 // validateParamValue validates that a configuration value matches all the validations required for the parameter.
 func (v validator) validateParamValue(key string, value string) error {
 	var multiErr error
-	var err error
 
+	isRequired := false
 	for _, v := range v[key].Validations {
-		err = v.validate(value)
+		if _, ok := v.(ValidationRequired); ok {
+			isRequired = true
+		}
+		err := v.validate(value)
 		if err != nil {
 			multiErr = multierr.Append(multiErr, fmt.Errorf("error validating %q: %w", key, err))
 		}
 	}
+	if value == "" && !isRequired {
+		return nil // empty otional parameter is valid
+	}
+
 	return multiErr
 }
 
