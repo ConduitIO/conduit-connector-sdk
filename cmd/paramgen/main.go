@@ -26,7 +26,7 @@ import (
 	"text/template"
 
 	sdk "github.com/conduitio/conduit-connector-sdk"
-	"github.com/conduitio/conduit-connector-sdk/cmd/paramgen"
+	"github.com/conduitio/conduit-connector-sdk/cmd/paramgen/internal"
 )
 
 type Args struct {
@@ -43,7 +43,7 @@ func main() {
 	args := parseArgs()
 
 	// parse the sdk parameters
-	params, err := paramgen.ParseParameters(args.path, args.structName)
+	params, err := internal.ParseParameters(args.path, args.structName)
 	if err != nil {
 		log.Fatalf("paramgen failed to parse parameters: %v\n", err)
 	}
@@ -115,7 +115,6 @@ func processTemplate(str string, args Args) {
 
 func paramsToString(params map[string]sdk.Parameter) string {
 	str := fmt.Sprintf("%#v\n", params)
-	str = strings.ReplaceAll(str, ",", ",\n")
 	str = strings.ReplaceAll(str, "{", "{\n")
 	str = strings.ReplaceAll(str, "}}", "},\n}")
 	return str
@@ -126,7 +125,7 @@ func parseArgs() Args {
 	var (
 		output     = flags.String("output", "conduit-config.go", "name of the output file")
 		structName = flags.String("struct", "Config", "the configuration struct name")
-		path       = flags.String("path", ".", "directory path to the package that has the configuration struct")
+		path       = flags.String("path", "/Users/mahahajja/repos/conduit-connector-sdk/cmd/paramgen/internal/testdata/tags", "directory path to the package that has the configuration struct")
 	)
 
 	// flags is set up to exit on error, we can safely ignore the error
