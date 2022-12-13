@@ -235,6 +235,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
 					ValidationRequired{},
+					ValidationRequired{},
 				}},
 			},
 			wantErr: false,
@@ -246,6 +247,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationLessThan{10},
 				}},
 			},
@@ -259,6 +261,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationLessThan{10},
 				}},
 			},
@@ -271,6 +274,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationGreaterThan{10},
 				}},
 			},
@@ -284,6 +288,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationGreaterThan{10},
 				}},
 			},
@@ -296,6 +301,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationInclusion{[]string{"one", "two"}},
 				}},
 			},
@@ -309,6 +315,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationInclusion{[]string{"one", "two"}},
 				}},
 			},
@@ -321,6 +328,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationExclusion{[]string{"one", "two"}},
 				}},
 			},
@@ -334,6 +342,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationExclusion{[]string{"one", "two"}},
 				}},
 			},
@@ -346,6 +355,7 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationRegex{regexp.MustCompile("[a-z]-[1-9]")},
 				}},
 			},
@@ -359,7 +369,24 @@ func TestValidation_Param_Value(t *testing.T) {
 			},
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
+					ValidationRequired{},
 					ValidationRegex{regexp.MustCompile("[a-z]-[1-9]")},
+				}},
+			},
+			wantErr: false,
+		},
+		{
+			name: "optional validation pass",
+			config: map[string]string{
+				"param1": "",
+			},
+			params: map[string]Parameter{
+				"param1": {Validations: []Validation{
+					ValidationInclusion{[]string{"one", "two"}},
+					ValidationExclusion{[]string{"three", "four"}},
+					ValidationRegex{regexp.MustCompile("[a-z]")},
+					ValidationGreaterThan{10},
+					ValidationLessThan{20},
 				}},
 			},
 			wantErr: false,
