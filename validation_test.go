@@ -235,7 +235,6 @@ func TestValidation_Param_Value(t *testing.T) {
 			params: map[string]Parameter{
 				"param1": {Validations: []Validation{
 					ValidationRequired{},
-					ValidationRequired{},
 				}},
 			},
 			wantErr: false,
