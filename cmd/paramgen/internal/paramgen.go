@@ -24,6 +24,7 @@ import (
 	"io/fs"
 	"os/exec"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -32,72 +33,76 @@ import (
 )
 
 const (
-	TagParamName         = "json"
-	TagParamDefault      = "default"
-	TagParamValidate     = "validate"
-	tagRequired          = "required"
-	tagSeparator         = ","
-	validateTagSeparator = "="
-	tagLessThan1         = "lt"
-	tagLessThan2         = "less-than"
-	tagGreaterThan1      = "gt"
-	tagGreaterThan2      = "greater-than"
-	tagInclusion         = "inclusion"
-	tagExclusion         = "exclusion"
-	pipeSeparator        = "|"
+	tagParamName     = "json"
+	tagParamDefault  = "default"
+	tagParamValidate = "validate"
+
+	validationRequired    = "required"
+	validationLT          = "lt"
+	validationLessThan    = "less-than"
+	validationGT          = "gt"
+	validationGreaterThan = "greater-than"
+	validationInclusion   = "inclusion"
+	validationExclusion   = "exclusion"
+	validationRegex       = "regex"
+
+	tagSeparator      = ","
+	validateSeparator = "="
+	listSeparator     = "|"
+	fieldSeparator    = "."
 )
 
 // ParseParameters parses the struct into a map of parameter, requires the folder path that has the struct, and the
 // struct name
-func ParseParameters(path string, name string) (map[string]sdk.Parameter, error) {
+func ParseParameters(path string, name string) (map[string]sdk.Parameter, string, error) {
 	mod, err := parseModule(path)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing module: %w", err)
+		return nil, "", fmt.Errorf("error parsing module: %w", err)
 	}
 	pkg, err := parsePackage(path)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing package: %w", err)
+		return nil, "", fmt.Errorf("error parsing package: %w", err)
 	}
 	myStruct, file, err := findStruct(pkg, name)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	return (&parameterParser{pkg: pkg, mod: mod, file: file, imports: map[string]*ast.Package{}}).Parse(myStruct)
 }
 
-type Module struct {
+type module struct {
 	Path  string       // module path
 	Dir   string       // directory holding files for this module, if any
-	Error *ModuleError // error loading module
+	Error *moduleError // error loading module
 }
 
-type ModuleError struct {
+type moduleError struct {
 	Err string // the error itself
 }
 
-func parseModule(path string) (Module, error) {
+func parseModule(path string) (module, error) {
 	cmd := exec.Command("go", "list", "-m", "-json")
 	cmd.Dir = path
 	stdout, err := cmd.StdoutPipe()
 
 	if err != nil {
-		return Module{}, fmt.Errorf("error piping stdout of go list command: %w", err)
+		return module{}, fmt.Errorf("error piping stdout of go list command: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return Module{}, fmt.Errorf("error starting go list command: %w", err)
+		return module{}, fmt.Errorf("error starting go list command: %w", err)
 	}
-	var module Module
-	if err := json.NewDecoder(stdout).Decode(&module); err != nil {
-		return Module{}, fmt.Errorf("error decoding go list output: %w", err)
+	var mod module
+	if err := json.NewDecoder(stdout).Decode(&mod); err != nil {
+		return module{}, fmt.Errorf("error decoding go list output: %w", err)
 	}
 	if err := cmd.Wait(); err != nil {
-		return Module{}, fmt.Errorf("error running command %q: %w", cmd.String(), err)
+		return module{}, fmt.Errorf("error running command %q: %w", cmd.String(), err)
 	}
-	if module.Error != nil {
-		return Module{}, fmt.Errorf("error loading module: %s", module.Error.Err)
+	if mod.Error != nil {
+		return module{}, fmt.Errorf("error loading module: %s", mod.Error.Err)
 	}
-	return module, nil
+	return mod, nil
 }
 
 func parsePackage(path string) (*ast.Package, error) {
@@ -150,18 +155,20 @@ type parameterParser struct {
 	// file holds the current file we are working with
 	file *ast.File
 
-	mod Module
+	mod module
 
 	imports map[string]*ast.Package
 }
 
-func (p *parameterParser) Parse(structType *ast.StructType) (map[string]sdk.Parameter, error) {
+func (p *parameterParser) Parse(structType *ast.StructType) (map[string]sdk.Parameter, string, error) {
+	pkgName := p.pkg.Name
+
 	myParams, err := (*paramsParser)(p).parseStructType(structType)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return myParams, nil
+	return myParams, pkgName, nil
 }
 
 // paramsParser groups functions that concern themselves with parsing parameters
@@ -428,7 +435,7 @@ func (p *paramsParser) findImportSpec(se *ast.SelectorExpr) (*ast.ImportSpec, er
 
 func (p *paramsParser) attachPrefix(f *ast.Field, params map[string]sdk.Parameter) map[string]sdk.Parameter {
 	// attach prefix if a tag is present or if the field is named
-	prefix := p.getTag(f.Tag, TagParamName)
+	prefix := p.getTag(f.Tag, tagParamName)
 	if prefix == "" && len(f.Names) > 0 {
 		prefix = p.formatFieldName(f.Names[0].Name)
 	}
@@ -443,7 +450,7 @@ func (p *paramsParser) attachPrefix(f *ast.Field, params map[string]sdk.Paramete
 
 	prefixedParams := make(map[string]sdk.Parameter)
 	for k, v := range params {
-		prefixedParams[prefix+"."+k] = v
+		prefixedParams[prefix+fieldSeparator+k] = v
 	}
 	return prefixedParams
 }
@@ -473,26 +480,18 @@ func (p *paramsParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType) (
 		}
 	}
 
-	name = p.getTag(f.Tag, TagParamName)
+	name = p.getTag(f.Tag, tagParamName)
 	if name == "" {
 		// if there's no tag use the formatted field name
 		name = p.formatFieldName(fieldName)
 	}
 
 	var validations []sdk.Validation
-	validate := p.getTag(f.Tag, TagParamValidate)
+	validate := p.getTag(f.Tag, tagParamValidate)
 	if validate != "" {
 		validations, err = p.parseValidateTag(validate)
 		if err != nil {
 			return "", sdk.Parameter{}, err
-		}
-	}
-
-	// check if a required validation is in the list
-	isRequired := false
-	for _, v := range validations {
-		if _, ok := v.(sdk.ValidationRequired); ok {
-			isRequired = true
 		}
 	}
 
@@ -503,10 +502,9 @@ func (p *paramsParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType) (
 	desc = strings.Trim(desc, " ")
 
 	return name, sdk.Parameter{
-		Default:     p.getTag(f.Tag, TagParamDefault),
+		Default:     p.getTag(f.Tag, tagParamDefault),
 		Description: desc,
 		Validations: validations,
-		Required:    isRequired,
 		Type:        t,
 	}, nil
 }
@@ -585,16 +583,16 @@ func (p *paramsParser) parseValidateTag(tag string) ([]sdk.Validation, error) {
 }
 
 func (p *paramsParser) parseValidation(str string) (sdk.Validation, error) {
-	if str == tagRequired {
+	if str == validationRequired {
 		return sdk.ValidationRequired{}, nil
 	}
-	split := strings.Split(str, validateTagSeparator)
+	split := strings.Split(str, validateSeparator)
 	if len(split) != 2 {
 		return nil, fmt.Errorf("invalid tag format")
 	}
 
 	switch split[0] {
-	case tagRequired:
+	case validationRequired:
 		req, err := strconv.ParseBool(split[1])
 		if err != nil {
 			return nil, err
@@ -604,24 +602,26 @@ func (p *paramsParser) parseValidation(str string) (sdk.Validation, error) {
 			return nil, nil
 		}
 		return sdk.ValidationRequired{}, nil
-	case tagLessThan1, tagLessThan2:
+	case validationLT, validationLessThan:
 		val, err := strconv.ParseFloat(split[1], 64)
 		if err != nil {
 			return nil, err
 		}
 		return sdk.ValidationLessThan{Value: val}, nil
-	case tagGreaterThan1, tagGreaterThan2:
+	case validationGT, validationGreaterThan:
 		val, err := strconv.ParseFloat(split[1], 64)
 		if err != nil {
 			return nil, err
 		}
 		return sdk.ValidationGreaterThan{Value: val}, nil
-	case tagInclusion:
-		list := strings.Split(split[1], pipeSeparator)
+	case validationInclusion:
+		list := strings.Split(split[1], listSeparator)
 		return sdk.ValidationInclusion{List: list}, nil
-	case tagExclusion:
-		list := strings.Split(split[1], pipeSeparator)
+	case validationExclusion:
+		list := strings.Split(split[1], listSeparator)
 		return sdk.ValidationExclusion{List: list}, nil
+	case validationRegex:
+		return sdk.ValidationRegex{Regex: regexp.MustCompile(split[1])}, nil
 	default:
 		return nil, fmt.Errorf("invalid value for tag validate: %s", str)
 	}

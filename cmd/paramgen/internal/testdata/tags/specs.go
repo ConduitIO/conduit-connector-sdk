@@ -21,7 +21,7 @@ type Config struct {
 	Param1 int `validate:"required, gt=0, lt=100" default:"3" json:"my-param"`
 
 	Param2 bool   `validate:"inclusion=true|t, exclusion=false|f, required=false" default:"t"`
-	Param3 string `validate:"required=true" default:"yes"`
+	Param3 string `validate:"required=true, regex=.*" default:"yes"`
 }
 
 type InnerConfig struct {

@@ -16,6 +16,7 @@ package internal
 
 import (
 	"errors"
+	"regexp"
 	"testing"
 
 	sdk "github.com/conduitio/conduit-connector-sdk"
@@ -26,15 +27,16 @@ func TestParseSpecificationSuccess(t *testing.T) {
 	testCases := []struct {
 		path string
 		name string
+		pkg  string
 		want map[string]sdk.Parameter
 	}{{
 		path: "./testdata/basic",
 		name: "SourceConfig",
+		pkg:  "example",
 		want: map[string]sdk.Parameter{
 			"globalConfig.foo": {
 				Default:     "bar",
 				Description: "foo is a required field in the global config with the name \"foo\" and default value \"bar\".",
-				Required:    true,
 				Type:        sdk.ParameterTypeString,
 				Validations: []sdk.Validation{
 					sdk.ValidationRequired{},
@@ -78,6 +80,7 @@ func TestParseSpecificationSuccess(t *testing.T) {
 		{
 			path: "./testdata/complex",
 			name: "SourceConfig",
+			pkg:  "example",
 			want: map[string]sdk.Parameter{
 				"global.duration": {
 					Default:     "1s",
@@ -98,17 +101,16 @@ func TestParseSpecificationSuccess(t *testing.T) {
 		{
 			path: "./testdata/tags",
 			name: "Config",
+			pkg:  "tags",
 			want: map[string]sdk.Parameter{
 				"innerConfig.my-name": {
 					Type:        sdk.ParameterTypeString,
-					Required:    true,
 					Validations: []sdk.Validation{sdk.ValidationRequired{}},
 				},
 				"my-param": {
 					Type:        sdk.ParameterTypeInt,
 					Description: "my-param i am a parameter comment",
 					Default:     "3",
-					Required:    true,
 					Validations: []sdk.Validation{
 						sdk.ValidationRequired{},
 						sdk.ValidationGreaterThan{Value: 0},
@@ -124,11 +126,11 @@ func TestParseSpecificationSuccess(t *testing.T) {
 					},
 				},
 				"param3": {
-					Type:     sdk.ParameterTypeString,
-					Default:  "yes",
-					Required: true,
+					Type:    sdk.ParameterTypeString,
+					Default: "yes",
 					Validations: []sdk.Validation{
 						sdk.ValidationRequired{},
+						sdk.ValidationRegex{Regex: regexp.MustCompile(".*")},
 					},
 				},
 			},
@@ -138,8 +140,9 @@ func TestParseSpecificationSuccess(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.path, func(t *testing.T) {
 			is := is.New(t)
-			got, err := ParseParameters(tc.path, tc.name)
+			got, pkg, err := ParseParameters(tc.path, tc.name)
 			is.NoErr(err)
+			is.Equal(pkg, tc.pkg)
 			is.Equal(got, tc.want)
 		})
 	}
@@ -167,7 +170,8 @@ func TestParseSpecificationFail(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.path, func(t *testing.T) {
 			is := is.New(t)
-			_, err := ParseParameters(tc.path, tc.name)
+			_, pkg, err := ParseParameters(tc.path, tc.name)
+			is.Equal(pkg, "")
 			is.True(err != nil)
 			for {
 				unwrapped := errors.Unwrap(err)
