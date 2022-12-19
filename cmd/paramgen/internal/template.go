@@ -125,13 +125,13 @@ func GenerateCode(parameters map[string]sdk.Parameter, packageName string, struc
 	// execute the template
 	err := t.Execute(&processed, data)
 	if err != nil {
-		log.Fatalf("error executing template: %v\n", err)
+		log.Fatalf("error: failed to execute template: %v", err)
 	}
 
 	// format the output as Go code in the “gofmt” style
 	formatted, err := format.Source(processed.Bytes())
 	if err != nil {
-		log.Fatalf("could not format processed template: %v\n", err)
+		log.Fatalf("error: could not format processed template: %v", err)
 	}
 
 	return string(formatted)

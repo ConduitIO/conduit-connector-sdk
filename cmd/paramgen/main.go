@@ -34,7 +34,7 @@ func main() {
 	// parse the sdk parameters
 	params, pkg, err := internal.ParseParameters(args.path, args.structName)
 	if err != nil {
-		log.Fatalf("paramgen failed to parse parameters: %v", err)
+		log.Fatalf("error: failed to parse parameters: %v", err)
 	}
 
 	code := internal.GenerateCode(params, pkg, args.structName)
@@ -42,7 +42,7 @@ func main() {
 	path := strings.TrimSuffix(args.path, "/") + "/" + args.output
 	err = os.WriteFile(path, []byte(code), 0666)
 	if err != nil {
-		log.Fatalf("paramgen failed to output file: %v", err)
+		log.Fatalf("error: failed to output file: %v", err)
 	}
 }
 
