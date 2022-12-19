@@ -40,7 +40,7 @@ func main() {
 	code := internal.GenerateCode(params, pkg, args.structName)
 
 	path := strings.TrimSuffix(args.path, "/") + "/" + args.output
-	err = os.WriteFile(path, []byte(code), 0666)
+	err = os.WriteFile(path, []byte(code), 0644)
 	if err != nil {
 		log.Fatalf("error: failed to output file: %v", err)
 	}
