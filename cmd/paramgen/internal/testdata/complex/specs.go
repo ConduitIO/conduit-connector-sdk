@@ -26,6 +26,9 @@ type SourceConfig struct {
 		// unexported fields should be ignored.
 		unexportedField string
 	} `json:"nestMeHere"`
-	// AnotherNested is also nested under nestMeHere.
+	/*
+		AnotherNested is also nested under nestMeHere.
+		This is a block comment.
+	*/
 	AnotherNested int `json:"nestMeHere.anotherNested"`
 }

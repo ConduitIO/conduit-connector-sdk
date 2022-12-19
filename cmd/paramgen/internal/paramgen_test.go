@@ -89,7 +89,7 @@ func TestParseSpecificationSuccess(t *testing.T) {
 				},
 				"nestMeHere.anotherNested": {
 					Type:        sdk.ParameterTypeInt,
-					Description: "nestMeHere.anotherNested is also nested under nestMeHere.",
+					Description: "nestMeHere.anotherNested is also nested under nestMeHere. This is a block comment.",
 				},
 				"nestMeHere.formatThisName": {
 					Type:        sdk.ParameterTypeFloat,

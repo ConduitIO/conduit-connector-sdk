@@ -561,10 +561,26 @@ func (p *parameterParser) formatFieldName(name string) string {
 }
 
 func (p *parameterParser) formatFieldComment(doc *ast.CommentGroup, fieldName, paramName string) string {
-	// replace field name with parameter name in description so that the user
-	// can write normal go docs referencing the field name
 	c := strings.ReplaceAll(doc.Text(), fieldName, paramName)
+	if len(c) == 0 {
+		return c
+	}
+
+	whitespacePrefix := ""
+	for _, r := range c {
+		if !unicode.IsSpace(r) {
+			break
+		}
+		whitespacePrefix += string(r)
+	}
+
+	// get rid of whitespace in first line
+	c = strings.TrimPrefix(c, whitespacePrefix)
+	// get rid of whitespace in front of all other lines
+	c = strings.ReplaceAll(c, "\n"+whitespacePrefix, "\n")
+	// get rid of new lines and use a space instead
 	c = strings.ReplaceAll(c, "\n", " ")
+	// trim space (get rid of any eventual new lines at the end)
 	c = strings.Trim(c, " ")
 	return c
 }
