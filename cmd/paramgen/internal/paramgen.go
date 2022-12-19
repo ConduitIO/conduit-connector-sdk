@@ -171,7 +171,7 @@ type parameterParser struct {
 func (p *parameterParser) Parse(structType *ast.StructType) (map[string]sdk.Parameter, string, error) {
 	pkgName := p.pkg.Name
 
-	parameters, err := p.parseStructType(structType)
+	parameters, err := p.parseStructType(structType, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -235,11 +235,7 @@ func (p *parameterParser) parseTypeSpec(ts *ast.TypeSpec, f *ast.Field) (params 
 
 	switch v := ts.Type.(type) {
 	case *ast.StructType:
-		params, err = p.parseStructType(v)
-		if err != nil {
-			return nil, err
-		}
-		return p.attachPrefix(f, params), nil
+		return p.parseStructType(v, f)
 	case *ast.SelectorExpr:
 		return p.parseSelectorExpr(v, f)
 	case *ast.Ident:
@@ -249,7 +245,7 @@ func (p *parameterParser) parseTypeSpec(ts *ast.TypeSpec, f *ast.Field) (params 
 	}
 }
 
-func (p *parameterParser) parseStructType(st *ast.StructType) (params map[string]sdk.Parameter, err error) {
+func (p *parameterParser) parseStructType(st *ast.StructType, f *ast.Field) (params map[string]sdk.Parameter, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("[parseStructType] %w", err)
@@ -272,6 +268,10 @@ func (p *parameterParser) parseStructType(st *ast.StructType) (params map[string
 			params[k] = v
 		}
 	}
+	if f != nil {
+		// attach prefix of field in which this struct type is declared
+		params = p.attachPrefix(f, params)
+	}
 	return params, nil
 }
 
@@ -290,24 +290,12 @@ func (p *parameterParser) parseField(f *ast.Field) (params map[string]sdk.Parame
 	switch v := f.Type.(type) {
 	case *ast.Ident:
 		// identifier (builtin type or type in same package)
-		params, err = p.parseIdent(v, f)
-		if err != nil {
-			return nil, err
-		}
-		return params, nil
+		return p.parseIdent(v, f)
 	case *ast.StructType:
 		// nested type
-		params, err = p.parseStructType(v)
-		if err != nil {
-			return nil, err
-		}
-		return p.attachPrefix(f, params), nil
+		return p.parseStructType(v, f)
 	case *ast.SelectorExpr:
-		params, err = p.parseSelectorExpr(v, f)
-		if err != nil {
-			return nil, err
-		}
-		return params, nil
+		return p.parseSelectorExpr(v, f)
 	case *ast.ArrayType:
 		strType := fmt.Sprintf("%s", v.Elt)
 		if !p.isBuiltinType(strType) && !strings.Contains(strType, "time Duration") {
