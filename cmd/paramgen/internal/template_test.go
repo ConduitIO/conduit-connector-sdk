@@ -27,7 +27,7 @@ func TestGenerateCodeWithRegex(t *testing.T) {
 	got := GenerateCode(map[string]sdk.Parameter{
 		"int.param": {
 			Default:     "1",
-			Description: "my int param",
+			Description: "my int param with \"quotes\"",
 			Type:        sdk.ParameterTypeInt,
 			Validations: []sdk.Validation{
 				sdk.ValidationRequired{},
@@ -73,7 +73,7 @@ func (SourceConfig) Parameters() map[string]sdk.Parameter {
 		},
 		"int.param": {
 			Default:     "1",
-			Description: "my int param",
+			Description: "my int param with \"quotes\"",
 			Type:        sdk.ParameterTypeInt,
 			Validations: []sdk.Validation{
 				sdk.ValidationRequired{},

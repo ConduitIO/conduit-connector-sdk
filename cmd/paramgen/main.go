@@ -16,6 +16,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -33,12 +34,16 @@ func main() {
 	// parse the sdk parameters
 	params, pkg, err := internal.ParseParameters(args.path, args.structName)
 	if err != nil {
-		log.Fatalf("paramgen failed to parse parameters: %v\n", err)
+		log.Fatalf("paramgen failed to parse parameters: %v", err)
 	}
 
 	code := internal.GenerateCode(params, pkg, args.structName)
 
-	internal.WriteCodeToFile(code, args.path, args.output)
+	path := strings.TrimSuffix(args.path, "/") + "/" + args.output
+	err = os.WriteFile(path, []byte(code), 0666)
+	if err != nil {
+		log.Fatalf("paramgen failed to output file: %v", err)
+	}
 }
 
 type Args struct {
@@ -58,7 +63,10 @@ func parseFlags() Args {
 	_ = flags.Parse(os.Args[1:])
 
 	if len(flags.Args()) == 0 {
-		log.Fatalf("struct name should be specified")
+		log.Println("error: struct name argument missing")
+		fmt.Println()
+		flags.Usage()
+		os.Exit(1)
 	}
 
 	var args Args
