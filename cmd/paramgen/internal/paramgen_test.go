@@ -96,6 +96,10 @@ func TestParseSpecificationSuccess(t *testing.T) {
 					Default:     "this is not a float",
 					Description: "formatThisName should become \"formatThisName\". Default is not a float but that's not a problem, paramgen does not validate correctness.",
 				},
+				"customType": {
+					Type:        sdk.ParameterTypeDuration,
+					Description: "customType uses a custom type that is convertible to a supported type.",
+				},
 			},
 		},
 		{

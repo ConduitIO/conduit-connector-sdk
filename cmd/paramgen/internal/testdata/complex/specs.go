@@ -14,6 +14,8 @@
 
 package example
 
+import "time"
+
 type SourceConfig struct {
 	// GlobalConfig parameters should be nested under "global". This comment
 	// should be ignored.
@@ -31,4 +33,9 @@ type SourceConfig struct {
 		This is a block comment.
 	*/
 	AnotherNested int `json:"nestMeHere.anotherNested"`
+	// CustomType uses a custom type that is convertible to a supported type.
+	CustomType CustomDuration
 }
+
+type CustomDuration CustomDuration2
+type CustomDuration2 time.Duration

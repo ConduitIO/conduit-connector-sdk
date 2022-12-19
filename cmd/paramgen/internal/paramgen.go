@@ -179,12 +179,22 @@ func (p *parameterParser) Parse(structType *ast.StructType) (map[string]sdk.Para
 	return parameters, pkgName, nil
 }
 
-func (p *parameterParser) parseIdent(ident *ast.Ident) (params map[string]sdk.Parameter, err error) {
+func (p *parameterParser) parseIdent(ident *ast.Ident, field *ast.Field) (params map[string]sdk.Parameter, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("[parseIdent] %w", err)
 		}
 	}()
+
+	if p.isBuiltinType(ident.Name) {
+		// builtin type, that's a parameter
+		t := p.getParamType(ident)
+		name, param, err := p.parseSingleParameter(field, t)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]sdk.Parameter{name: param}, nil
+	}
 
 	if ident.Obj == nil {
 		// need to find the identifier in another file
@@ -210,13 +220,13 @@ func (p *parameterParser) parseIdent(ident *ast.Ident) (params map[string]sdk.Pa
 
 	switch v := ident.Obj.Decl.(type) {
 	case *ast.TypeSpec:
-		return p.parseTypeSpec(v)
+		return p.parseTypeSpec(v, field)
 	default:
 		return nil, fmt.Errorf("unexpected type: %T", ident.Obj.Decl)
 	}
 }
 
-func (p *parameterParser) parseTypeSpec(ts *ast.TypeSpec) (params map[string]sdk.Parameter, err error) {
+func (p *parameterParser) parseTypeSpec(ts *ast.TypeSpec, f *ast.Field) (params map[string]sdk.Parameter, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("[parseTypeSpec] %w", err)
@@ -225,9 +235,15 @@ func (p *parameterParser) parseTypeSpec(ts *ast.TypeSpec) (params map[string]sdk
 
 	switch v := ts.Type.(type) {
 	case *ast.StructType:
-		return p.parseStructType(v)
+		params, err = p.parseStructType(v)
+		if err != nil {
+			return nil, err
+		}
+		return p.attachPrefix(f, params), nil
 	case *ast.SelectorExpr:
-		return p.parseSelectorExpr(v)
+		return p.parseSelectorExpr(v, f)
+	case *ast.Ident:
+		return p.parseIdent(v, f)
 	default:
 		return nil, fmt.Errorf("unexpected type: %T", ts.Type)
 	}
@@ -274,21 +290,11 @@ func (p *parameterParser) parseField(f *ast.Field) (params map[string]sdk.Parame
 	switch v := f.Type.(type) {
 	case *ast.Ident:
 		// identifier (builtin type or type in same package)
-		if p.isBuiltinType(v.Name) {
-			// builtin type, that's a parameter
-			t := p.getParamType(f)
-			name, param, err := p.parseSingleParameter(f, t)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]sdk.Parameter{name: param}, nil
-		}
-
-		params, err = p.parseIdent(v)
+		params, err = p.parseIdent(v, f)
 		if err != nil {
 			return nil, err
 		}
-		return p.attachPrefix(f, params), nil
+		return params, nil
 	case *ast.StructType:
 		// nested type
 		params, err = p.parseStructType(v)
@@ -297,28 +303,11 @@ func (p *parameterParser) parseField(f *ast.Field) (params map[string]sdk.Parame
 		}
 		return p.attachPrefix(f, params), nil
 	case *ast.SelectorExpr:
-		// imported type
-		imp, err := p.findImportSpec(v)
+		params, err = p.parseSelectorExpr(v, f)
 		if err != nil {
 			return nil, err
 		}
-
-		impPath := strings.Trim(imp.Path.Value, `"`)
-		switch {
-		case impPath == "time" && v.Sel.Name == "Duration":
-			// we allow the duration type
-			name, param, err := p.parseSingleParameter(f, sdk.ParameterTypeDuration)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]sdk.Parameter{name: param}, nil
-		default:
-			params, err = p.parseSelectorExpr(v)
-			if err != nil {
-				return nil, err
-			}
-			return p.attachPrefix(f, params), nil
-		}
+		return params, nil
 	case *ast.ArrayType:
 		strType := fmt.Sprintf("%s", v.Elt)
 		if !p.isBuiltinType(strType) && !strings.Contains(strType, "time Duration") {
@@ -335,7 +324,7 @@ func (p *parameterParser) parseField(f *ast.Field) (params map[string]sdk.Parame
 	}
 }
 
-func (p *parameterParser) parseSelectorExpr(se *ast.SelectorExpr) (params map[string]sdk.Parameter, err error) {
+func (p *parameterParser) parseSelectorExpr(se *ast.SelectorExpr, f *ast.Field) (params map[string]sdk.Parameter, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("[parseSelectorExpr] %w", err)
@@ -345,6 +334,15 @@ func (p *parameterParser) parseSelectorExpr(se *ast.SelectorExpr) (params map[st
 	imp, err := p.findImportSpec(se)
 	if err != nil {
 		return nil, err
+	}
+
+	if impPath := strings.Trim(imp.Path.Value, `"`); impPath == "time" && se.Sel.Name == "Duration" {
+		// we allow the duration type
+		name, param, err := p.parseSingleParameter(f, sdk.ParameterTypeDuration)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]sdk.Parameter{name: param}, nil
 	}
 
 	// first find package
@@ -370,7 +368,7 @@ func (p *parameterParser) parseSelectorExpr(se *ast.SelectorExpr) (params map[st
 		p.pkg = backupPkg
 	}()
 
-	return p.parseTypeSpec(ts)
+	return p.parseTypeSpec(ts, f)
 }
 
 func (p *parameterParser) findPackage(importPath string) (*ast.Package, error) {
@@ -514,20 +512,17 @@ func (p *parameterParser) getFieldName(f *ast.Field) (string, error) {
 	}
 }
 
-func (p *parameterParser) getParamType(f *ast.Field) sdk.ParameterType {
-	if s, ok := f.Type.(*ast.Ident); ok {
-		switch s.Name {
-		case "int8", "uint8", "int16", "uint16", "int32", "rune", "uint32", "int64", "uint64", "int", "uint":
-			return sdk.ParameterTypeInt
-		case "float32", "float64":
-			return sdk.ParameterTypeFloat
-		case "bool":
-			return sdk.ParameterTypeBool
-		default:
-			return sdk.ParameterTypeString
-		}
+func (p *parameterParser) getParamType(i *ast.Ident) sdk.ParameterType {
+	switch i.Name {
+	case "int8", "uint8", "int16", "uint16", "int32", "rune", "uint32", "int64", "uint64", "int", "uint":
+		return sdk.ParameterTypeInt
+	case "float32", "float64":
+		return sdk.ParameterTypeFloat
+	case "bool":
+		return sdk.ParameterTypeBool
+	default:
+		return sdk.ParameterTypeString
 	}
-	return sdk.ParameterTypeString
 }
 
 // formatFieldName formats the name to a camel case string that starts with a
