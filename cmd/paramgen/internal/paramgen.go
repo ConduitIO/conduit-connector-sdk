@@ -16,7 +16,6 @@ package internal
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -68,7 +67,12 @@ func ParseParameters(path string, name string) (map[string]sdk.Parameter, string
 		return nil, "", err
 	}
 
-	return (&parameterParser{pkg: pkg, mod: mod, file: file, imports: map[string]*ast.Package{}}).Parse(myStruct)
+	return (&parameterParser{
+		pkg:     pkg,
+		mod:     mod,
+		file:    file,
+		imports: map[string]*ast.Package{},
+	}).Parse(myStruct)
 }
 
 type module struct {
@@ -110,14 +114,18 @@ func parsePackage(path string) (*ast.Package, error) {
 	filterTests := func(info fs.FileInfo) bool {
 		return !strings.HasSuffix(info.Name(), "_test.go")
 	}
-	pkg, err := parser.ParseDir(fset, path, filterTests, parser.ParseComments)
+	pkgs, err := parser.ParseDir(fset, path, filterTests, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't parse directory %v: %w", path, err)
+		return nil, fmt.Errorf("couldn't parse directory %s: %w", path, err)
 	}
-	if len(pkg) != 1 {
-		return nil, errors.New("more than 1 package")
+	// Make sure they are all in one package.
+	if len(pkgs) == 0 {
+		return nil, fmt.Errorf("no source-code package in directory %s", path)
 	}
-	for _, v := range pkg {
+	if len(pkgs) > 1 {
+		return nil, fmt.Errorf("multiple packages in directory %s", path)
+	}
+	for _, v := range pkgs {
 		return v, nil // return first package
 	}
 	panic("unreachable")
@@ -129,7 +137,7 @@ func findStruct(pkg *ast.Package, name string) (*ast.StructType, *ast.File, erro
 	for _, f := range pkg.Files {
 		ast.Inspect(f, func(n ast.Node) bool {
 			// Check if the node is a struct declaration
-			if typeSpec, ok := n.(*ast.TypeSpec); ok && typeSpec.Type != nil && typeSpec.Name.String() == name {
+			if typeSpec, ok := n.(*ast.TypeSpec); ok && typeSpec.Name.String() == name {
 				structType, ok = typeSpec.Type.(*ast.StructType)
 				if !ok {
 					// Node is not a struct declaration
@@ -163,18 +171,15 @@ type parameterParser struct {
 func (p *parameterParser) Parse(structType *ast.StructType) (map[string]sdk.Parameter, string, error) {
 	pkgName := p.pkg.Name
 
-	myParams, err := (*paramsParser)(p).parseStructType(structType)
+	parameters, err := p.parseStructType(structType)
 	if err != nil {
 		return nil, "", err
 	}
 
-	return myParams, pkgName, nil
+	return parameters, pkgName, nil
 }
 
-// paramsParser groups functions that concern themselves with parsing parameters
-type paramsParser parameterParser
-
-func (p *paramsParser) parseIdent(ident *ast.Ident) (params map[string]sdk.Parameter, err error) {
+func (p *parameterParser) parseIdent(ident *ast.Ident) (params map[string]sdk.Parameter, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("[parseIdent] %w", err)
@@ -211,7 +216,7 @@ func (p *paramsParser) parseIdent(ident *ast.Ident) (params map[string]sdk.Param
 	}
 }
 
-func (p *paramsParser) parseTypeSpec(ts *ast.TypeSpec) (params map[string]sdk.Parameter, err error) {
+func (p *parameterParser) parseTypeSpec(ts *ast.TypeSpec) (params map[string]sdk.Parameter, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("[parseTypeSpec] %w", err)
@@ -228,7 +233,7 @@ func (p *paramsParser) parseTypeSpec(ts *ast.TypeSpec) (params map[string]sdk.Pa
 	}
 }
 
-func (p *paramsParser) parseStructType(st *ast.StructType) (params map[string]sdk.Parameter, err error) {
+func (p *parameterParser) parseStructType(st *ast.StructType) (params map[string]sdk.Parameter, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("[parseStructType] %w", err)
@@ -255,7 +260,7 @@ func (p *paramsParser) parseStructType(st *ast.StructType) (params map[string]sd
 }
 
 // parse tags, defaults and stuff
-func (p *paramsParser) parseField(f *ast.Field) (params map[string]sdk.Parameter, err error) {
+func (p *parameterParser) parseField(f *ast.Field) (params map[string]sdk.Parameter, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("[parseField] %w", err)
@@ -330,7 +335,7 @@ func (p *paramsParser) parseField(f *ast.Field) (params map[string]sdk.Parameter
 	}
 }
 
-func (p *paramsParser) parseSelectorExpr(se *ast.SelectorExpr) (params map[string]sdk.Parameter, err error) {
+func (p *parameterParser) parseSelectorExpr(se *ast.SelectorExpr) (params map[string]sdk.Parameter, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("[parseSelectorExpr] %w", err)
@@ -368,7 +373,7 @@ func (p *paramsParser) parseSelectorExpr(se *ast.SelectorExpr) (params map[strin
 	return p.parseTypeSpec(ts)
 }
 
-func (p *paramsParser) findPackage(importPath string) (*ast.Package, error) {
+func (p *parameterParser) findPackage(importPath string) (*ast.Package, error) {
 	// first cleanup string
 	importPath = strings.Trim(importPath, `"`)
 
@@ -393,7 +398,7 @@ func (p *paramsParser) findPackage(importPath string) (*ast.Package, error) {
 	return pkg, nil
 }
 
-func (p *paramsParser) findType(pkg *ast.Package, typeName string) (*ast.TypeSpec, *ast.File, error) {
+func (p *parameterParser) findType(pkg *ast.Package, typeName string) (*ast.TypeSpec, *ast.File, error) {
 	var file *ast.File
 	var found *ast.TypeSpec
 	for _, f := range pkg.Files {
@@ -422,7 +427,7 @@ func (p *paramsParser) findType(pkg *ast.Package, typeName string) (*ast.TypeSpe
 	return found, file, nil
 }
 
-func (p *paramsParser) findImportSpec(se *ast.SelectorExpr) (*ast.ImportSpec, error) {
+func (p *parameterParser) findImportSpec(se *ast.SelectorExpr) (*ast.ImportSpec, error) {
 	impName := se.X.(*ast.Ident).Name
 	for _, i := range p.file.Imports {
 		if (i.Name != nil && i.Name.Name == impName) ||
@@ -433,7 +438,7 @@ func (p *paramsParser) findImportSpec(se *ast.SelectorExpr) (*ast.ImportSpec, er
 	return nil, fmt.Errorf("could not find import %q", impName)
 }
 
-func (p *paramsParser) attachPrefix(f *ast.Field, params map[string]sdk.Parameter) map[string]sdk.Parameter {
+func (p *parameterParser) attachPrefix(f *ast.Field, params map[string]sdk.Parameter) map[string]sdk.Parameter {
 	// attach prefix if a tag is present or if the field is named
 	prefix := p.getTag(f.Tag, tagParamName)
 	if prefix == "" && len(f.Names) > 0 {
@@ -455,7 +460,7 @@ func (p *paramsParser) attachPrefix(f *ast.Field, params map[string]sdk.Paramete
 	return prefixedParams
 }
 
-func (p *paramsParser) isBuiltinType(name string) bool {
+func (p *parameterParser) isBuiltinType(name string) bool {
 	switch name {
 	case "string", "bool", "int", "uint", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64",
 		"byte", "rune", "float32", "float64":
@@ -465,7 +470,7 @@ func (p *paramsParser) isBuiltinType(name string) bool {
 	}
 }
 
-func (p *paramsParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType) (name string, param sdk.Parameter, err error) {
+func (p *parameterParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType) (name string, param sdk.Parameter, err error) {
 	var fieldName string
 	if len(f.Names) == 1 {
 		fieldName = f.Names[0].Name
@@ -509,7 +514,7 @@ func (p *paramsParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType) (
 	}, nil
 }
 
-func (p *paramsParser) getParamType(f *ast.Field) sdk.ParameterType {
+func (p *parameterParser) getParamType(f *ast.Field) sdk.ParameterType {
 	if s, ok := f.Type.(*ast.Ident); ok {
 		switch s.Name {
 		case "int8", "uint8", "int16", "uint16", "int32", "rune", "uint32", "int64", "uint64", "int", "uint":
@@ -529,7 +534,7 @@ func (p *paramsParser) getParamType(f *ast.Field) sdk.ParameterType {
 // lowercase letter. If the string starts with multiple uppercase letters, all
 // but the last character in the sequence will be converted into lowercase
 // letters (e.g. HTTPRequest -> httpRequest).
-func (p *paramsParser) formatFieldName(name string) string {
+func (p *parameterParser) formatFieldName(name string) string {
 	if name == "" {
 		return ""
 	}
@@ -555,7 +560,7 @@ func (p *paramsParser) formatFieldName(name string) string {
 	return newName
 }
 
-func (p *paramsParser) getTag(lit *ast.BasicLit, tag string) string {
+func (p *parameterParser) getTag(lit *ast.BasicLit, tag string) string {
 	if lit == nil {
 		return ""
 	}
@@ -564,7 +569,7 @@ func (p *paramsParser) getTag(lit *ast.BasicLit, tag string) string {
 	return st.Get(tag)
 }
 
-func (p *paramsParser) parseValidateTag(tag string) ([]sdk.Validation, error) {
+func (p *parameterParser) parseValidateTag(tag string) ([]sdk.Validation, error) {
 	validations := make([]sdk.Validation, 0)
 	split := strings.Split(tag, tagSeparator)
 
@@ -582,7 +587,7 @@ func (p *paramsParser) parseValidateTag(tag string) ([]sdk.Validation, error) {
 	return validations, nil
 }
 
-func (p *paramsParser) parseValidation(str string) (sdk.Validation, error) {
+func (p *parameterParser) parseValidation(str string) (sdk.Validation, error) {
 	if str == validationRequired {
 		return sdk.ValidationRequired{}, nil
 	}

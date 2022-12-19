@@ -19,5 +19,5 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	tests are not parsed at all by specgen so this file can contain code that doesn't compile
+	tests are not parsed at all by paramgen so this file can contain code that doesn't compile
 }
