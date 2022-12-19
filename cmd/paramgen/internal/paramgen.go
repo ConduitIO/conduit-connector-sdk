@@ -470,25 +470,16 @@ func (p *parameterParser) isBuiltinType(name string) bool {
 	}
 }
 
-func (p *parameterParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType) (name string, param sdk.Parameter, err error) {
-	var fieldName string
-	if len(f.Names) == 1 {
-		fieldName = f.Names[0].Name
-	} else {
-		switch v := f.Type.(type) {
-		case *ast.Ident:
-			fieldName = v.Name
-		case *ast.SelectorExpr:
-			fieldName = v.Sel.Name
-		default:
-			return "", sdk.Parameter{}, fmt.Errorf("unexpected type: %T", f.Type)
-		}
+func (p *parameterParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType) (paramName string, param sdk.Parameter, err error) {
+	fieldName, err := p.getFieldName(f)
+	if err != nil {
+		return "", sdk.Parameter{}, err
 	}
 
-	name = p.getTag(f.Tag, tagParamName)
-	if name == "" {
-		// if there's no tag use the formatted field name
-		name = p.formatFieldName(fieldName)
+	paramName = p.getTag(f.Tag, tagParamName)
+	if paramName == "" {
+		// if there's no tag use the formatted field paramName
+		paramName = p.formatFieldName(fieldName)
 	}
 
 	var validations []sdk.Validation
@@ -500,18 +491,27 @@ func (p *parameterParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType
 		}
 	}
 
-	// replace field name with parameter name in description so that the user
-	// can write normal go docs referencing the field name
-	desc := strings.ReplaceAll(f.Doc.Text(), fieldName, name)
-	desc = strings.ReplaceAll(desc, "\n", " ")
-	desc = strings.Trim(desc, " ")
-
-	return name, sdk.Parameter{
+	return paramName, sdk.Parameter{
 		Default:     p.getTag(f.Tag, tagParamDefault),
-		Description: desc,
+		Description: p.formatFieldComment(f.Doc, fieldName, paramName),
 		Validations: validations,
 		Type:        t,
 	}, nil
+}
+
+func (p *parameterParser) getFieldName(f *ast.Field) (string, error) {
+	if len(f.Names) == 1 {
+		return f.Names[0].Name, nil
+	}
+
+	switch v := f.Type.(type) {
+	case *ast.Ident:
+		return v.Name, nil
+	case *ast.SelectorExpr:
+		return v.Sel.Name, nil
+	default:
+		return "", fmt.Errorf("unexpected type: %T", f.Type)
+	}
 }
 
 func (p *parameterParser) getParamType(f *ast.Field) sdk.ParameterType {
@@ -558,6 +558,15 @@ func (p *parameterParser) formatFieldName(name string) string {
 		return r
 	}, name)
 	return newName
+}
+
+func (p *parameterParser) formatFieldComment(doc *ast.CommentGroup, fieldName, paramName string) string {
+	// replace field name with parameter name in description so that the user
+	// can write normal go docs referencing the field name
+	c := strings.ReplaceAll(doc.Text(), fieldName, paramName)
+	c = strings.ReplaceAll(c, "\n", " ")
+	c = strings.Trim(c, " ")
+	return c
 }
 
 func (p *parameterParser) getTag(lit *ast.BasicLit, tag string) string {
