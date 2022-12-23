@@ -32,9 +32,8 @@ type SourceConfig struct {
 		AnotherNested is also nested under nestMeHere.
 		This is a block comment.
 	*/
-	AnotherNested int `json:"nestMeHere.anotherNested"`
-	// CustomType uses a custom type that is convertible to a supported type.
-	CustomType CustomDuration
+	AnotherNested int            `json:"nestMeHere.anotherNested"`
+	CustomType    CustomDuration // CustomType uses a custom type that is convertible to a supported type. Line comments are allowed.
 }
 
 type CustomDuration CustomDuration2

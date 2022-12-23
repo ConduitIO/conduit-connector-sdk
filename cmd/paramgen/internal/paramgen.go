@@ -479,7 +479,7 @@ func (p *parameterParser) parseSingleParameter(f *ast.Field, t sdk.ParameterType
 
 	return paramName, sdk.Parameter{
 		Default:     p.getTag(f.Tag, tagParamDefault),
-		Description: p.formatFieldComment(f.Doc, fieldName, paramName),
+		Description: p.formatFieldComment(f, fieldName, paramName),
 		Validations: validations,
 		Type:        t,
 	}, nil
@@ -543,7 +543,12 @@ func (p *parameterParser) formatFieldName(name string) string {
 	return newName
 }
 
-func (p *parameterParser) formatFieldComment(doc *ast.CommentGroup, fieldName, paramName string) string {
+func (p *parameterParser) formatFieldComment(f *ast.Field, fieldName, paramName string) string {
+	doc := f.Doc
+	if doc == nil {
+		// fallback to line comment
+		doc = f.Comment
+	}
 	c := strings.ReplaceAll(doc.Text(), fieldName, paramName)
 	if len(c) == 0 {
 		return c

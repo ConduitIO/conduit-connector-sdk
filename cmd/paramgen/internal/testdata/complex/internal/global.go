@@ -19,5 +19,5 @@ import "time"
 // GlobalConfig is an internal struct that paramgen still parses.
 type GlobalConfig struct {
 	// Duration does not have a name so the type name is used.
-	time.Duration `default:"1s"`
+	time.Duration `default:"1s"` // line comments on fields with doc comments are ignored
 }

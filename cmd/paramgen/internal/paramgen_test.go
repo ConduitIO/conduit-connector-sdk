@@ -98,7 +98,7 @@ func TestParseSpecificationSuccess(t *testing.T) {
 				},
 				"customType": {
 					Type:        sdk.ParameterTypeDuration,
-					Description: "customType uses a custom type that is convertible to a supported type.",
+					Description: "customType uses a custom type that is convertible to a supported type. Line comments are allowed.",
 				},
 			},
 		},
