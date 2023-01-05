@@ -248,10 +248,19 @@ func (a *destinationPluginAdapter) convertRecord(r cpluginv1.Record) Record {
 	return Record{
 		Position:  r.Position,
 		Operation: Operation(r.Operation),
-		Metadata:  r.Metadata,
+		Metadata:  a.convertMetadata(r.Metadata),
 		Key:       a.convertData(r.Key),
 		Payload:   a.convertChange(r.Payload),
 	}
+}
+
+func (a *destinationPluginAdapter) convertMetadata(m map[string]string) Metadata {
+	metadata := (Metadata)(m)
+	if metadata == nil {
+		metadata = make(map[string]string, 1)
+	}
+	metadata.SetOpenCDCVersion()
+	return metadata
 }
 
 func (a *destinationPluginAdapter) convertChange(c cpluginv1.Change) Change {

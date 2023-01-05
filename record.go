@@ -17,6 +17,7 @@
 package sdk
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -96,34 +97,29 @@ type Record struct {
 	// Payload holds the payload change (data before and after the operation
 	// occurred).
 	Payload Change `json:"payload"`
+
+	formatter RecordFormatter
 }
 
 type Metadata map[string]string
 
 // Bytes returns the JSON encoding of the Record.
-// TODO in the future the behavior of this function will be configurable through
-//
-//	the SDK.
 func (r Record) Bytes() []byte {
-	if r.Metadata == nil {
-		// since we are dealing with a Record value this will not be seen
-		// outside this function
-		r.Metadata = make(map[string]string)
+	if r.formatter != nil {
+		b, err := r.formatter.Format(r)
+		if err == nil {
+			// format was successful
+			return b
+		}
+		// format failed, we log an error and fall back to JSON
+		err = fmt.Errorf("error while formatting Record: %w", err)
+		Logger(context.Background()).Err(err).Msg("falling back to JSON format")
 	}
-
-	// before encoding the record set the opencdc version metadata field
-	r.Metadata.SetOpenCDCVersion()
-	// we don't want to mutate the metadata permanently, so we revert it
-	// when we are done
-	defer func() {
-		delete(r.Metadata, MetadataOpenCDCVersion)
-	}()
-
 	b, err := json.Marshal(r)
 	if err != nil {
 		// Unlikely to happen, we receive content from a plugin through GRPC.
 		// If the content could be marshaled as protobuf it can be as JSON.
-		panic(fmt.Errorf("error while marshaling Entity as JSON: %w", err))
+		panic(fmt.Errorf("error while marshaling Record as JSON: %w", err))
 	}
 	return b
 }
@@ -177,4 +173,19 @@ func (d StructuredData) Bytes() []byte {
 		panic(fmt.Errorf("error while marshaling StructuredData as JSON: %w", err))
 	}
 	return b
+}
+
+type RecordFormatter interface {
+	Configure(options string) (RecordFormatter, error)
+	Format(r Record) ([]byte, error)
+}
+
+type RecordFormatterJSON struct{}
+
+func (f RecordFormatterJSON) Configure(options string) (RecordFormatter, error) {
+	return f, nil
+}
+
+func (f RecordFormatterJSON) Format(r Record) ([]byte, error) {
+	return json.Marshal(r)
 }

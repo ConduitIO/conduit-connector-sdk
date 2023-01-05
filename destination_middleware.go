@@ -33,6 +33,7 @@ type DestinationMiddleware interface {
 func DefaultDestinationMiddleware() []DestinationMiddleware {
 	return []DestinationMiddleware{
 		DestinationWithRateLimit{},
+		DestinationWithRecordFormat{},
 		// DestinationWithBatch{}, // TODO enable batch middleware once batching is implemented
 	}
 }
@@ -108,13 +109,13 @@ func (d *destinationWithBatch) Parameters() map[string]Parameter {
 	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
 		configDestinationBatchSize: {
 			Default:     strconv.Itoa(d.defaults.DefaultBatchSize),
-			Required:    false,
 			Description: "Maximum size of batch before it gets written to the destination.",
+			Type:        ParameterTypeInt,
 		},
 		configDestinationBatchDelay: {
 			Default:     d.defaults.DefaultBatchDelay.String(),
-			Required:    false,
 			Description: "Maximum delay before an incomplete batch is written to the destination.",
+			Type:        ParameterTypeDuration,
 		},
 	})
 }
@@ -180,13 +181,13 @@ func (d *destinationWithRateLimit) Parameters() map[string]Parameter {
 	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
 		configDestinationRatePerSecond: {
 			Default:     strconv.FormatFloat(d.defaults.DefaultRatePerSecond, 'f', -1, 64),
-			Required:    false,
 			Description: "Maximum times records can be written per second (0 means no rate limit).",
+			Type:        ParameterTypeFloat,
 		},
 		configDestinationRateBurst: {
 			Default:     strconv.Itoa(d.defaults.DefaultBurst),
-			Required:    false,
 			Description: "Allow bursts of at most X writes (1 or less means that bursts are not allowed). Only takes effect if a rate limit per second is set.",
+			Type:        ParameterTypeInt,
 		},
 	})
 }
@@ -204,7 +205,7 @@ func (d *destinationWithRateLimit) Configure(ctx context.Context, config map[str
 	if limitRaw != "" {
 		limitFloat, err := strconv.ParseFloat(limitRaw, 64)
 		if err != nil {
-			return fmt.Errorf("invalid sdk.rateLimit.writesPerSecond: %w", err)
+			return fmt.Errorf("invalid %s: %w", configDestinationRatePerSecond, err)
 		}
 		limit = rate.Limit(limitFloat)
 	}
@@ -212,7 +213,7 @@ func (d *destinationWithRateLimit) Configure(ctx context.Context, config map[str
 	if burstRaw != "" {
 		burstInt, err := strconv.Atoi(burstRaw)
 		if err != nil {
-			return fmt.Errorf("invalid sdk.rateLimit.bursts: %w", err)
+			return fmt.Errorf("invalid %s: %w", configDestinationRateBurst, err)
 		}
 		burst = burstInt
 	}
@@ -233,6 +234,103 @@ func (d *destinationWithRateLimit) Write(ctx context.Context, recs []Record) (in
 		if err != nil {
 			return 0, fmt.Errorf("rate limiter: %w", err)
 		}
+	}
+	return d.Destination.Write(ctx, recs)
+}
+
+// -- DestinationWithRecordFormat ----------------------------------------------
+
+const (
+	configDestinationFormatType    = "sdk.recordFormat.type"
+	configDestinationFormatOptions = "sdk.recordFormat.options"
+
+	defaultFormatType = formatTypeJSON
+
+	formatTypeJSON = "json"
+)
+
+var defaultRecordFormatters = map[string]RecordFormatter{
+	formatTypeJSON: RecordFormatterJSON{},
+}
+
+// DestinationWithRecordFormat TODO
+type DestinationWithRecordFormat struct {
+	// DefaultRecordFormat is the default value for the output format.
+	DefaultFormatType string
+	RecordFormatters  map[string]RecordFormatter
+}
+
+// Wrap a Destination into the output format middleware.
+func (d DestinationWithRecordFormat) Wrap(impl Destination) Destination {
+	if d.DefaultFormatType == "" {
+		d.DefaultFormatType = defaultFormatType
+	}
+	if d.RecordFormatters == nil {
+		d.RecordFormatters = defaultRecordFormatters
+	}
+	return &destinationWithRecordFormat{
+		Destination: impl,
+		defaults:    d,
+	}
+}
+
+type destinationWithRecordFormat struct {
+	Destination
+	defaults DestinationWithRecordFormat
+
+	formatter RecordFormatter
+}
+
+func (d *destinationWithRecordFormat) formatTypes() []string {
+	formatTypes := make([]string, len(d.defaults.RecordFormatters))
+	i := 0
+	for formatType := range d.defaults.RecordFormatters {
+		formatTypes[i] = formatType
+		i++
+	}
+	return formatTypes
+}
+
+func (d *destinationWithRecordFormat) Parameters() map[string]Parameter {
+	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
+		configDestinationFormatType: {
+			Default:     d.defaults.DefaultFormatType,
+			Description: "TODO",
+			Validations: []Validation{
+				ValidationInclusion{List: d.formatTypes()},
+			},
+		},
+	})
+}
+
+func (d *destinationWithRecordFormat) Configure(ctx context.Context, config map[string]string) error {
+	err := d.Destination.Configure(ctx, config)
+	if err != nil {
+		return err
+	}
+
+	formatType := d.defaults.DefaultFormatType
+	if ft, ok := config[configDestinationFormatType]; ok {
+		formatType = ft
+	}
+
+	formatter, ok := d.defaults.RecordFormatters[formatType]
+	if !ok {
+		return fmt.Errorf("invalid %s: %q not found in %v", configDestinationFormatType, formatType, d.formatTypes())
+	}
+
+	formatter, err = formatter.Configure(config[configDestinationFormatOptions])
+	if err != nil {
+		return fmt.Errorf("invalid %s for formatter %s: %w", configDestinationFormatOptions, formatType, err)
+	}
+
+	d.formatter = formatter
+	return nil
+}
+
+func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []Record) (int, error) {
+	for _, r := range recs {
+		r.formatter = d.formatter
 	}
 	return d.Destination.Write(ctx, recs)
 }
