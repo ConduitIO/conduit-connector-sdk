@@ -13,6 +13,9 @@ linters-settings:
     ignore-tests: true
   goheader:
     template-path: '.golangci.goheader.template'
+    values:
+      regexp:
+        copyright-year: 20[2-9]\d
   gosec:
     config:
       # Maximum allowed permissions mode for os.WriteFile and ioutil.WriteFile
