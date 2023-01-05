@@ -13,6 +13,15 @@ linters-settings:
     ignore-tests: true
   goheader:
     template-path: '.golangci.goheader.template'
+    values:
+      regexp:
+        copyright-year: 20[2-9]\d
+  gosec:
+    config:
+      # Maximum allowed permissions mode for os.WriteFile and ioutil.WriteFile
+      # Default is 0600, we use 0644 since it's macOS default, and we are not
+      # dealing with critical data.
+      G306: "0644"
 
 issues:
   exclude-rules:
