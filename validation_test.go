@@ -195,7 +195,7 @@ func TestValidation_Param_Type(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			v := validator(tt.params)
-			config, err := v.initConfig(tt.config)
+			config, err := v.InitConfig(tt.config)
 			is.NoErr(err)
 			err = v.Validate(config)
 			if err != nil && tt.wantErr {
@@ -397,7 +397,7 @@ func TestValidation_Param_Value(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			v := validator(tt.params)
-			config, err := v.initConfig(tt.config)
+			config, err := v.InitConfig(tt.config)
 			is.NoErr(err)
 			err = v.Validate(config)
 			if err != nil && tt.wantErr {
@@ -472,7 +472,7 @@ func TestValidation_Multi_Error(t *testing.T) {
 	}
 
 	v := validator(params)
-	config, err := v.initConfig(cfg)
+	config, err := v.InitConfig(cfg)
 	is.NoErr(err)
 	err = v.Validate(config)
 	is.True(err != nil)
@@ -538,7 +538,7 @@ func TestValidation_initConfig(t *testing.T) {
 	}
 
 	v := validator(params)
-	got, err := v.initConfig(config)
+	got, err := v.InitConfig(config)
 	is.NoErr(err)
 	is.Equal(got, want)
 }

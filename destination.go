@@ -91,7 +91,7 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.
 
 	v := validator(a.impl.Parameters())
 	// init config and apply default values
-	updatedCfg, multiErr := v.initConfig(req.Config)
+	updatedCfg, multiErr := v.InitConfig(req.Config)
 	// run builtin validations
 	multiErr = multierr.Append(multiErr, v.Validate(updatedCfg))
 	// run custom validations written by developer

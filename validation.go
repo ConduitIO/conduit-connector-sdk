@@ -231,9 +231,9 @@ func (v validator) validateParamValue(key string, value string) error {
 	return multiErr
 }
 
-// initConfig checks for unrecognized params, and fills any empty configuration with its assigned default value
+// InitConfig checks for unrecognized params, and fills any empty configuration with its assigned default value
 // returns an error if a parameter is not recognized.
-func (v validator) initConfig(config map[string]string) (map[string]string, error) {
+func (v validator) InitConfig(config map[string]string) (map[string]string, error) {
 	output := make(map[string]string)
 	var multiErr error
 	for key, val := range config {
