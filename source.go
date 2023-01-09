@@ -109,8 +109,11 @@ type sourcePluginAdapter struct {
 }
 
 func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.SourceConfigureRequest) (cpluginv1.SourceConfigureResponse, error) {
+	v := validator(a.impl.Parameters())
+	// init config and apply default values
+	updatedCfg, multiErr := v.initConfig(req.Config)
 	// run builtin validations
-	updatedCfg, multiErr := validator(a.impl.Parameters()).Validate(req.Config)
+	multiErr = multierr.Append(multiErr, validator(a.impl.Parameters()).Validate(updatedCfg))
 	// run custom validations written by developer
 	multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, updatedCfg))
 

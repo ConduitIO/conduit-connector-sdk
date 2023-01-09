@@ -194,13 +194,10 @@ func convertValidations(validations []Validation) []cpluginv1.ParameterValidatio
 // private struct to group all validation functions
 type validator map[string]Parameter
 
-// Validate is a utility function that applies all the validations for parameters, returns a configuration map with assigned
-// default values, and an error that consists of a combination of errors that happened during the configuration validations.
-func (v validator) Validate(config map[string]string) (map[string]string, error) {
-	// cfg is the config map with default values assigned
-	cfg, multiErr := v.initConfig(config)
-
-	var err error
+// Validate is a utility function that applies all the validations for parameters, returns an error that consists of a
+// combination of errors that happened during the configuration validations.
+func (v validator) Validate(cfg map[string]string) error {
+	var err, multiErr error
 	for pKey := range v {
 		err = v.validateParamType(pKey, cfg[pKey])
 		if err != nil {
@@ -210,7 +207,7 @@ func (v validator) Validate(config map[string]string) (map[string]string, error)
 		}
 		multiErr = multierr.Append(multiErr, v.validateParamValue(pKey, cfg[pKey]))
 	}
-	return cfg, multiErr
+	return multiErr
 }
 
 // validateParamValue validates that a configuration value matches all the validations required for the parameter.

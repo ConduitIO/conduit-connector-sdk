@@ -194,7 +194,10 @@ func TestValidation_Param_Type(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := validator(tt.params).Validate(tt.config)
+			v := validator(tt.params)
+			config, err := v.initConfig(tt.config)
+			is.NoErr(err)
+			err = v.Validate(config)
 			if err != nil && tt.wantErr {
 				is.True(errors.Is(err, ErrInvalidParamType))
 			} else if err != nil || tt.wantErr {
@@ -393,7 +396,10 @@ func TestValidation_Param_Value(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := validator(tt.params).Validate(tt.config)
+			v := validator(tt.params)
+			config, err := v.initConfig(tt.config)
+			is.NoErr(err)
+			err = v.Validate(config)
 			if err != nil && tt.wantErr {
 				is.True(errors.Is(err, tt.err))
 			} else if err != nil || tt.wantErr {
@@ -460,12 +466,15 @@ func TestValidation_Multi_Error(t *testing.T) {
 				ValidationRequired{},
 			}},
 	}
-	config := map[string]string{
+	cfg := map[string]string{
 		"limit":  "-1",
 		"option": "five",
 	}
 
-	_, err := validator(params).Validate(config)
+	v := validator(params)
+	config, err := v.initConfig(cfg)
+	is.NoErr(err)
+	err = v.Validate(config)
 	is.True(err != nil)
 
 	errs := multierr.Errors(err)
@@ -495,7 +504,7 @@ func TestValidation_Multi_Error(t *testing.T) {
 	}
 }
 
-func TestValidation_updatedConfig(t *testing.T) {
+func TestValidation_initConfig(t *testing.T) {
 	is := is.New(t)
 
 	params := map[string]Parameter{
@@ -528,7 +537,8 @@ func TestValidation_updatedConfig(t *testing.T) {
 		"param4": "param4",
 	}
 
-	got, err := validator(params).Validate(config)
+	v := validator(params)
+	got, err := v.initConfig(config)
 	is.NoErr(err)
 	is.Equal(got, want)
 }

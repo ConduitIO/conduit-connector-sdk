@@ -89,8 +89,11 @@ type destinationPluginAdapter struct {
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.DestinationConfigureRequest) (cpluginv1.DestinationConfigureResponse, error) {
 	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
 
+	v := validator(a.impl.Parameters())
+	// init config and apply default values
+	updatedCfg, multiErr := v.initConfig(req.Config)
 	// run builtin validations
-	updatedCfg, multiErr := validator(a.impl.Parameters()).Validate(req.Config)
+	multiErr = multierr.Append(multiErr, v.Validate(updatedCfg))
 	// run custom validations written by developer
 	multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, updatedCfg))
 	multiErr = multierr.Append(multiErr, a.configureWriteStrategy(ctx, updatedCfg))
