@@ -26,10 +26,8 @@ func TestRecord_Bytes(t *testing.T) {
 	r := Record{
 		Position:  Position("foo"),
 		Operation: OperationCreate,
-		Metadata: Metadata{
-			MetadataConduitSourcePluginName: "example",
-		},
-		Key: RawData("bar"),
+		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
+		Key:       RawData("bar"),
 		Payload: Change{
 			Before: nil,
 			After: StructuredData{
@@ -43,4 +41,55 @@ func TestRecord_Bytes(t *testing.T) {
 
 	got := string(r.Bytes())
 	is.Equal(got, want)
+}
+
+func TestConverter_OpenCDC(t *testing.T) {
+	is := is.New(t)
+
+	converter, err := NewOpenCDCConverter(nil)
+	is.NoErr(err)
+
+	want := Record{
+		Position:  Position("foo"),
+		Operation: OperationCreate,
+		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
+		Key:       RawData("bar"),
+		Payload: Change{
+			Before: nil,
+			After: StructuredData{
+				"foo": "bar",
+				"baz": "qux",
+			},
+		},
+	}
+
+	got, err := converter.Convert(want)
+	is.NoErr(err)
+	is.Equal(got, want)
+}
+
+func TestEncoder_JSON(t *testing.T) {
+	is := is.New(t)
+
+	encoder, err := NewJSONEncoder(nil)
+	is.NoErr(err)
+
+	r := Record{
+		Position:  Position("foo"),
+		Operation: OperationCreate,
+		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
+		Key:       RawData("bar"),
+		Payload: Change{
+			Before: nil,
+			After: StructuredData{
+				"foo": "bar",
+				"baz": "qux",
+			},
+		},
+	}
+	want := `{"position":"Zm9v","operation":"create","metadata":{"conduit.source.plugin.name":"example"},"key":"YmFy","payload":{"before":null,"after":{"baz":"qux","foo":"bar"}}}`
+
+	got, err := encoder.Encode(r)
+	is.NoErr(err)
+	is.Equal(string(got), want)
 }

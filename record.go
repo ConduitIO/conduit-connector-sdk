@@ -98,28 +98,24 @@ type Record struct {
 	// occurred).
 	Payload Change `json:"payload"`
 
-	formatter RecordFormatter
+	formatter recordFormatter
 }
 
 type Metadata map[string]string
 
 // Bytes returns the JSON encoding of the Record.
 func (r Record) Bytes() []byte {
-	if r.formatter != nil {
-		b, err := r.formatter.Format(r)
-		if err == nil {
-			// format was successful
-			return b
-		}
-		// format failed, we log an error and fall back to JSON
+	b, err := r.formatter.Format(r)
+	if err != nil {
 		err = fmt.Errorf("error while formatting Record: %w", err)
 		Logger(context.Background()).Err(err).Msg("falling back to JSON format")
-	}
-	b, err := json.Marshal(r)
-	if err != nil {
-		// Unlikely to happen, we receive content from a plugin through GRPC.
-		// If the content could be marshaled as protobuf it can be as JSON.
-		panic(fmt.Errorf("error while marshaling Record as JSON: %w", err))
+		b, err := json.Marshal(r)
+		if err != nil {
+			// Unlikely to happen, we receive content from a plugin through GRPC.
+			// If the content could be marshaled as protobuf it can be as JSON.
+			panic(fmt.Errorf("error while marshaling Record as JSON: %w", err))
+		}
+		return b
 	}
 	return b
 }
@@ -175,17 +171,78 @@ func (d StructuredData) Bytes() []byte {
 	return b
 }
 
-type RecordFormatter interface {
-	Configure(options string) (RecordFormatter, error)
-	Format(r Record) ([]byte, error)
+// -- record formatting --------------------------------------------------------
+
+type recordFormatter struct {
+	Converter Converter
+	Encoder   Encoder
 }
 
-type RecordFormatterJSON struct{}
+// Format converts and encodes record into a byte array.
+func (rf recordFormatter) Format(r Record) ([]byte, error) {
+	converter := rf.Converter
+	if converter == nil {
+		converter = defaultConverter
+	}
+	converted, err := converter.Convert(r)
+	if err != nil {
+		return nil, fmt.Errorf("converter fail: %w", err)
+	}
 
-func (f RecordFormatterJSON) Configure(options string) (RecordFormatter, error) {
-	return f, nil
+	encoder := rf.Encoder
+	if encoder == nil {
+		encoder = defaultEncoder
+	}
+	out, err := encoder.Encode(converted)
+	if err != nil {
+		return nil, fmt.Errorf("encoder fail: %w", err)
+	}
+
+	return out, nil
 }
 
-func (f RecordFormatterJSON) Format(r Record) ([]byte, error) {
-	return json.Marshal(r)
+type NewConverter func(options map[string]string) (Converter, error)
+type Converter interface {
+	Convert(Record) (any, error)
+}
+
+var defaultConverter = func() Converter {
+	c, err := NewOpenCDCConverter(nil)
+	if err != nil {
+		panic(fmt.Errorf("could not create default converter: %w", err))
+	}
+	return c
+}()
+
+func NewOpenCDCConverter(options map[string]string) (Converter, error) {
+	return openCDCConverter{}, nil
+}
+
+type openCDCConverter struct{}
+
+func (openCDCConverter) Convert(v Record) (any, error) {
+	return v, nil
+}
+
+type NewEncoder func(options map[string]string) (Encoder, error)
+type Encoder interface {
+	Encode(r any) ([]byte, error)
+}
+
+var defaultEncoder = func() Encoder {
+	c, err := NewJSONEncoder(nil)
+	if err != nil {
+		panic(fmt.Errorf("could not create default encoder: %w", err))
+	}
+	return c
+}()
+
+func NewJSONEncoder(options map[string]string) (Encoder, error) {
+	return jsonEncoder{}, nil
+}
+
+type jsonEncoder struct{}
+
+func (jsonEncoder) Encode(v any) ([]byte, error) {
+	return json.Marshal(v)
 }
