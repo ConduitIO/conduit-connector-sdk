@@ -21,7 +21,7 @@ paramgen [-path] [-output] structName
 Example:
 
 ```
-paramgen -path=./source -output=source_params SourceConfig
+paramgen -path=./source -output=source_params.go SourceConfig
 ```
 
 This example will search for a struct called `SourceConfig` in the path `./source`, it will create a parameter map of
@@ -92,9 +92,9 @@ package source
 type SourceConfig struct {
 	InnerConfig
 	// Param1 my param1 description
-	Param1 int `validate:"required, gt=0, lt=100" default:"10"`
+	Param1 int `validate:"required,gt=0,lt=100" default:"10"`
 	// comment about param2
-	Param2 bool   `validate:"inclusion=true|t, exclusion=false|f" default:"t"`
+	Param2 bool   `validate:"inclusion=true|t,exclusion=false|f" default:"t"`
 	Param3 string `validate:"regex=.*" default:"yes"`
 	
 	// this will be ignored because it's not exported
