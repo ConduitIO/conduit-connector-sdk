@@ -1,14 +1,14 @@
-#ParamGen
+# ParamGen
 
 ParamGen is a conduit tool that generates the code to return the parameters map from a certain Go struct.
 
-##Installation
+## Installation
 Once you have installed Go, install the paramgen tool.
 ````
 go install github.com/conduitio/conduit-connector-sdk/cmd/paramgen@latest
 ````
 
-##Usage
+## Usage
 ParamGen has one required argument, which is the struct name, and two optional flags for the path and the output file name.
 ````
 paramgen [-path] [-output] structName
@@ -20,7 +20,7 @@ paramgen -path=./source -output=source_params SourceConfig
 This example will search for a struct called `SourceConfig` in the path `./source`, it will create a parameter map of
 only the exported fields, and generate the code to return this map in the file `source_params.go` under the same folder.
 
-###Parameter Tags 
+### Parameter Tags 
 In order to give your parameter a name, a default value, or add some validations to it, tags are the way to go.
 We have three tags that can be parsed:
 1. `json`: this tag is used to rename the parameter.
@@ -56,7 +56,7 @@ We have three tags that can be parsed:
       ```go
       Email string `validate:"regex=^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$"`
 
-##Example
+## Example
 Assume we have this configuration struct:
 ````go
 package source
