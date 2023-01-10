@@ -6,6 +6,8 @@ ParamGen is a conduit tool that generates the code to return the parameters map 
 
 Once you have installed Go, install the paramgen tool.
 
+**Note:** If you have not done so already be sure to add `$GOPATH/bin` to your `PATH`.
+
 ```
 go install github.com/conduitio/conduit-connector-sdk/cmd/paramgen@latest
 ```
