@@ -35,8 +35,7 @@ type DestinationMiddleware interface {
 func DefaultDestinationMiddleware() []DestinationMiddleware {
 	return []DestinationMiddleware{
 		DestinationWithRateLimit{},
-		DestinationWithRecordConverter{},
-		DestinationWithRecordEncoder{},
+		DestinationWithRecordFormat{},
 		// DestinationWithBatch{}, // TODO enable batch middleware once batching is implemented
 	}
 }
@@ -241,49 +240,62 @@ func (d *destinationWithRateLimit) Write(ctx context.Context, recs []Record) (in
 	return d.Destination.Write(ctx, recs)
 }
 
-// -- DestinationWithRecordConverter -------------------------------------------
+// -- DestinationWithRecordFormat ----------------------------------------------
 
 const (
-	configDestinationRecordConverterType    = "sdk.record.converter.type"
-	configDestinationRecordConverterOptions = "sdk.record.converter.options"
+	configDestinationRecordFormat        = "sdk.record.format"
+	configDestinationRecordFormatOptions = "sdk.record.format.options"
 
-	defaultDestinationRecordConverterType = recordConverterTypeOpenCDC
-	recordConverterTypeOpenCDC            = "opencdc"
+	defaultDestinationRecordFormat = recordFormatConverterOpenCDC + "/" + recordFormatEncoderJSON
+
+	recordFormatConverterOpenCDC      = "opencdc"
+	recordFormatConverterKafkaConnect = "kafkaconnect"
+
+	recordFormatEncoderJSON = "json"
+	recordFormatEncoderAvro = "avro"
 )
 
 var defaultConverters = map[string]NewConverter{
-	recordConverterTypeOpenCDC: NewOpenCDCConverter,
+	recordFormatConverterOpenCDC: NewOpenCDCConverter,
 }
 
-// DestinationWithRecordConverter TODO
-type DestinationWithRecordConverter struct {
-	// DefaultRecordConverterType is the default converter type.
-	DefaultRecordConverterType string
-	RecordConverters           map[string]NewConverter
+var defaultEncoders = map[string]NewEncoder{
+	recordFormatEncoderJSON: NewJSONEncoder,
+}
+
+// DestinationWithRecordFormat TODO
+type DestinationWithRecordFormat struct {
+	// DefaultRecordFormat is the default record format.
+	DefaultRecordFormat string
+	RecordConverters    map[string]NewConverter
+	RecordEncoders      map[string]NewEncoder
 }
 
 // Wrap a Destination into the output format middleware.
-func (d DestinationWithRecordConverter) Wrap(impl Destination) Destination {
-	if d.DefaultRecordConverterType == "" {
-		d.DefaultRecordConverterType = defaultDestinationRecordConverterType
+func (d DestinationWithRecordFormat) Wrap(impl Destination) Destination {
+	if d.DefaultRecordFormat == "" {
+		d.DefaultRecordFormat = defaultDestinationRecordFormat
 	}
-	if d.RecordConverters == nil {
+	if len(d.RecordConverters) == 0 {
 		d.RecordConverters = defaultConverters
 	}
-	return &destinationWithRecordConverter{
+	if len(d.RecordEncoders) == 0 {
+		d.RecordEncoders = defaultEncoders
+	}
+	return &destinationWithRecordFormat{
 		Destination: impl,
 		defaults:    d,
 	}
 }
 
-type destinationWithRecordConverter struct {
+type destinationWithRecordFormat struct {
 	Destination
-	defaults DestinationWithRecordConverter
+	defaults DestinationWithRecordFormat
 
-	converter Converter
+	formatter recordFormatter
 }
 
-func (d *destinationWithRecordConverter) converterTypes() []string {
+func (d *destinationWithRecordFormat) converterTypes() []string {
 	types := make([]string, len(d.defaults.RecordConverters))
 	i := 0
 	for converterType := range d.defaults.RecordConverters {
@@ -294,117 +306,7 @@ func (d *destinationWithRecordConverter) converterTypes() []string {
 	return types
 }
 
-func (d *destinationWithRecordConverter) Parameters() map[string]Parameter {
-	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
-		configDestinationRecordConverterType: {
-			Default:     d.defaults.DefaultRecordConverterType,
-			Description: "TODO",
-			Validations: []Validation{
-				ValidationInclusion{List: d.converterTypes()},
-			},
-		},
-		configDestinationRecordConverterOptions: {
-			Description: "TODO",
-		},
-	})
-}
-
-func (d *destinationWithRecordConverter) Configure(ctx context.Context, config map[string]string) error {
-	err := d.Destination.Configure(ctx, config)
-	if err != nil {
-		return err
-	}
-
-	converterType := d.defaults.DefaultRecordConverterType
-	if ct, ok := config[configDestinationRecordConverterType]; ok {
-		converterType = ct
-	}
-
-	newConverter, ok := d.defaults.RecordConverters[converterType]
-	if !ok {
-		return fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordConverterType, converterType, d.converterTypes())
-	}
-
-	opt := d.parseConverterOptions(config[configDestinationRecordConverterOptions])
-	converter, err := newConverter(opt)
-	if err != nil {
-		return fmt.Errorf("invalid %s for formatter %s: %w", configDestinationRecordConverterOptions, converterType, err)
-	}
-
-	d.converter = converter
-	return nil
-}
-
-func (d *destinationWithRecordConverter) parseConverterOptions(options string) map[string]string {
-	options = strings.TrimSpace(options)
-	if len(options) == 0 {
-		return nil
-	}
-
-	pairs := strings.Split(options, " ")
-	optMap := make(map[string]string, len(pairs))
-	for _, pairStr := range pairs {
-		pair := strings.SplitN(pairStr, "=", 2)
-		k := pair[0]
-		v := ""
-		if len(pair) == 2 {
-			v = pair[1]
-		}
-		optMap[k] = v
-	}
-	return optMap
-}
-
-func (d *destinationWithRecordConverter) Write(ctx context.Context, recs []Record) (int, error) {
-	for _, r := range recs {
-		r.formatter.Converter = d.converter
-	}
-	return d.Destination.Write(ctx, recs)
-}
-
-// -- DestinationWithRecordEncoder ---------------------------------------------
-
-const (
-	configDestinationRecordEncoderType    = "sdk.record.encoder.type"
-	configDestinationRecordEncoderOptions = "sdk.record.encoder.options"
-
-	defaultDestinationRecordEncoderType = recordEncoderTypeJSON
-	recordEncoderTypeJSON               = "json"
-)
-
-var defaultEncoders = map[string]NewEncoder{
-	recordEncoderTypeJSON: NewJSONEncoder,
-}
-
-// DestinationWithRecordEncoder TODO
-type DestinationWithRecordEncoder struct {
-	// DefaultRecordEncoderType is the default encoder type.
-	DefaultRecordEncoderType string
-	RecordEncoders           map[string]NewEncoder
-}
-
-// Wrap a Destination into the output format middleware.
-func (d DestinationWithRecordEncoder) Wrap(impl Destination) Destination {
-	if d.DefaultRecordEncoderType == "" {
-		d.DefaultRecordEncoderType = defaultDestinationRecordEncoderType
-	}
-	if d.RecordEncoders == nil {
-		d.RecordEncoders = defaultEncoders
-	}
-	return &destinationWithRecordEncoder{
-		Destination: impl,
-		defaults:    d,
-	}
-}
-
-type destinationWithRecordEncoder struct {
-	Destination
-	defaults DestinationWithRecordEncoder
-
-	encoder Encoder
-}
-
-func (d *destinationWithRecordEncoder) encoderTypes() []string {
+func (d *destinationWithRecordFormat) encoderTypes() []string {
 	types := make([]string, len(d.defaults.RecordEncoders))
 	i := 0
 	for encoderType := range d.defaults.RecordEncoders {
@@ -415,48 +317,68 @@ func (d *destinationWithRecordEncoder) encoderTypes() []string {
 	return types
 }
 
-func (d *destinationWithRecordEncoder) Parameters() map[string]Parameter {
+func (d *destinationWithRecordFormat) formats() []string {
+	cts := d.converterTypes()
+	ets := d.encoderTypes()
+
+	formats := make([]string, len(cts)*len(ets))
+	for i, ct := range d.converterTypes() {
+		for j, et := range d.encoderTypes() {
+			formats[(i*len(ets))+j] = ct + "/" + et
+		}
+	}
+	return formats
+}
+
+func (d *destinationWithRecordFormat) Parameters() map[string]Parameter {
 	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
-		configDestinationRecordEncoderType: {
-			Default:     d.defaults.DefaultRecordEncoderType,
+		configDestinationRecordFormat: {
+			Default:     d.defaults.DefaultRecordFormat,
 			Description: "TODO",
 			Validations: []Validation{
-				ValidationInclusion{List: d.encoderTypes()},
+				ValidationInclusion{List: d.formats()},
 			},
 		},
-		configDestinationRecordEncoderOptions: {
+		configDestinationRecordFormatOptions: {
 			Description: "TODO",
 		},
 	})
 }
 
-func (d *destinationWithRecordEncoder) Configure(ctx context.Context, config map[string]string) error {
+func (d *destinationWithRecordFormat) Configure(ctx context.Context, config map[string]string) error {
 	err := d.Destination.Configure(ctx, config)
 	if err != nil {
 		return err
 	}
 
-	encoderType := d.defaults.DefaultRecordEncoderType
-	if et, ok := config[configDestinationRecordEncoderType]; ok {
-		encoderType = et
+	format := d.defaults.DefaultRecordFormat
+	if f, ok := config[configDestinationRecordFormat]; ok {
+		format = f
 	}
 
-	newEncoder, ok := d.defaults.RecordEncoders[encoderType]
-	if !ok {
-		return fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordEncoderType, encoderType, d.encoderTypes())
+	pair := strings.Split(format, "/")
+	if len(pair) != 2 {
+		return fmt.Errorf("invalid %s: expected %q to follow the structure \"type/subtype\"", configDestinationRecordFormat, format)
 	}
 
-	opt := d.parseEncoderOptions(config[configDestinationRecordEncoderOptions])
-	encoder, err := newEncoder(opt)
+	opt := d.parseFormatOptions(config[configDestinationRecordFormatOptions])
+	converter, err := d.parseConverter(pair[0], opt)
 	if err != nil {
-		return fmt.Errorf("invalid %s for formatter %s: %w", configDestinationRecordEncoderOptions, encoderType, err)
+		return err
+	}
+	encoder, err := d.parseEncoder(pair[1], opt)
+	if err != nil {
+		return err
 	}
 
-	d.encoder = encoder
+	d.formatter = recordFormatter{
+		Converter: converter,
+		Encoder:   encoder,
+	}
 	return nil
 }
 
-func (d *destinationWithRecordEncoder) parseEncoderOptions(options string) map[string]string {
+func (d *destinationWithRecordFormat) parseFormatOptions(options string) map[string]string {
 	options = strings.TrimSpace(options)
 	if len(options) == 0 {
 		return nil
@@ -476,9 +398,33 @@ func (d *destinationWithRecordEncoder) parseEncoderOptions(options string) map[s
 	return optMap
 }
 
-func (d *destinationWithRecordEncoder) Write(ctx context.Context, recs []Record) (int, error) {
+func (d *destinationWithRecordFormat) parseConverter(converterType string, options map[string]string) (Converter, error) {
+	newConverter, ok := d.defaults.RecordConverters[converterType]
+	if !ok {
+		return nil, fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordFormat, converterType, d.converterTypes())
+	}
+	converter, err := newConverter(options)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s for %q: %w", configDestinationRecordFormatOptions, converterType, err)
+	}
+	return converter, nil
+}
+
+func (d *destinationWithRecordFormat) parseEncoder(encoderType string, options map[string]string) (Encoder, error) {
+	newEncoder, ok := d.defaults.RecordEncoders[encoderType]
+	if !ok {
+		return nil, fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordFormat, encoderType, d.encoderTypes())
+	}
+	encoder, err := newEncoder(options)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s for %q: %w", configDestinationRecordFormatOptions, encoderType, err)
+	}
+	return encoder, nil
+}
+
+func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []Record) (int, error) {
 	for _, r := range recs {
-		r.formatter.Encoder = d.encoder
+		r.formatter = d.formatter
 	}
 	return d.Destination.Write(ctx, recs)
 }

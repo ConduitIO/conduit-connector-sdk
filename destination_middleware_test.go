@@ -282,34 +282,61 @@ func TestDestinationWithRateLimit_Write_CancelledContext(t *testing.T) {
 	is.True(errors.Is(err, ctx.Err()))
 }
 
-func TestDestinationWithRecordConverter_Configure(t *testing.T) {
+func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 	ctx := context.Background()
 
 	testCases := []struct {
 		name          string
-		middleware    DestinationWithRecordConverter
+		middleware    DestinationWithRecordFormat
 		have          map[string]string
-		wantConverter Converter
+		wantFormatter recordFormatter
 	}{{
-		name:          "empty config",
-		middleware:    DestinationWithRecordConverter{},
-		have:          map[string]string{},
-		wantConverter: defaultConverter,
+		name:       "empty config",
+		middleware: DestinationWithRecordFormat{},
+		have:       map[string]string{},
+		wantFormatter: recordFormatter{
+			Converter: defaultConverter,
+			Encoder:   defaultEncoder,
+		},
+	}, {
+		name:       "valid config",
+		middleware: DestinationWithRecordFormat{},
+		have: map[string]string{
+			configDestinationRecordFormat: "opencdc/json",
+		},
+		wantFormatter: recordFormatter{
+			Converter: mustConverter(NewOpenCDCConverter(nil)),
+			Encoder:   mustEncoder(NewJSONEncoder(nil)),
+		},
 	}}
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			is := is.New(t)
-			d := tt.middleware.Wrap(dst).(*destinationWithRecordConverter)
+			d := tt.middleware.Wrap(dst).(*destinationWithRecordFormat)
 
 			dst.EXPECT().Configure(ctx, tt.have).Return(nil)
 
 			err := d.Configure(ctx, tt.have)
 			is.NoErr(err)
 
-			is.Equal(d.converter, tt.wantConverter)
+			is.Equal(d.formatter, tt.wantFormatter)
 		})
 	}
+}
+
+func mustConverter(c Converter, err error) Converter {
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func mustEncoder(e Encoder, err error) Encoder {
+	if err != nil {
+		panic(err)
+	}
+	return e
 }
