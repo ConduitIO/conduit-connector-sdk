@@ -201,48 +201,102 @@ func (rf recordFormatter) Format(r Record) ([]byte, error) {
 	return out, nil
 }
 
-type NewConverter func(options map[string]string) (Converter, error)
 type Converter interface {
+	Name() string
+	Configure(options map[string]string) (Converter, error)
 	Convert(Record) (any, error)
 }
 
-var defaultConverter = func() Converter {
-	c, err := NewOpenCDCConverter(nil)
-	if err != nil {
-		panic(fmt.Errorf("could not create default converter: %w", err))
+var defaultConverter = OpenCDCConverter{}
+
+type OpenCDCConverter struct{}
+
+func (c OpenCDCConverter) Configure(map[string]string) (Converter, error) { return c, nil }
+func (c OpenCDCConverter) Name() string                                   { return "opencdc" }
+func (c OpenCDCConverter) Convert(r Record) (any, error)                  { return r, nil }
+
+type KafkaConnectConverter struct{}
+
+func (c KafkaConnectConverter) Configure(map[string]string) (Converter, error) { return c, nil }
+func (c KafkaConnectConverter) Name() string                                   { return "kafkaconnect" }
+func (c KafkaConnectConverter) Convert(r Record) (any, error) {
+	var kcr kafkaConnectRecord
+
+	if err := c.setSchema(r, &kcr); err != nil {
+		return nil, err
 	}
-	return c
-}()
+	if err := c.setPayloadBefore(r, &kcr); err != nil {
+		return nil, err
+	}
+	if err := c.setPayloadAfter(r, &kcr); err != nil {
+		return nil, err
+	}
+	if err := c.setPayloadSource(r, &kcr); err != nil {
+		return nil, err
+	}
+	if err := c.setPayloadOp(r, &kcr); err != nil {
+		return nil, err
+	}
+	if err := c.setPayloadReadAt(r, &kcr); err != nil {
+		return nil, err
+	}
 
-func NewOpenCDCConverter(options map[string]string) (Converter, error) {
-	return openCDCConverter{}, nil
+	return kcr, nil
 }
 
-type openCDCConverter struct{}
-
-func (openCDCConverter) Convert(v Record) (any, error) {
-	return v, nil
+type kafkaConnectRecord struct {
+	Schema  any `json:"schema"`
+	Payload struct {
+		Before Data     `json:"before"`
+		After  Data     `json:"after"`
+		Source Metadata `json:"metadata"`
+		Op     string   `json:"op"`
+		ReadAt *int64   `json:"ts_ms,omitempty"`
+	} `json:"payload"`
 }
 
-type NewEncoder func(options map[string]string) (Encoder, error)
+func (c KafkaConnectConverter) setSchema(r Record, kcr *kafkaConnectRecord) error {
+	// TODO
+	return nil
+}
+func (c KafkaConnectConverter) setPayloadBefore(r Record, kcr *kafkaConnectRecord) error {
+	// TODO
+	return nil
+}
+func (c KafkaConnectConverter) setPayloadAfter(r Record, kcr *kafkaConnectRecord) error {
+	// TODO
+	return nil
+}
+func (c KafkaConnectConverter) setPayloadSource(r Record, kcr *kafkaConnectRecord) error {
+	// TODO
+	return nil
+}
+func (c KafkaConnectConverter) setPayloadOp(r Record, kcr *kafkaConnectRecord) error {
+	// TODO
+	return nil
+}
+func (c KafkaConnectConverter) setPayloadReadAt(r Record, kcr *kafkaConnectRecord) error {
+	readAt, err := r.Metadata.GetReadAt()
+	if err != nil {
+		return nil // field is optional, skip it
+	}
+	unixMili := readAt.UnixMilli()
+	kcr.Payload.ReadAt = &unixMili
+	return nil
+}
+
 type Encoder interface {
+	Name() string
+	Configure(options map[string]string) (Encoder, error)
 	Encode(r any) ([]byte, error)
 }
 
-var defaultEncoder = func() Encoder {
-	c, err := NewJSONEncoder(nil)
-	if err != nil {
-		panic(fmt.Errorf("could not create default encoder: %w", err))
-	}
-	return c
-}()
+var defaultEncoder = JSONEncoder{}
 
-func NewJSONEncoder(options map[string]string) (Encoder, error) {
-	return jsonEncoder{}, nil
-}
+type JSONEncoder struct{}
 
-type jsonEncoder struct{}
-
-func (jsonEncoder) Encode(v any) ([]byte, error) {
+func (e JSONEncoder) Configure(map[string]string) (Encoder, error) { return e, nil }
+func (e JSONEncoder) Name() string                                 { return "json" }
+func (e JSONEncoder) Encode(v any) ([]byte, error) {
 	return json.Marshal(v)
 }

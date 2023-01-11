@@ -20,7 +20,7 @@ import (
 	"github.com/matryer/is"
 )
 
-func TestRecord_Bytes(t *testing.T) {
+func TestRecord_Bytes_Default(t *testing.T) {
 	is := is.New(t)
 
 	r := Record{
@@ -43,11 +43,9 @@ func TestRecord_Bytes(t *testing.T) {
 	is.Equal(got, want)
 }
 
-func TestConverter_OpenCDC(t *testing.T) {
+func TestOpenCDCConverter(t *testing.T) {
 	is := is.New(t)
-
-	converter, err := NewOpenCDCConverter(nil)
-	is.NoErr(err)
+	var converter OpenCDCConverter
 
 	want := Record{
 		Position:  Position("foo"),
@@ -68,11 +66,33 @@ func TestConverter_OpenCDC(t *testing.T) {
 	is.Equal(got, want)
 }
 
-func TestEncoder_JSON(t *testing.T) {
+func TestKafkaConnectConverter(t *testing.T) {
 	is := is.New(t)
+	var converter KafkaConnectConverter
 
-	encoder, err := NewJSONEncoder(nil)
+	r := Record{
+		Position:  Position("foo"),
+		Operation: OperationCreate,
+		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
+		Key:       RawData("bar"),
+		Payload: Change{
+			Before: nil,
+			After: StructuredData{
+				"foo": "bar",
+				"baz": "qux",
+			},
+		},
+	}
+	want := kafkaConnectRecord{}
+
+	got, err := converter.Convert(r)
 	is.NoErr(err)
+	is.Equal(got, want)
+}
+
+func TestJSONEncoder(t *testing.T) {
+	is := is.New(t)
+	var encoder JSONEncoder
 
 	r := Record{
 		Position:  Position("foo"),

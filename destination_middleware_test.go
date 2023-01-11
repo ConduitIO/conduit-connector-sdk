@@ -307,8 +307,8 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 			configDestinationRecordFormat: "opencdc/json",
 		},
 		wantFormatter: recordFormatter{
-			Converter: mustConverter(NewOpenCDCConverter(nil)),
-			Encoder:   mustEncoder(NewJSONEncoder(nil)),
+			Converter: OpenCDCConverter{},
+			Encoder:   JSONEncoder{},
 		},
 	}}
 
@@ -325,18 +325,4 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 			is.Equal(d.formatter, tt.wantFormatter)
 		})
 	}
-}
-
-func mustConverter(c Converter, err error) Converter {
-	if err != nil {
-		panic(err)
-	}
-	return c
-}
-
-func mustEncoder(e Encoder, err error) Encoder {
-	if err != nil {
-		panic(err)
-	}
-	return e
 }
