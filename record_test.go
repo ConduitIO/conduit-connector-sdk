@@ -15,6 +15,8 @@
 package sdk
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
@@ -160,6 +162,10 @@ func TestDebeziumConverter(t *testing.T) {
 	// fields in maps don't have a deterministic order, let's sort all fields
 	kafkaconnect.SortFields(&want.Schema)
 	kafkaconnect.SortFields(&gotEnvelope.Schema)
+
+	b, err := json.MarshalIndent(got, "", "  ")
+	is.NoErr(err)
+	fmt.Println(string(b))
 
 	is.Equal(got, want)
 }

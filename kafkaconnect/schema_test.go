@@ -154,7 +154,6 @@ func TestSchema(t *testing.T) {
 
 		equalJSON(is, got, []byte(jsonStr))
 	})
-
 }
 
 func equalJSON(is *is.I, s1, s2 []byte) {

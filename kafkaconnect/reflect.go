@@ -40,6 +40,7 @@ func SortFields(s *Schema) {
 	}
 }
 
+//nolint:gocyclo // reflection requires a huge switch, it's fine
 func reflectInternal(v reflect.Value, t reflect.Type) *Schema {
 	if t == nil {
 		return nil // untyped nil
@@ -140,7 +141,7 @@ func reflectInternal(v reflect.Value, t reflect.Type) *Schema {
 		}
 		for i := 0; i < t.NumField(); i++ {
 			sf := t.Field(i)
-			name, ok := getStructFieldJsonName(sf)
+			name, ok := getStructFieldJSONName(sf)
 			if !ok {
 				continue // skip this field
 			}
@@ -154,7 +155,7 @@ func reflectInternal(v reflect.Value, t reflect.Type) *Schema {
 	panic(fmt.Errorf("unsupported type: %v", t))
 }
 
-func getStructFieldJsonName(sf reflect.StructField) (string, bool) {
+func getStructFieldJSONName(sf reflect.StructField) (string, bool) {
 	jsonTag := strings.Split(sf.Tag.Get("json"), ",")[0] // ignore tag options (omitempty)
 	if jsonTag == "-" {
 		return "", false
