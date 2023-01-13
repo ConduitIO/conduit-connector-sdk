@@ -84,7 +84,6 @@ func TestSchema(t *testing.T) {
       "fields": [
         {
           "field": "id",
-          "optional": false,
           "type": "int32"
         },
         {
@@ -102,7 +101,6 @@ func TestSchema(t *testing.T) {
       "fields": [
         {
           "field": "id",
-          "optional": false,
           "type": "int32"
         },
         {
@@ -131,17 +129,14 @@ func TestSchema(t *testing.T) {
         },
         {
           "field": "db",
-          "optional": false,
           "type": "string"
         }
       ],
       "name": "my.source.value",
-      "optional": false,
       "type": "struct"
     }
   ],
   "name": "my.struct.name",
-  "optional": false,
   "type": "struct"
 }`
 	t.Run("unmarshal", func(t *testing.T) {

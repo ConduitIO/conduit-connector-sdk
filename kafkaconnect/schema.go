@@ -41,7 +41,7 @@ type Envelope struct {
 // in a JSON message directly.
 type Schema struct {
 	Type     Type   `json:"type"`
-	Optional bool   `json:"optional"`
+	Optional bool   `json:"optional,omitempty"`
 	Name     string `json:"name,omitempty"`
 	Version  int    `json:"version,omitempty"`
 	Doc      string `json:"doc,omitempty"`
