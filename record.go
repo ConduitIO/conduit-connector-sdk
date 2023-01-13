@@ -222,10 +222,17 @@ func (c OpenCDCConverter) Configure(map[string]string) (Converter, error) { retu
 func (c OpenCDCConverter) Name() string                                   { return "opencdc" }
 func (c OpenCDCConverter) Convert(r Record) (any, error)                  { return r, nil }
 
-type DebeziumConverter struct{}
+type DebeziumConverter struct {
+	SchemaName string
+}
 
-func (c DebeziumConverter) Configure(map[string]string) (Converter, error) { return c, nil }
-func (c DebeziumConverter) Name() string                                   { return "debezium" }
+func (c DebeziumConverter) Configure(opt map[string]string) (Converter, error) {
+	// allow user to configure the schema name (needed to make the output record
+	// play nicely with Kafka Connect connectors)
+	c.SchemaName = opt["debezium.schema.name"]
+	return c, nil
+}
+func (c DebeziumConverter) Name() string { return "debezium" }
 func (c DebeziumConverter) Convert(r Record) (any, error) {
 	before, err := c.getStructuredData(r.Payload.Before)
 	if err != nil {
@@ -251,8 +258,11 @@ func (c DebeziumConverter) Convert(r Record) (any, error) {
 		Transaction:     nil,
 	}
 
-	return dbz.ToEnvelope(), nil
+	e := dbz.ToEnvelope()
+	e.Schema.Name = c.SchemaName
+	return e, nil
 }
+
 func (c DebeziumConverter) getStructuredData(d Data) (StructuredData, error) {
 	switch d := d.(type) {
 	case nil:
