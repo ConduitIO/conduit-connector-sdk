@@ -247,15 +247,6 @@ const (
 	configDestinationRecordFormatOptions = "sdk.record.format.options"
 )
 
-var defaultConverters = []Converter{
-	OpenCDCConverter{},
-	KafkaConnectConverter{},
-}
-
-var defaultEncoders = []Encoder{
-	JSONEncoder{},
-}
-
 // DestinationWithRecordFormat TODO
 type DestinationWithRecordFormat struct {
 	// DefaultRecordFormat is the default record format.
@@ -264,16 +255,33 @@ type DestinationWithRecordFormat struct {
 	RecordEncoders      []Encoder
 }
 
-// Wrap a Destination into the output format middleware.
+// DefaultConverters returns the list of converters that are used if
+// DestinationWithRecordFormat.RecordConverters is nil.
+func (d DestinationWithRecordFormat) DefaultConverters() []Converter {
+	return []Converter{
+		OpenCDCConverter{},
+		DebeziumConverter{},
+	}
+}
+
+// DefaultEncoders returns the list of encoders that are used if
+// DestinationWithRecordFormat.RecordEncoders is nil.
+func (d DestinationWithRecordFormat) DefaultEncoders() []Encoder {
+	return []Encoder{
+		JSONEncoder{},
+	}
+}
+
+// Wrap a Destination into the record format middleware.
 func (d DestinationWithRecordFormat) Wrap(impl Destination) Destination {
 	if d.DefaultRecordFormat == "" {
 		d.DefaultRecordFormat = defaultConverter.Name() + "/" + defaultEncoder.Name()
 	}
 	if len(d.RecordConverters) == 0 {
-		d.RecordConverters = defaultConverters
+		d.RecordConverters = d.DefaultConverters()
 	}
 	if len(d.RecordEncoders) == 0 {
-		d.RecordEncoders = defaultEncoders
+		d.RecordEncoders = d.DefaultEncoders()
 	}
 
 	// sort converters and encoders by name to ensure we can binary search them
@@ -369,8 +377,8 @@ func (d *destinationWithRecordFormat) Configure(ctx context.Context, config map[
 	}
 
 	d.formatter = recordFormatter{
-		Converter: converter,
-		Encoder:   encoder,
+		converter: converter,
+		encoder:   encoder,
 	}
 	return nil
 }

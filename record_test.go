@@ -15,8 +15,9 @@
 package sdk
 
 import (
-	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 	"testing"
+
+	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 
 	"github.com/matryer/is"
 )
@@ -67,9 +68,9 @@ func TestOpenCDCConverter(t *testing.T) {
 	is.Equal(got, want)
 }
 
-func TestKafkaConnectConverter(t *testing.T) {
+func TestDebeziumConverter(t *testing.T) {
 	is := is.New(t)
-	var converter KafkaConnectConverter
+	var converter DebeziumConverter
 
 	r := Record{
 		Position:  Position("foo"),
@@ -87,51 +88,68 @@ func TestKafkaConnectConverter(t *testing.T) {
 	want := kafkaconnect.Envelope{
 		Schema: kafkaconnect.Schema{
 			Type: kafkaconnect.TypeStruct,
-			Name: "github.com/conduitio/conduit-connector-sdk.Record",
+			Name: "github.com/conduitio/conduit-connector-sdk/kafkaconnect.DebeziumPayload",
 			Fields: []kafkaconnect.Schema{{
-				Field: "position",
-				Type:  kafkaconnect.TypeBytes,
-				Name:  "github.com/conduitio/conduit-connector-sdk.Position",
+				Field:    "before",
+				Type:     kafkaconnect.TypeStruct,
+				Optional: true,
+				Fields: []kafkaconnect.Schema{{
+					Field: "foo",
+					Type:  kafkaconnect.TypeString,
+				}, {
+					Field: "baz",
+					Type:  kafkaconnect.TypeString,
+				}},
 			}, {
-				Field: "operation",
+				Field:    "after",
+				Type:     kafkaconnect.TypeStruct,
+				Optional: true,
+				Fields: []kafkaconnect.Schema{{
+					Field: "foo",
+					Type:  kafkaconnect.TypeString,
+				}, {
+					Field: "baz",
+					Type:  kafkaconnect.TypeString,
+				}},
+			}, {
+				Field:    "source",
+				Type:     kafkaconnect.TypeStruct,
+				Optional: true,
+				Fields: []kafkaconnect.Schema{{
+					Field: "conduit.source.plugin.name",
+					Type:  kafkaconnect.TypeString,
+				}},
+			}, {
+				Field: "op",
 				Type:  kafkaconnect.TypeString,
-				Name:  "github.com/conduitio/conduit-connector-sdk.Operation",
 			}, {
-				Field:  "metadata",
-				Type:   kafkaconnect.TypeMap,
-				Name:   "github.com/conduitio/conduit-connector-sdk.Metadata",
-				Keys:   &kafkaconnect.Schema{Type: kafkaconnect.TypeString},
-				Values: &kafkaconnect.Schema{Type: kafkaconnect.TypeString},
-			}, {
-				Field:    "key",
-				Type:     kafkaconnect.TypeBytes,
-				Name:     "github.com/conduitio/conduit-connector-sdk.RawData",
+				Field:    "ts_ms",
+				Type:     kafkaconnect.TypeInt64,
 				Optional: true,
 			}, {
-				Field: "payload",
-				Type:  kafkaconnect.TypeStruct,
-				Name:  "github.com/conduitio/conduit-connector-sdk.Change",
+				Field:    "transaction",
+				Type:     kafkaconnect.TypeStruct,
+				Optional: true,
 				Fields: []kafkaconnect.Schema{{
-					Field:    "before",
-					Type:     kafkaconnect.TypeBytes,
-					Name:     "github.com/conduitio/conduit-connector-sdk.RawData",
-					Optional: true,
+					Field: "id",
+					Type:  kafkaconnect.TypeString,
 				}, {
-					Field:    "after",
-					Type:     kafkaconnect.TypeStruct,
-					Name:     "github.com/conduitio/conduit-connector-sdk.StructuredData",
-					Optional: true,
-					Fields: []kafkaconnect.Schema{{
-						Field: "foo",
-						Type:  kafkaconnect.TypeString,
-					}, {
-						Field: "baz",
-						Type:  kafkaconnect.TypeString,
-					}},
+					Field: "total_order",
+					Type:  kafkaconnect.TypeInt64,
+				}, {
+					Field: "data_collection_order",
+					Type:  kafkaconnect.TypeInt64,
 				}},
 			}},
 		},
-		Payload: r,
+		Payload: kafkaconnect.DebeziumPayload{
+			Before:          nil,
+			After:           r.Payload.After.(StructuredData),
+			Source:          r.Metadata,
+			Op:              kafkaconnect.DebeziumOpCreate,
+			TimestampMillis: 0,
+			Transaction:     nil,
+		},
 	}
 
 	got, err := converter.Convert(r)

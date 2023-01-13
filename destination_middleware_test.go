@@ -297,8 +297,8 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 		middleware: DestinationWithRecordFormat{},
 		have:       map[string]string{},
 		wantFormatter: recordFormatter{
-			Converter: defaultConverter,
-			Encoder:   defaultEncoder,
+			converter: defaultConverter,
+			encoder:   defaultEncoder,
 		},
 	}, {
 		name:       "valid config",
@@ -307,8 +307,8 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 			configDestinationRecordFormat: "opencdc/json",
 		},
 		wantFormatter: recordFormatter{
-			Converter: OpenCDCConverter{},
-			Encoder:   JSONEncoder{},
+			converter: OpenCDCConverter{},
+			encoder:   JSONEncoder{},
 		},
 	}}
 

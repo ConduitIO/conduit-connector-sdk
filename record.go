@@ -20,11 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 	"strconv"
 	"strings"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
+	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 )
 
 const (
@@ -175,26 +175,32 @@ func (d StructuredData) Bytes() []byte {
 // -- record formatting --------------------------------------------------------
 
 type recordFormatter struct {
-	Converter Converter
-	Encoder   Encoder
+	converter Converter
+	encoder   Encoder
+}
+
+func (rf recordFormatter) Converter() Converter {
+	if rf.converter == nil {
+		return defaultConverter
+	}
+	return rf.converter
+}
+
+func (rf recordFormatter) Encoder() Encoder {
+	if rf.encoder == nil {
+		return defaultEncoder
+	}
+	return rf.encoder
 }
 
 // Format converts and encodes record into a byte array.
 func (rf recordFormatter) Format(r Record) ([]byte, error) {
-	converter := rf.Converter
-	if converter == nil {
-		converter = defaultConverter
-	}
-	converted, err := converter.Convert(r)
+	converted, err := rf.Converter().Convert(r)
 	if err != nil {
 		return nil, fmt.Errorf("converter fail: %w", err)
 	}
 
-	encoder := rf.Encoder
-	if encoder == nil {
-		encoder = defaultEncoder
-	}
-	out, err := encoder.Encode(converted)
+	out, err := rf.Encoder().Encode(converted)
 	if err != nil {
 		return nil, fmt.Errorf("encoder fail: %w", err)
 	}
@@ -216,64 +222,71 @@ func (c OpenCDCConverter) Configure(map[string]string) (Converter, error) { retu
 func (c OpenCDCConverter) Name() string                                   { return "opencdc" }
 func (c OpenCDCConverter) Convert(r Record) (any, error)                  { return r, nil }
 
-type KafkaConnectConverter struct{}
+type DebeziumConverter struct{}
 
-func (c KafkaConnectConverter) Configure(map[string]string) (Converter, error) { return c, nil }
-func (c KafkaConnectConverter) Name() string                                   { return "kafkaconnect" }
-func (c KafkaConnectConverter) Convert(r Record) (any, error) {
-	return kafkaconnect.Envelope{
-		Schema:  c.getRecordSchema(r),
-		Payload: r,
-	}, nil
-}
-func (c KafkaConnectConverter) getRecordSchema(r Record) kafkaconnect.Schema {
-	return kafkaconnect.Schema{
-		Type: kafkaconnect.TypeStruct,
-		Name: "github.com/conduitio/conduit-connector-sdk.Record",
-		Fields: []kafkaconnect.Schema{
-			{
-				Field: "position",
-				Type:  kafkaconnect.TypeBytes,
-				Name:  "github.com/conduitio/conduit-connector-sdk.Position",
-			}, {
-				Field: "operation",
-				Type:  kafkaconnect.TypeString,
-				Name:  "github.com/conduitio/conduit-connector-sdk.Operation",
-			}, {
-				Field:  "metadata",
-				Type:   kafkaconnect.TypeMap,
-				Name:   "github.com/conduitio/conduit-connector-sdk.Metadata",
-				Keys:   &kafkaconnect.Schema{Type: kafkaconnect.TypeString},
-				Values: &kafkaconnect.Schema{Type: kafkaconnect.TypeString},
-			},
-			c.getDataSchema("key", r.Key), {
-				Field: "payload",
-				Type:  kafkaconnect.TypeStruct,
-				Name:  "github.com/conduitio/conduit-connector-sdk.Change",
-				Fields: []kafkaconnect.Schema{
-					c.getDataSchema("before", r.Payload.Before),
-					c.getDataSchema("after", r.Payload.After),
-				},
-			},
-		},
+func (c DebeziumConverter) Configure(map[string]string) (Converter, error) { return c, nil }
+func (c DebeziumConverter) Name() string                                   { return "debezium" }
+func (c DebeziumConverter) Convert(r Record) (any, error) {
+	before, err := c.getStructuredData(r.Payload.Before)
+	if err != nil {
+		return nil, err
 	}
+	after, err := c.getStructuredData(r.Payload.After)
+	if err != nil {
+		return nil, err
+	}
+
+	// we ignore the error, if the timestamp is not there milliseconds will be 0 which is fine
+	var readAtMillis int64
+	if readAt, err := r.Metadata.GetReadAt(); err == nil {
+		readAtMillis = readAt.UnixMilli()
+	}
+
+	dbz := kafkaconnect.DebeziumPayload{
+		Before:          before,
+		After:           after,
+		Source:          r.Metadata,
+		Op:              c.getDebeziumOp(r.Operation),
+		TimestampMillis: readAtMillis,
+		Transaction:     nil,
+	}
+
+	return dbz.ToEnvelope(), nil
 }
-func (c KafkaConnectConverter) getDataSchema(field string, d Data) kafkaconnect.Schema {
-	var s kafkaconnect.Schema
-	switch d.(type) {
-	case RawData, nil:
-		s = kafkaconnect.Schema{
-			Field:    field,
-			Type:     kafkaconnect.TypeBytes,
-			Optional: true,
-			Name:     "github.com/conduitio/conduit-connector-sdk.RawData",
-		}
+func (c DebeziumConverter) getStructuredData(d Data) (StructuredData, error) {
+	switch d := d.(type) {
+	case nil:
+		return nil, nil
 	case StructuredData:
-		s = *kafkaconnect.Reflect(d)
-		s.Field = field
-		s.Name = "github.com/conduitio/conduit-connector-sdk.StructuredData"
+		return d, nil
+	case RawData:
+		return c.tryConvertRawDataToStructuredData(d)
+	default:
+		return nil, fmt.Errorf("unknown data type: %T", d)
 	}
-	return s
+}
+func (c DebeziumConverter) tryConvertRawDataToStructuredData(d RawData) (StructuredData, error) {
+	// We have raw data, we need structured data.
+	// We can do our best and try to convert it if RawData is carrying raw JSON.
+	var sd StructuredData
+	err := json.Unmarshal(d, &sd)
+	if err != nil {
+		return nil, fmt.Errorf("could not convert RawData to StructuredData: %w", err)
+	}
+	return sd, nil
+}
+func (c DebeziumConverter) getDebeziumOp(o Operation) kafkaconnect.DebeziumOp {
+	switch o {
+	case OperationCreate:
+		return kafkaconnect.DebeziumOpCreate
+	case OperationUpdate:
+		return kafkaconnect.DebeziumOpUpdate
+	case OperationDelete:
+		return kafkaconnect.DebeziumOpDelete
+	case OperationSnapshot:
+		return kafkaconnect.DebeziumOpRead
+	}
+	return "" // invalid operation
 }
 
 type Encoder interface {

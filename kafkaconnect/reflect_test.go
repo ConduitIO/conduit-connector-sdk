@@ -15,8 +15,9 @@
 package kafkaconnect
 
 import (
-	"github.com/matryer/is"
 	"testing"
+
+	"github.com/matryer/is"
 )
 
 func TestReflect_Types(t *testing.T) {
