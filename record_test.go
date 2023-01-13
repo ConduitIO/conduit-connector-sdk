@@ -15,8 +15,6 @@
 package sdk
 
 import (
-	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
@@ -73,6 +71,7 @@ func TestOpenCDCConverter(t *testing.T) {
 func TestDebeziumConverter(t *testing.T) {
 	is := is.New(t)
 	var converter DebeziumConverter
+	converter.SchemaName = "custom.name"
 
 	r := Record{
 		Position:  Position("foo"),
@@ -90,7 +89,7 @@ func TestDebeziumConverter(t *testing.T) {
 	want := kafkaconnect.Envelope{
 		Schema: kafkaconnect.Schema{
 			Type: kafkaconnect.TypeStruct,
-			Name: "github.com/conduitio/conduit-connector-sdk/kafkaconnect.DebeziumPayload",
+			Name: "custom.name",
 			Fields: []kafkaconnect.Schema{{
 				Field:    "before",
 				Type:     kafkaconnect.TypeStruct,
@@ -162,10 +161,6 @@ func TestDebeziumConverter(t *testing.T) {
 	// fields in maps don't have a deterministic order, let's sort all fields
 	kafkaconnect.SortFields(&want.Schema)
 	kafkaconnect.SortFields(&gotEnvelope.Schema)
-
-	b, err := json.MarshalIndent(got, "", "  ")
-	is.NoErr(err)
-	fmt.Println(string(b))
 
 	is.Equal(got, want)
 }
