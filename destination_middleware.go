@@ -72,6 +72,13 @@ type DestinationWithBatch struct {
 	DefaultBatchDelay time.Duration
 }
 
+func (d DestinationWithBatch) BatchSizeParameterName() string {
+	return configDestinationBatchSize
+}
+func (d DestinationWithBatch) BatchDelayParameterName() string {
+	return configDestinationBatchDelay
+}
+
 // Wrap a Destination into the batching middleware.
 func (d DestinationWithBatch) Wrap(impl Destination) Destination {
 	return &destinationWithBatch{
@@ -164,6 +171,14 @@ type DestinationWithRateLimit struct {
 	DefaultBurst int
 }
 
+func (d DestinationWithRateLimit) RatePerSecondParameterName() string {
+	return configDestinationRatePerSecond
+}
+
+func (d DestinationWithRateLimit) RateBurstParameterName() string {
+	return configDestinationRateBurst
+}
+
 // Wrap a Destination into the rate limiting middleware.
 func (d DestinationWithRateLimit) Wrap(impl Destination) Destination {
 	return &destinationWithRateLimit{
@@ -253,6 +268,13 @@ type DestinationWithRecordFormat struct {
 	DefaultRecordFormat string
 	RecordConverters    []Converter
 	RecordEncoders      []Encoder
+}
+
+func (d DestinationWithRecordFormat) RecordFormatParameterName() string {
+	return configDestinationRecordFormat
+}
+func (d DestinationWithRecordFormat) RecordFormatOptionsParameterName() string {
+	return configDestinationRecordFormatOptions
 }
 
 // DefaultConverters returns the list of converters that are used if
