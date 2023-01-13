@@ -17,11 +17,27 @@ package kafkaconnect
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 )
 
+// Reflect uses reflection to extract a kafka connect compatible schema from v.
 func Reflect(v any) *Schema {
 	return reflectInternal(reflect.ValueOf(v), reflect.TypeOf(v))
+}
+
+// SortFields can be used in tests to make sure the order of fields in a map is
+// deterministic.
+func SortFields(s *Schema) {
+	if s.Type != TypeStruct {
+		return
+	}
+	sort.Slice(s.Fields, func(i, j int) bool {
+		return s.Fields[i].Field < s.Fields[j].Field
+	})
+	for i := range s.Fields {
+		SortFields(&s.Fields[i])
+	}
 }
 
 func reflectInternal(v reflect.Value, t reflect.Type) *Schema {

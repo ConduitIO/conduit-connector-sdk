@@ -16,7 +16,6 @@ package kafkaconnect
 
 import (
 	"github.com/matryer/is"
-	"sort"
 	"testing"
 )
 
@@ -190,8 +189,8 @@ func TestReflect_MapAsStruct(t *testing.T) {
 
 	got := Reflect(have)
 
-	sortFields(want)
-	sortFields(got)
+	SortFields(want)
+	SortFields(got)
 	is.Equal(want, got)
 }
 
@@ -252,19 +251,7 @@ func TestReflect_NestedMap(t *testing.T) {
 
 	got := Reflect(have)
 
-	sortFields(want)
-	sortFields(got)
+	SortFields(want)
+	SortFields(got)
 	is.Equal(want, got)
-}
-
-func sortFields(s *Schema) {
-	if s.Type != TypeStruct {
-		return
-	}
-	sort.Slice(s.Fields, func(i, j int) bool {
-		return s.Fields[i].Field < s.Fields[j].Field
-	})
-	for i := range s.Fields {
-		sortFields(&s.Fields[i])
-	}
 }

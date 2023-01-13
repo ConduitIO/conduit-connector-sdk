@@ -15,6 +15,7 @@
 package sdk
 
 import (
+	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 	"testing"
 
 	"github.com/matryer/is"
@@ -83,10 +84,65 @@ func TestKafkaConnectConverter(t *testing.T) {
 			},
 		},
 	}
-	want := kafkaConnectRecord{}
+	want := kafkaconnect.Envelope{
+		Schema: kafkaconnect.Schema{
+			Type: kafkaconnect.TypeStruct,
+			Name: "github.com/conduitio/conduit-connector-sdk.Record",
+			Fields: []kafkaconnect.Schema{{
+				Field: "position",
+				Type:  kafkaconnect.TypeBytes,
+				Name:  "github.com/conduitio/conduit-connector-sdk.Position",
+			}, {
+				Field: "operation",
+				Type:  kafkaconnect.TypeString,
+				Name:  "github.com/conduitio/conduit-connector-sdk.Operation",
+			}, {
+				Field:  "metadata",
+				Type:   kafkaconnect.TypeMap,
+				Name:   "github.com/conduitio/conduit-connector-sdk.Metadata",
+				Keys:   &kafkaconnect.Schema{Type: kafkaconnect.TypeString},
+				Values: &kafkaconnect.Schema{Type: kafkaconnect.TypeString},
+			}, {
+				Field:    "key",
+				Type:     kafkaconnect.TypeBytes,
+				Name:     "github.com/conduitio/conduit-connector-sdk.RawData",
+				Optional: true,
+			}, {
+				Field: "payload",
+				Type:  kafkaconnect.TypeStruct,
+				Name:  "github.com/conduitio/conduit-connector-sdk.Change",
+				Fields: []kafkaconnect.Schema{{
+					Field:    "before",
+					Type:     kafkaconnect.TypeBytes,
+					Name:     "github.com/conduitio/conduit-connector-sdk.RawData",
+					Optional: true,
+				}, {
+					Field:    "after",
+					Type:     kafkaconnect.TypeStruct,
+					Name:     "github.com/conduitio/conduit-connector-sdk.StructuredData",
+					Optional: true,
+					Fields: []kafkaconnect.Schema{{
+						Field: "foo",
+						Type:  kafkaconnect.TypeString,
+					}, {
+						Field: "baz",
+						Type:  kafkaconnect.TypeString,
+					}},
+				}},
+			}},
+		},
+		Payload: r,
+	}
 
 	got, err := converter.Convert(r)
 	is.NoErr(err)
+
+	gotEnvelope, ok := got.(kafkaconnect.Envelope)
+	is.True(ok)
+	// fields in maps don't have a deterministic order, let's sort all fields
+	kafkaconnect.SortFields(&want.Schema)
+	kafkaconnect.SortFields(&gotEnvelope.Schema)
+
 	is.Equal(got, want)
 }
 

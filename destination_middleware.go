@@ -249,6 +249,7 @@ const (
 
 var defaultConverters = []Converter{
 	OpenCDCConverter{},
+	KafkaConnectConverter{},
 }
 
 var defaultEncoders = []Encoder{

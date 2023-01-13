@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 	"strconv"
 	"strings"
 
@@ -220,69 +221,59 @@ type KafkaConnectConverter struct{}
 func (c KafkaConnectConverter) Configure(map[string]string) (Converter, error) { return c, nil }
 func (c KafkaConnectConverter) Name() string                                   { return "kafkaconnect" }
 func (c KafkaConnectConverter) Convert(r Record) (any, error) {
-	var kcr kafkaConnectRecord
-
-	if err := c.setSchema(r, &kcr); err != nil {
-		return nil, err
-	}
-	if err := c.setPayloadBefore(r, &kcr); err != nil {
-		return nil, err
-	}
-	if err := c.setPayloadAfter(r, &kcr); err != nil {
-		return nil, err
-	}
-	if err := c.setPayloadSource(r, &kcr); err != nil {
-		return nil, err
-	}
-	if err := c.setPayloadOp(r, &kcr); err != nil {
-		return nil, err
-	}
-	if err := c.setPayloadReadAt(r, &kcr); err != nil {
-		return nil, err
-	}
-
-	return kcr, nil
+	return kafkaconnect.Envelope{
+		Schema:  c.getRecordSchema(r),
+		Payload: r,
+	}, nil
 }
-
-type kafkaConnectRecord struct {
-	Schema  any `json:"schema"`
-	Payload struct {
-		Before Data     `json:"before"`
-		After  Data     `json:"after"`
-		Source Metadata `json:"metadata"`
-		Op     string   `json:"op"`
-		ReadAt *int64   `json:"ts_ms,omitempty"`
-	} `json:"payload"`
-}
-
-func (c KafkaConnectConverter) setSchema(r Record, kcr *kafkaConnectRecord) error {
-	// TODO
-	return nil
-}
-func (c KafkaConnectConverter) setPayloadBefore(r Record, kcr *kafkaConnectRecord) error {
-	// TODO
-	return nil
-}
-func (c KafkaConnectConverter) setPayloadAfter(r Record, kcr *kafkaConnectRecord) error {
-	// TODO
-	return nil
-}
-func (c KafkaConnectConverter) setPayloadSource(r Record, kcr *kafkaConnectRecord) error {
-	// TODO
-	return nil
-}
-func (c KafkaConnectConverter) setPayloadOp(r Record, kcr *kafkaConnectRecord) error {
-	// TODO
-	return nil
-}
-func (c KafkaConnectConverter) setPayloadReadAt(r Record, kcr *kafkaConnectRecord) error {
-	readAt, err := r.Metadata.GetReadAt()
-	if err != nil {
-		return nil // field is optional, skip it
+func (c KafkaConnectConverter) getRecordSchema(r Record) kafkaconnect.Schema {
+	return kafkaconnect.Schema{
+		Type: kafkaconnect.TypeStruct,
+		Name: "github.com/conduitio/conduit-connector-sdk.Record",
+		Fields: []kafkaconnect.Schema{
+			{
+				Field: "position",
+				Type:  kafkaconnect.TypeBytes,
+				Name:  "github.com/conduitio/conduit-connector-sdk.Position",
+			}, {
+				Field: "operation",
+				Type:  kafkaconnect.TypeString,
+				Name:  "github.com/conduitio/conduit-connector-sdk.Operation",
+			}, {
+				Field:  "metadata",
+				Type:   kafkaconnect.TypeMap,
+				Name:   "github.com/conduitio/conduit-connector-sdk.Metadata",
+				Keys:   &kafkaconnect.Schema{Type: kafkaconnect.TypeString},
+				Values: &kafkaconnect.Schema{Type: kafkaconnect.TypeString},
+			},
+			c.getDataSchema("key", r.Key), {
+				Field: "payload",
+				Type:  kafkaconnect.TypeStruct,
+				Name:  "github.com/conduitio/conduit-connector-sdk.Change",
+				Fields: []kafkaconnect.Schema{
+					c.getDataSchema("before", r.Payload.Before),
+					c.getDataSchema("after", r.Payload.After),
+				},
+			},
+		},
 	}
-	unixMili := readAt.UnixMilli()
-	kcr.Payload.ReadAt = &unixMili
-	return nil
+}
+func (c KafkaConnectConverter) getDataSchema(field string, d Data) kafkaconnect.Schema {
+	var s kafkaconnect.Schema
+	switch d.(type) {
+	case RawData, nil:
+		s = kafkaconnect.Schema{
+			Field:    field,
+			Type:     kafkaconnect.TypeBytes,
+			Optional: true,
+			Name:     "github.com/conduitio/conduit-connector-sdk.RawData",
+		}
+	case StructuredData:
+		s = *kafkaconnect.Reflect(d)
+		s.Field = field
+		s.Name = "github.com/conduitio/conduit-connector-sdk.StructuredData"
+	}
+	return s
 }
 
 type Encoder interface {
