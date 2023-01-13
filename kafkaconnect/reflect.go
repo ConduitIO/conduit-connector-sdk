@@ -25,6 +25,9 @@ func Reflect(v any) *Schema {
 }
 
 func reflectInternal(v reflect.Value, t reflect.Type) *Schema {
+	if t == nil {
+		return nil // untyped nil
+	}
 	switch t.Kind() {
 	case reflect.Bool:
 		return &Schema{Type: TypeBoolean}
@@ -54,6 +57,14 @@ func reflectInternal(v reflect.Value, t reflect.Type) *Schema {
 		}
 		return reflectInternal(v.Elem(), v.Elem().Type())
 	case reflect.Array, reflect.Slice:
+		if t.Elem().Kind() == reflect.Uint8 {
+			// byte array/slice
+			return &Schema{
+				Type:     TypeBytes,
+				Optional: true,
+			}
+		}
+
 		var elemValue reflect.Value
 		if v.Len() > 0 {
 			elemValue = v.Index(0)

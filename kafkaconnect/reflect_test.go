@@ -45,6 +45,7 @@ func TestReflect_Types(t *testing.T) {
 		MyFloat64 float64
 
 		MyString string
+		MyBytes  []byte
 
 		MyMap   map[int]float32
 		MyArray [4]int32
@@ -70,6 +71,7 @@ func TestReflect_Types(t *testing.T) {
 			{Field: "MyFloat32", Type: TypeFloat},
 			{Field: "MyFloat64", Type: TypeDouble},
 			{Field: "MyString", Type: TypeString},
+			{Field: "MyBytes", Type: TypeBytes, Optional: true},
 			{
 				Field:  "MyMap",
 				Type:   TypeMap,
@@ -137,6 +139,7 @@ func TestReflect_MapAsStruct(t *testing.T) {
 		"MyFloat64": float64(1.2),
 
 		"MyString": "foo",
+		"MyBytes":  []byte{},
 		"MyNil":    nil,
 
 		"MyMap":   map[int]float32{},
@@ -164,6 +167,7 @@ func TestReflect_MapAsStruct(t *testing.T) {
 			{Field: "MyFloat32", Type: TypeFloat},
 			{Field: "MyFloat64", Type: TypeDouble},
 			{Field: "MyString", Type: TypeString},
+			{Field: "MyBytes", Type: TypeBytes, Optional: true},
 			{Field: "MyNil", Type: TypeString, Optional: true},
 			{
 				Field:  "MyMap",
