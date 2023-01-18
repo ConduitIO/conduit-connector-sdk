@@ -454,8 +454,8 @@ func (d *destinationWithRecordFormat) parseEncoder(encoderType string, options m
 }
 
 func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []Record) (int, error) {
-	for _, r := range recs {
-		r.formatter = d.formatter
+	for i := range recs {
+		recs[i].formatter = d.formatter
 	}
 	return d.Destination.Write(ctx, recs)
 }
