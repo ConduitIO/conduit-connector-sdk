@@ -164,3 +164,80 @@ func TestJSONEncoder(t *testing.T) {
 	is.NoErr(err)
 	is.Equal(string(got), want)
 }
+
+func TestTemplateRecordFormatter(t *testing.T) {
+	r := Record{
+		Position:  Position("foo"),
+		Operation: OperationCreate,
+		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
+		Key:       RawData("bar"),
+		Payload: Change{
+			Before: nil,
+			After: StructuredData{
+				"foo": "bar",
+				"baz": "qux",
+			},
+		},
+	}
+
+	testCases := map[string]struct {
+		have     Record
+		template string
+		want     string
+	}{
+		"go record": {
+			// output prints the Go record (not very useful, this test case is here to explain the behavior)
+			have:     r,
+			template: `{{ . }}`,
+			want:     `{[102 111 111] create map[conduit.source.plugin.name:example] [98 97 114] {<nil> map[baz:qux foo:bar]} <nil>}`,
+		},
+		"json record": {
+			// output should be the same as in format opencdc/json
+			have:     r,
+			template: `{{ toJson . }}`,
+			want:     `{"position":"Zm9v","operation":"create","metadata":{"conduit.source.plugin.name":"example"},"key":"YmFy","payload":{"before":null,"after":{"baz":"qux","foo":"bar"}}}`,
+		},
+		"json structured payload": {
+			have:     r,
+			template: `{{ if typeIs "sdk.RawData" .Payload.After }}{{ printf "%s" .Payload.After }}{{ else }}{{ toJson .Payload.After }}{{ end }}`,
+			want:     `{"baz":"qux","foo":"bar"}`,
+		},
+		"json raw payload": {
+			have: Record{
+				Payload: Change{
+					After: RawData("my raw data"),
+				},
+			},
+			template: `{{ if typeIs "sdk.RawData" .Payload.After }}{{ printf "%s" .Payload.After }}{{ else }}{{ toJson .Payload.After }}{{ end }}`,
+			want:     `my raw data`,
+		},
+		"json nil payload": {
+			have: Record{
+				Payload: Change{
+					After: nil,
+				},
+			},
+			template: `{{ if typeIs "sdk.RawData" .Payload.After }}{{ printf "%s" .Payload.After }}{{ else }}{{ toJson .Payload.After }}{{ end }}`,
+			want:     `null`,
+		},
+		"map metadata": {
+			have:     r,
+			template: `{{ .Metadata }}`,
+			want:     `map[conduit.source.plugin.name:example]`,
+		},
+	}
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			is := is.New(t)
+			var formatter RecordFormatter = TemplateRecordFormatter{}
+
+			formatter, err := formatter.Configure(tc.template)
+			is.NoErr(err)
+
+			got, err := formatter.Format(tc.have)
+			is.NoErr(err)
+			is.Equal(string(got), tc.want)
+		})
+	}
+}

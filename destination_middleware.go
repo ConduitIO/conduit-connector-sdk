@@ -285,6 +285,7 @@ func (d DestinationWithRecordFormat) RecordFormatOptionsParameterName() string {
 func (d DestinationWithRecordFormat) DefaultRecordFormatters() []RecordFormatter {
 	formatters := []RecordFormatter{
 		// define specific formatters here
+		TemplateRecordFormatter{},
 	}
 
 	// add generic formatters here, they are combined in all possible combinations
