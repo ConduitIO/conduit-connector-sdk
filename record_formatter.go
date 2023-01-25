@@ -39,6 +39,12 @@ var (
 	}
 )
 
+const (
+	genericRecordFormatSeparator     = "/" // e.g. opencdc/json
+	recordFormatOptionsSeparator     = "," // e.g. opt1=val1,opt2=val2
+	recordFormatOptionsPairSeparator = "=" // e.g. opt1=val1
+)
+
 // GenericRecordFormatter is a formatter that uses a Converter and Encoder to
 // format a record.
 type GenericRecordFormatter struct {
@@ -67,7 +73,7 @@ type Encoder interface {
 // Name returns the name of the record formatter combined from the converter
 // name and encoder name.
 func (rf GenericRecordFormatter) Name() string {
-	return rf.Converter.Name() + "/" + rf.Encoder.Name()
+	return rf.Converter.Name() + genericRecordFormatSeparator + rf.Encoder.Name()
 }
 
 func (rf GenericRecordFormatter) Configure(optRaw string) (RecordFormatter, error) {

@@ -259,9 +259,6 @@ func (d *destinationWithRateLimit) Write(ctx context.Context, recs []Record) (in
 const (
 	configDestinationRecordFormat        = "sdk.record.format"
 	configDestinationRecordFormatOptions = "sdk.record.format.options"
-
-	recordFormatOptionsSeparator     = "," // e.g. opt1=val1,opt2=val2
-	recordFormatOptionsPairSeparator = "=" // e.g. opt1=val1
 )
 
 // DestinationWithRecordFormat adds support for changing the output format of
