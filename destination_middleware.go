@@ -260,9 +260,21 @@ func (d *destinationWithRateLimit) Write(ctx context.Context, recs []Record) (in
 const (
 	configDestinationRecordFormat        = "sdk.record.format"
 	configDestinationRecordFormatOptions = "sdk.record.format.options"
+
+	recordFormatSeparator            = "/" // e.g. opencdc/json
+	recordFormatOptionsSeparator     = "," // e.g. opt1=val1,opt2=val2
+	recordFormatOptionsPairSeparator = "=" // e.g. opt1=val1
 )
 
-// DestinationWithRecordFormat TODO
+// DestinationWithRecordFormat adds support for changing the output format of
+// records, specifically of the Record.Bytes method. It adds two parameters to
+// the destination config:
+//   - `sdk.record.format` - The format of the output record. The format has two
+//     parts: "converter/encoder". Converter defines the output structure
+//     (e.g. opencdc, debezium), while encoder defines the encoding format (e.g.
+//     json, avro).
+//   - `sdk.record.format.options` - Options are used to configure the format
+//     (i.e. the converter and encoder).
 type DestinationWithRecordFormat struct {
 	// DefaultRecordFormat is the default record format.
 	DefaultRecordFormat string
@@ -297,7 +309,7 @@ func (d DestinationWithRecordFormat) DefaultEncoders() []Encoder {
 // Wrap a Destination into the record format middleware.
 func (d DestinationWithRecordFormat) Wrap(impl Destination) Destination {
 	if d.DefaultRecordFormat == "" {
-		d.DefaultRecordFormat = defaultConverter.Name() + "/" + defaultEncoder.Name()
+		d.DefaultRecordFormat = defaultConverter.Name() + recordFormatSeparator + defaultEncoder.Name()
 	}
 	if len(d.RecordConverters) == 0 {
 		d.RecordConverters = d.DefaultConverters()
@@ -351,7 +363,7 @@ func (d *destinationWithRecordFormat) formats() []string {
 	formats := make([]string, len(cs)*len(es))
 	for i, c := range d.converterNames() {
 		for j, e := range d.encoderNames() {
-			formats[(i*len(es))+j] = c + "/" + e
+			formats[(i*len(es))+j] = c + recordFormatSeparator + e
 		}
 	}
 	return formats
@@ -361,13 +373,13 @@ func (d *destinationWithRecordFormat) Parameters() map[string]Parameter {
 	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
 		configDestinationRecordFormat: {
 			Default:     d.defaults.DefaultRecordFormat,
-			Description: "TODO",
+			Description: "The format of the output record.",
 			Validations: []Validation{
 				ValidationInclusion{List: d.formats()},
 			},
 		},
 		configDestinationRecordFormatOptions: {
-			Description: "TODO",
+			Description: "Options to configure the chosen output record format. Options are key=value pairs separated with comma (e.g. opt1=val2,opt2=val2).",
 		},
 	})
 }
@@ -383,7 +395,7 @@ func (d *destinationWithRecordFormat) Configure(ctx context.Context, config map[
 		format = f
 	}
 
-	pair := strings.Split(format, "/")
+	pair := strings.Split(format, recordFormatSeparator)
 	if len(pair) != 2 {
 		return fmt.Errorf("invalid %s: expected %q to follow the structure \"type/subtype\"", configDestinationRecordFormat, format)
 	}
@@ -411,10 +423,10 @@ func (d *destinationWithRecordFormat) parseFormatOptions(options string) map[str
 		return nil
 	}
 
-	pairs := strings.Split(options, ",")
+	pairs := strings.Split(options, recordFormatOptionsSeparator)
 	optMap := make(map[string]string, len(pairs))
 	for _, pairStr := range pairs {
-		pair := strings.SplitN(pairStr, "=", 2)
+		pair := strings.SplitN(pairStr, recordFormatOptionsPairSeparator, 2)
 		k := pair[0]
 		v := ""
 		if len(pair) == 2 {

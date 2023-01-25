@@ -209,6 +209,9 @@ func (rf recordFormatter) Format(r Record) ([]byte, error) {
 	return out, nil
 }
 
+// Converter is a type that can change the structure of a Record. It's used in
+// destination connectors to change the output structure (e.g. opencdc records,
+// debezium records etc.).
 type Converter interface {
 	Name() string
 	Configure(options map[string]string) (Converter, error)
@@ -217,23 +220,28 @@ type Converter interface {
 
 var defaultConverter = OpenCDCConverter{}
 
+// OpenCDCConverter outputs an OpenCDC record (it does not change the structure
+// of the record).
 type OpenCDCConverter struct{}
 
-func (c OpenCDCConverter) Configure(map[string]string) (Converter, error) { return c, nil }
 func (c OpenCDCConverter) Name() string                                   { return "opencdc" }
-func (c OpenCDCConverter) Convert(r Record) (any, error)                  { return r, nil }
+func (c OpenCDCConverter) Configure(map[string]string) (Converter, error) { return c, nil }
+func (c OpenCDCConverter) Convert(r Record) (any, error) {
+	return r, nil
+}
 
+// DebeziumConverter outputs a Debezium record.
 type DebeziumConverter struct {
 	SchemaName string
 }
 
+func (c DebeziumConverter) Name() string { return "debezium" }
 func (c DebeziumConverter) Configure(opt map[string]string) (Converter, error) {
 	// allow user to configure the schema name (needed to make the output record
 	// play nicely with Kafka Connect connectors)
 	c.SchemaName = opt["debezium.schema.name"]
 	return c, nil
 }
-func (c DebeziumConverter) Name() string { return "debezium" }
 func (c DebeziumConverter) Convert(r Record) (any, error) {
 	before, err := c.getStructuredData(r.Payload.Before)
 	if err != nil {
@@ -303,6 +311,9 @@ func (c DebeziumConverter) getDebeziumOp(o Operation) kafkaconnect.DebeziumOp {
 	return "" // invalid operation
 }
 
+// Encoder is a type that can encode a random struct into a byte slice. It's
+// used in destination connectors to encode records into different formats
+// (e.g. JSON, Avro etc.).
 type Encoder interface {
 	Name() string
 	Configure(options map[string]string) (Encoder, error)
@@ -311,10 +322,11 @@ type Encoder interface {
 
 var defaultEncoder = JSONEncoder{}
 
+// JSONEncoder is an Encoder that outputs JSON.
 type JSONEncoder struct{}
 
-func (e JSONEncoder) Configure(map[string]string) (Encoder, error) { return e, nil }
 func (e JSONEncoder) Name() string                                 { return "json" }
+func (e JSONEncoder) Configure(map[string]string) (Encoder, error) { return e, nil }
 func (e JSONEncoder) Encode(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
