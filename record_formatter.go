@@ -237,7 +237,7 @@ type TemplateRecordFormatter struct {
 func (e TemplateRecordFormatter) Name() string { return "template" }
 func (e TemplateRecordFormatter) Configure(tmpl string) (RecordFormatter, error) {
 	t := template.New("")
-	t = t.Funcs(sprig.FuncMap()) // inject sprig functions
+	t = t.Funcs(sprig.TxtFuncMap()) // inject sprig functions
 	t, err := t.Parse(tmpl)
 	if err != nil {
 		return nil, err
