@@ -20,9 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"strconv"
 	"strings"
+
+	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 )
 
 const (

@@ -18,8 +18,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 	"strings"
+
+	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 )
 
 // RecordFormatter is a type that can format a record to bytes. It's used in

@@ -264,12 +264,9 @@ const (
 // DestinationWithRecordFormat adds support for changing the output format of
 // records, specifically of the Record.Bytes method. It adds two parameters to
 // the destination config:
-//   - `sdk.record.format` - The format of the output record. The format has two
-//     parts: "converter/encoder". Converter defines the output structure
-//     (e.g. opencdc, debezium), while encoder defines the encoding format (e.g.
-//     json, avro).
-//   - `sdk.record.format.options` - Options are used to configure the format
-//     (i.e. the converter and encoder).
+//   - `sdk.record.format` - The format of the output record. The inclusion
+//     validation exposes a list of valid options.
+//   - `sdk.record.format.options` - Options are used to configure the format.
 type DestinationWithRecordFormat struct {
 	// DefaultRecordFormat is the default record format.
 	DefaultRecordFormat string
@@ -288,7 +285,6 @@ func (d DestinationWithRecordFormat) RecordFormatOptionsParameterName() string {
 func (d DestinationWithRecordFormat) DefaultRecordFormatters() []RecordFormatter {
 	formatters := []RecordFormatter{
 		// define specific formatters here
-		// TemplateRecordFormatter{},
 	}
 
 	// add generic formatters here, they are combined in all possible combinations

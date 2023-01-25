@@ -15,9 +15,10 @@
 package sdk
 
 import (
+	"testing"
+
 	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 	"github.com/matryer/is"
-	"testing"
 )
 
 func TestOpenCDCConverter(t *testing.T) {
