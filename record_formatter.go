@@ -17,10 +17,10 @@ package sdk
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/Masterminds/sprig/v3"
 	"strings"
 	"text/template"
 
+	"github.com/Masterminds/sprig/v3"
 	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 )
 
