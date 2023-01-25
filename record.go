@@ -17,15 +17,12 @@
 package sdk
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"strconv"
 	"strings"
-
-	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
-	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 )
 
 const (
@@ -100,24 +97,29 @@ type Record struct {
 	// occurred).
 	Payload Change `json:"payload"`
 
-	formatter recordFormatter
+	formatter RecordFormatter
 }
 
 type Metadata map[string]string
 
 // Bytes returns the JSON encoding of the Record.
 func (r Record) Bytes() []byte {
-	b, err := r.formatter.Format(r)
+	var b []byte
+	var err error
+	if r.formatter == nil {
+		b, err = defaultFormatter.Format(r)
+	} else {
+		b, err = r.formatter.Format(r)
+	}
 	if err != nil {
 		err = fmt.Errorf("error while formatting Record: %w", err)
 		Logger(context.Background()).Err(err).Msg("falling back to JSON format")
-		b, err := json.Marshal(r)
+		b, err = json.Marshal(r)
 		if err != nil {
 			// Unlikely to happen, we receive content from a plugin through GRPC.
 			// If the content could be marshaled as protobuf it can be as JSON.
 			panic(fmt.Errorf("error while marshaling Record as JSON: %w", err))
 		}
-		return b
 	}
 	return b
 }
@@ -171,162 +173,4 @@ func (d StructuredData) Bytes() []byte {
 		panic(fmt.Errorf("error while marshaling StructuredData as JSON: %w", err))
 	}
 	return b
-}
-
-// -- record formatting --------------------------------------------------------
-
-type recordFormatter struct {
-	converter Converter
-	encoder   Encoder
-}
-
-func (rf recordFormatter) Converter() Converter {
-	if rf.converter == nil {
-		return defaultConverter
-	}
-	return rf.converter
-}
-
-func (rf recordFormatter) Encoder() Encoder {
-	if rf.encoder == nil {
-		return defaultEncoder
-	}
-	return rf.encoder
-}
-
-// Format converts and encodes record into a byte array.
-func (rf recordFormatter) Format(r Record) ([]byte, error) {
-	converted, err := rf.Converter().Convert(r)
-	if err != nil {
-		return nil, fmt.Errorf("converter fail: %w", err)
-	}
-
-	out, err := rf.Encoder().Encode(converted)
-	if err != nil {
-		return nil, fmt.Errorf("encoder fail: %w", err)
-	}
-
-	return out, nil
-}
-
-// Converter is a type that can change the structure of a Record. It's used in
-// destination connectors to change the output structure (e.g. opencdc records,
-// debezium records etc.).
-type Converter interface {
-	Name() string
-	Configure(options map[string]string) (Converter, error)
-	Convert(Record) (any, error)
-}
-
-var defaultConverter = OpenCDCConverter{}
-
-// OpenCDCConverter outputs an OpenCDC record (it does not change the structure
-// of the record).
-type OpenCDCConverter struct{}
-
-func (c OpenCDCConverter) Name() string                                   { return "opencdc" }
-func (c OpenCDCConverter) Configure(map[string]string) (Converter, error) { return c, nil }
-func (c OpenCDCConverter) Convert(r Record) (any, error) {
-	return r, nil
-}
-
-// DebeziumConverter outputs a Debezium record.
-type DebeziumConverter struct {
-	SchemaName string
-}
-
-func (c DebeziumConverter) Name() string { return "debezium" }
-func (c DebeziumConverter) Configure(opt map[string]string) (Converter, error) {
-	// allow user to configure the schema name (needed to make the output record
-	// play nicely with Kafka Connect connectors)
-	c.SchemaName = opt["debezium.schema.name"]
-	return c, nil
-}
-func (c DebeziumConverter) Convert(r Record) (any, error) {
-	before, err := c.getStructuredData(r.Payload.Before)
-	if err != nil {
-		return nil, err
-	}
-	after, err := c.getStructuredData(r.Payload.After)
-	if err != nil {
-		return nil, err
-	}
-
-	// we ignore the error, if the timestamp is not there milliseconds will be 0 which is fine
-	var readAtMillis int64
-	if readAt, err := r.Metadata.GetReadAt(); err == nil {
-		readAtMillis = readAt.UnixMilli()
-	}
-
-	dbz := kafkaconnect.DebeziumPayload{
-		Before:          before,
-		After:           after,
-		Source:          r.Metadata,
-		Op:              c.getDebeziumOp(r.Operation),
-		TimestampMillis: readAtMillis,
-		Transaction:     nil,
-	}
-
-	e := dbz.ToEnvelope()
-	e.Schema.Name = c.SchemaName
-	return e, nil
-}
-
-func (c DebeziumConverter) getStructuredData(d Data) (StructuredData, error) {
-	switch d := d.(type) {
-	case nil:
-		return nil, nil
-	case StructuredData:
-		return d, nil
-	case RawData:
-		if len(d) == 0 {
-			return nil, nil
-		}
-		return c.tryConvertRawDataToStructuredData(d)
-	default:
-		return nil, fmt.Errorf("unknown data type: %T", d)
-	}
-}
-func (c DebeziumConverter) tryConvertRawDataToStructuredData(d RawData) (StructuredData, error) {
-	// We have raw data, we need structured data.
-	// We can do our best and try to convert it if RawData is carrying raw JSON.
-	var sd StructuredData
-	err := json.Unmarshal(bytes.TrimSpace(d), &sd)
-	if err != nil {
-		return nil, fmt.Errorf("could not convert RawData to StructuredData: %w", err)
-	}
-	return sd, nil
-}
-func (c DebeziumConverter) getDebeziumOp(o Operation) kafkaconnect.DebeziumOp {
-	switch o {
-	case OperationCreate:
-		return kafkaconnect.DebeziumOpCreate
-	case OperationUpdate:
-		return kafkaconnect.DebeziumOpUpdate
-	case OperationDelete:
-		return kafkaconnect.DebeziumOpDelete
-	case OperationSnapshot:
-		return kafkaconnect.DebeziumOpRead
-	}
-	return "" // invalid operation
-}
-
-// Encoder is a type that can encode a random struct into a byte slice. It's
-// used in destination connectors to encode records into different formats
-// (e.g. JSON, Avro etc.).
-type Encoder interface {
-	Name() string
-	Configure(options map[string]string) (Encoder, error)
-	Encode(r any) ([]byte, error)
-}
-
-var defaultEncoder = JSONEncoder{}
-
-// JSONEncoder is an Encoder that outputs JSON.
-type JSONEncoder struct{}
-
-func (e JSONEncoder) Name() string                                 { return "json" }
-func (e JSONEncoder) Configure(map[string]string) (Encoder, error) { return e, nil }
-func (e JSONEncoder) Encode(v any) ([]byte, error) {
-	return json.Marshal(v)
 }

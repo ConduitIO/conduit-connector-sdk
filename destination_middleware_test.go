@@ -291,24 +291,24 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 		name          string
 		middleware    DestinationWithRecordFormat
 		have          map[string]string
-		wantFormatter recordFormatter
+		wantFormatter RecordFormatter
 	}{{
 		name:       "empty config",
 		middleware: DestinationWithRecordFormat{},
 		have:       map[string]string{},
-		wantFormatter: recordFormatter{
-			converter: defaultConverter,
-			encoder:   defaultEncoder,
+		wantFormatter: GenericRecordFormatter{
+			Converter: defaultConverter,
+			Encoder:   defaultEncoder,
 		},
 	}, {
 		name:       "valid config",
 		middleware: DestinationWithRecordFormat{},
 		have: map[string]string{
-			configDestinationRecordFormat: "opencdc/json",
+			configDestinationRecordFormat: "debezium/json",
 		},
-		wantFormatter: recordFormatter{
-			converter: OpenCDCConverter{},
-			encoder:   JSONEncoder{},
+		wantFormatter: GenericRecordFormatter{
+			Converter: DebeziumConverter{},
+			Encoder:   JSONEncoder{},
 		},
 	}}
 

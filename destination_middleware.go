@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -261,7 +260,6 @@ const (
 	configDestinationRecordFormat        = "sdk.record.format"
 	configDestinationRecordFormatOptions = "sdk.record.format.options"
 
-	recordFormatSeparator            = "/" // e.g. opencdc/json
 	recordFormatOptionsSeparator     = "," // e.g. opt1=val1,opt2=val2
 	recordFormatOptionsPairSeparator = "=" // e.g. opt1=val1
 )
@@ -278,8 +276,7 @@ const (
 type DestinationWithRecordFormat struct {
 	// DefaultRecordFormat is the default record format.
 	DefaultRecordFormat string
-	RecordConverters    []Converter
-	RecordEncoders      []Encoder
+	RecordFormatters    []RecordFormatter
 }
 
 func (d DestinationWithRecordFormat) RecordFormatParameterName() string {
@@ -289,38 +286,48 @@ func (d DestinationWithRecordFormat) RecordFormatOptionsParameterName() string {
 	return configDestinationRecordFormatOptions
 }
 
-// DefaultConverters returns the list of converters that are used if
-// DestinationWithRecordFormat.RecordConverters is nil.
-func (d DestinationWithRecordFormat) DefaultConverters() []Converter {
-	return []Converter{
+// DefaultRecordFormatters returns the list of record formatters that are used
+// if DestinationWithRecordFormat.RecordFormatters is nil.
+func (d DestinationWithRecordFormat) DefaultRecordFormatters() []RecordFormatter {
+	formatters := []RecordFormatter{
+		// define specific formatters here
+		// TemplateRecordFormatter{},
+	}
+
+	// add generic formatters here, they are combined in all possible combinations
+	genericConverters := []Converter{
 		OpenCDCConverter{},
 		DebeziumConverter{},
 	}
-}
-
-// DefaultEncoders returns the list of encoders that are used if
-// DestinationWithRecordFormat.RecordEncoders is nil.
-func (d DestinationWithRecordFormat) DefaultEncoders() []Encoder {
-	return []Encoder{
+	genericEncoders := []Encoder{
 		JSONEncoder{},
 	}
+
+	for _, c := range genericConverters {
+		for _, e := range genericEncoders {
+			formatters = append(
+				formatters,
+				GenericRecordFormatter{
+					Converter: c,
+					Encoder:   e,
+				},
+			)
+		}
+	}
+	return formatters
 }
 
 // Wrap a Destination into the record format middleware.
 func (d DestinationWithRecordFormat) Wrap(impl Destination) Destination {
 	if d.DefaultRecordFormat == "" {
-		d.DefaultRecordFormat = defaultConverter.Name() + recordFormatSeparator + defaultEncoder.Name()
+		d.DefaultRecordFormat = defaultFormatter.Name()
 	}
-	if len(d.RecordConverters) == 0 {
-		d.RecordConverters = d.DefaultConverters()
-	}
-	if len(d.RecordEncoders) == 0 {
-		d.RecordEncoders = d.DefaultEncoders()
+	if len(d.RecordFormatters) == 0 {
+		d.RecordFormatters = d.DefaultRecordFormatters()
 	}
 
-	// sort converters and encoders by name to ensure we can binary search them
-	sort.Slice(d.RecordConverters, func(i, j int) bool { return d.RecordConverters[i].Name() < d.RecordConverters[j].Name() })
-	sort.Slice(d.RecordEncoders, func(i, j int) bool { return d.RecordEncoders[i].Name() < d.RecordEncoders[j].Name() })
+	// sort record formatters by name to ensure we can binary search them
+	sort.Slice(d.RecordFormatters, func(i, j int) bool { return d.RecordFormatters[i].Name() < d.RecordFormatters[j].Name() })
 
 	return &destinationWithRecordFormat{
 		Destination: impl,
@@ -332,41 +339,17 @@ type destinationWithRecordFormat struct {
 	Destination
 	defaults DestinationWithRecordFormat
 
-	formatter recordFormatter
+	formatter RecordFormatter
 }
 
-func (d *destinationWithRecordFormat) converterNames() []string {
-	names := make([]string, len(d.defaults.RecordConverters))
+func (d *destinationWithRecordFormat) formats() []string {
+	names := make([]string, len(d.defaults.RecordFormatters))
 	i := 0
-	for _, c := range d.defaults.RecordConverters {
+	for _, c := range d.defaults.RecordFormatters {
 		names[i] = c.Name()
 		i++
 	}
 	return names
-}
-
-func (d *destinationWithRecordFormat) encoderNames() []string {
-	names := make([]string, len(d.defaults.RecordEncoders))
-	i := 0
-	for _, e := range d.defaults.RecordEncoders {
-		names[i] = e.Name()
-		i++
-	}
-	sort.Strings(names) // ensure we can binary search the slice
-	return names
-}
-
-func (d *destinationWithRecordFormat) formats() []string {
-	cs := d.converterNames()
-	es := d.encoderNames()
-
-	formats := make([]string, len(cs)*len(es))
-	for i, c := range d.converterNames() {
-		for j, e := range d.encoderNames() {
-			formats[(i*len(es))+j] = c + recordFormatSeparator + e
-		}
-	}
-	return formats
 }
 
 func (d *destinationWithRecordFormat) Parameters() map[string]Parameter {
@@ -395,74 +378,20 @@ func (d *destinationWithRecordFormat) Configure(ctx context.Context, config map[
 		format = f
 	}
 
-	pair := strings.Split(format, recordFormatSeparator)
-	if len(pair) != 2 {
-		return fmt.Errorf("invalid %s: expected %q to follow the structure \"type/subtype\"", configDestinationRecordFormat, format)
+	i := sort.SearchStrings(d.formats(), format)
+	// if the string is not found i is equal to the size of the slice
+	if i == len(d.defaults.RecordFormatters) {
+		return fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordFormat, format, d.formats())
 	}
 
-	opt := d.parseFormatOptions(config[configDestinationRecordFormatOptions])
-	converter, err := d.parseConverter(pair[0], opt)
+	formatter := d.defaults.RecordFormatters[i]
+	formatter, err = formatter.Configure(config[configDestinationRecordFormatOptions])
 	if err != nil {
-		return err
-	}
-	encoder, err := d.parseEncoder(pair[1], opt)
-	if err != nil {
-		return err
+		return fmt.Errorf("invalid %s for %q: %w", configDestinationRecordFormatOptions, format, err)
 	}
 
-	d.formatter = recordFormatter{
-		converter: converter,
-		encoder:   encoder,
-	}
+	d.formatter = formatter
 	return nil
-}
-
-func (d *destinationWithRecordFormat) parseFormatOptions(options string) map[string]string {
-	options = strings.TrimSpace(options)
-	if len(options) == 0 {
-		return nil
-	}
-
-	pairs := strings.Split(options, recordFormatOptionsSeparator)
-	optMap := make(map[string]string, len(pairs))
-	for _, pairStr := range pairs {
-		pair := strings.SplitN(pairStr, recordFormatOptionsPairSeparator, 2)
-		k := pair[0]
-		v := ""
-		if len(pair) == 2 {
-			v = pair[1]
-		}
-		optMap[k] = v
-	}
-	return optMap
-}
-
-func (d *destinationWithRecordFormat) parseConverter(converterType string, options map[string]string) (Converter, error) {
-	i := sort.SearchStrings(d.converterNames(), converterType)
-	// if the string is not found i is equal to the size of the slice
-	if i == len(d.defaults.RecordConverters) {
-		return nil, fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordFormat, converterType, d.converterNames())
-	}
-	converter := d.defaults.RecordConverters[i]
-	converter, err := converter.Configure(options)
-	if err != nil {
-		return nil, fmt.Errorf("invalid %s for %q: %w", configDestinationRecordFormatOptions, converterType, err)
-	}
-	return converter, nil
-}
-
-func (d *destinationWithRecordFormat) parseEncoder(encoderType string, options map[string]string) (Encoder, error) {
-	i := sort.SearchStrings(d.encoderNames(), encoderType)
-	// if the string is not found i is equal to the size of the slice
-	if i == len(d.defaults.RecordEncoders) {
-		return nil, fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordFormat, encoderType, d.encoderNames())
-	}
-	encoder := d.defaults.RecordEncoders[i]
-	encoder, err := encoder.Configure(options)
-	if err != nil {
-		return nil, fmt.Errorf("invalid %s for %q: %w", configDestinationRecordFormatOptions, encoderType, err)
-	}
-	return encoder, nil
 }
 
 func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []Record) (int, error) {
