@@ -8,7 +8,7 @@ require (
 	github.com/jpillora/backoff v1.0.0
 	github.com/matryer/is v1.4.0
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/rs/zerolog v1.28.0
+	github.com/rs/zerolog v1.29.0
 	go.uber.org/goleak v1.2.0
 	go.uber.org/multierr v1.9.0
 	golang.org/x/exp v0.0.0-20221114191408-850992195362
