@@ -293,13 +293,10 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 		have          map[string]string
 		wantFormatter RecordFormatter
 	}{{
-		name:       "empty config",
-		middleware: DestinationWithRecordFormat{},
-		have:       map[string]string{},
-		wantFormatter: GenericRecordFormatter{
-			Converter: defaultConverter,
-			Encoder:   defaultEncoder,
-		},
+		name:          "empty config",
+		middleware:    DestinationWithRecordFormat{},
+		have:          map[string]string{},
+		wantFormatter: defaultFormatter,
 	}, {
 		name:       "valid config",
 		middleware: DestinationWithRecordFormat{},

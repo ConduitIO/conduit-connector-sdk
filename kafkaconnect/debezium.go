@@ -42,7 +42,6 @@ type DebeziumTransaction struct {
 func (p DebeziumPayload) ToEnvelope() Envelope {
 	s := Schema{
 		Type: TypeStruct,
-		Name: "github.com/conduitio/conduit-connector-sdk/kafkaconnect.DebeziumPayload",
 		Fields: []Schema{
 			p.beforeSchema(),
 			p.afterSchema(),

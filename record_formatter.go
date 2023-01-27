@@ -15,7 +15,6 @@
 package sdk
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -189,16 +188,16 @@ func (c DebeziumConverter) getStructuredData(d Data) (StructuredData, error) {
 		if len(d) == 0 {
 			return nil, nil
 		}
-		return c.tryConvertRawDataToStructuredData(d)
+		return c.parseRawDataAsJSON(d)
 	default:
 		return nil, fmt.Errorf("unknown data type: %T", d)
 	}
 }
-func (c DebeziumConverter) tryConvertRawDataToStructuredData(d RawData) (StructuredData, error) {
+func (c DebeziumConverter) parseRawDataAsJSON(d RawData) (StructuredData, error) {
 	// We have raw data, we need structured data.
 	// We can do our best and try to convert it if RawData is carrying raw JSON.
 	var sd StructuredData
-	err := json.Unmarshal(bytes.TrimSpace(d), &sd)
+	err := json.Unmarshal(d, &sd)
 	if err != nil {
 		return nil, fmt.Errorf("could not convert RawData to StructuredData: %w", err)
 	}
