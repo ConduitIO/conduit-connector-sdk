@@ -20,16 +20,14 @@ import (
 	"github.com/matryer/is"
 )
 
-func TestRecord_Bytes(t *testing.T) {
+func TestRecord_Bytes_Default(t *testing.T) {
 	is := is.New(t)
 
 	r := Record{
 		Position:  Position("foo"),
 		Operation: OperationCreate,
-		Metadata: Metadata{
-			MetadataConduitSourcePluginName: "example",
-		},
-		Key: RawData("bar"),
+		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
+		Key:       RawData("bar"),
 		Payload: Change{
 			Before: nil,
 			After: StructuredData{
@@ -39,10 +37,8 @@ func TestRecord_Bytes(t *testing.T) {
 		},
 	}
 
-	want := `{"position":"Zm9v","operation":"create","metadata":{"conduit.source.plugin.name":"example","opencdc.version":"v1"},"key":"YmFy","payload":{"before":null,"after":{"baz":"qux","foo":"bar"}}}`
+	want := `{"position":"Zm9v","operation":"create","metadata":{"conduit.source.plugin.name":"example"},"key":"YmFy","payload":{"before":null,"after":{"baz":"qux","foo":"bar"}}}`
 
 	got := string(r.Bytes())
 	is.Equal(got, want)
-
-	is.Equal(r.Metadata, Metadata{MetadataConduitSourcePluginName: "example"}) // expected metadata to stay unaltered
 }

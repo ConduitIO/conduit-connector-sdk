@@ -58,7 +58,7 @@ func TestParseConfig_Embedded_Struct(t *testing.T) {
 		Location        // City
 		F1       Family // F1.last.name
 		// City
-		L1        Location `json:",squash"` //nolint: staticcheck // json here is a rename for the mapstructure tag
+		L1        Location `json:",squash"` //nolint:staticcheck // json here is a rename for the mapstructure tag
 		L2        Location // L2.City
 		L3        Location `json:"loc3"`       // loc3.City
 		FirstName string   `json:"First.Name"` // First.Name

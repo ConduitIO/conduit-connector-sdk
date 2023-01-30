@@ -35,7 +35,6 @@ func TestDestinationWithBatch_Parameters(t *testing.T) {
 	want := map[string]Parameter{
 		"foo": {
 			Default:     "bar",
-			Required:    true,
 			Description: "baz",
 		},
 	}
@@ -48,7 +47,6 @@ func TestDestinationWithBatch_Parameters(t *testing.T) {
 }
 
 func TestDestinationWithBatch_Configure(t *testing.T) {
-	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
@@ -94,6 +92,7 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
+			is := is.New(t)
 			d := tt.middleware.Wrap(dst)
 
 			ctx := DestinationWithBatch{}.setBatchEnabled(context.Background(), false)
@@ -118,7 +117,6 @@ func TestDestinationWithRateLimit_Parameters(t *testing.T) {
 	want := map[string]Parameter{
 		"foo": {
 			Default:     "bar",
-			Required:    true,
 			Description: "baz",
 		},
 	}
@@ -131,7 +129,6 @@ func TestDestinationWithRateLimit_Parameters(t *testing.T) {
 }
 
 func TestDestinationWithRateLimit_Configure(t *testing.T) {
-	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 	ctx := context.Background()
@@ -197,6 +194,7 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
+			is := is.New(t)
 			d := tt.middleware.Wrap(dst).(*destinationWithRateLimit)
 
 			dst.EXPECT().Configure(ctx, tt.have).Return(nil)
@@ -282,4 +280,46 @@ func TestDestinationWithRateLimit_Write_CancelledContext(t *testing.T) {
 	cancel()
 	_, err = d.Write(ctx, []Record{{}})
 	is.True(errors.Is(err, ctx.Err()))
+}
+
+func TestDestinationWithRecordFormat_Configure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+	ctx := context.Background()
+
+	testCases := []struct {
+		name          string
+		middleware    DestinationWithRecordFormat
+		have          map[string]string
+		wantFormatter RecordFormatter
+	}{{
+		name:          "empty config",
+		middleware:    DestinationWithRecordFormat{},
+		have:          map[string]string{},
+		wantFormatter: defaultFormatter,
+	}, {
+		name:       "valid config",
+		middleware: DestinationWithRecordFormat{},
+		have: map[string]string{
+			configDestinationRecordFormat: "debezium/json",
+		},
+		wantFormatter: GenericRecordFormatter{
+			Converter: DebeziumConverter{},
+			Encoder:   JSONEncoder{},
+		},
+	}}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			is := is.New(t)
+			d := tt.middleware.Wrap(dst).(*destinationWithRecordFormat)
+
+			dst.EXPECT().Configure(ctx, tt.have).Return(nil)
+
+			err := d.Configure(ctx, tt.have)
+			is.NoErr(err)
+
+			is.Equal(d.formatter, tt.wantFormatter)
+		})
+	}
 }

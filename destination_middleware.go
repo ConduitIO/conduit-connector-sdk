@@ -17,6 +17,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -33,6 +34,7 @@ type DestinationMiddleware interface {
 func DefaultDestinationMiddleware() []DestinationMiddleware {
 	return []DestinationMiddleware{
 		DestinationWithRateLimit{},
+		DestinationWithRecordFormat{},
 		// DestinationWithBatch{}, // TODO enable batch middleware once batching is implemented
 	}
 }
@@ -67,6 +69,13 @@ type DestinationWithBatch struct {
 	DefaultBatchSize int
 	// DefaultBatchDelay is the default value for the batch delay.
 	DefaultBatchDelay time.Duration
+}
+
+func (d DestinationWithBatch) BatchSizeParameterName() string {
+	return configDestinationBatchSize
+}
+func (d DestinationWithBatch) BatchDelayParameterName() string {
+	return configDestinationBatchDelay
 }
 
 // Wrap a Destination into the batching middleware.
@@ -108,13 +117,13 @@ func (d *destinationWithBatch) Parameters() map[string]Parameter {
 	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
 		configDestinationBatchSize: {
 			Default:     strconv.Itoa(d.defaults.DefaultBatchSize),
-			Required:    false,
 			Description: "Maximum size of batch before it gets written to the destination.",
+			Type:        ParameterTypeInt,
 		},
 		configDestinationBatchDelay: {
 			Default:     d.defaults.DefaultBatchDelay.String(),
-			Required:    false,
 			Description: "Maximum delay before an incomplete batch is written to the destination.",
+			Type:        ParameterTypeDuration,
 		},
 	})
 }
@@ -161,6 +170,14 @@ type DestinationWithRateLimit struct {
 	DefaultBurst int
 }
 
+func (d DestinationWithRateLimit) RatePerSecondParameterName() string {
+	return configDestinationRatePerSecond
+}
+
+func (d DestinationWithRateLimit) RateBurstParameterName() string {
+	return configDestinationRateBurst
+}
+
 // Wrap a Destination into the rate limiting middleware.
 func (d DestinationWithRateLimit) Wrap(impl Destination) Destination {
 	return &destinationWithRateLimit{
@@ -180,13 +197,13 @@ func (d *destinationWithRateLimit) Parameters() map[string]Parameter {
 	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
 		configDestinationRatePerSecond: {
 			Default:     strconv.FormatFloat(d.defaults.DefaultRatePerSecond, 'f', -1, 64),
-			Required:    false,
 			Description: "Maximum times records can be written per second (0 means no rate limit).",
+			Type:        ParameterTypeFloat,
 		},
 		configDestinationRateBurst: {
 			Default:     strconv.Itoa(d.defaults.DefaultBurst),
-			Required:    false,
 			Description: "Allow bursts of at most X writes (1 or less means that bursts are not allowed). Only takes effect if a rate limit per second is set.",
+			Type:        ParameterTypeInt,
 		},
 	})
 }
@@ -204,7 +221,7 @@ func (d *destinationWithRateLimit) Configure(ctx context.Context, config map[str
 	if limitRaw != "" {
 		limitFloat, err := strconv.ParseFloat(limitRaw, 64)
 		if err != nil {
-			return fmt.Errorf("invalid sdk.rateLimit.writesPerSecond: %w", err)
+			return fmt.Errorf("invalid %s: %w", configDestinationRatePerSecond, err)
 		}
 		limit = rate.Limit(limitFloat)
 	}
@@ -212,7 +229,7 @@ func (d *destinationWithRateLimit) Configure(ctx context.Context, config map[str
 	if burstRaw != "" {
 		burstInt, err := strconv.Atoi(burstRaw)
 		if err != nil {
-			return fmt.Errorf("invalid sdk.rateLimit.bursts: %w", err)
+			return fmt.Errorf("invalid %s: %w", configDestinationRateBurst, err)
 		}
 		burst = burstInt
 	}
@@ -233,6 +250,146 @@ func (d *destinationWithRateLimit) Write(ctx context.Context, recs []Record) (in
 		if err != nil {
 			return 0, fmt.Errorf("rate limiter: %w", err)
 		}
+	}
+	return d.Destination.Write(ctx, recs)
+}
+
+// -- DestinationWithRecordFormat ----------------------------------------------
+
+const (
+	configDestinationRecordFormat        = "sdk.record.format"
+	configDestinationRecordFormatOptions = "sdk.record.format.options"
+)
+
+// DestinationWithRecordFormat adds support for changing the output format of
+// records, specifically of the Record.Bytes method. It adds two parameters to
+// the destination config:
+//   - `sdk.record.format` - The format of the output record. The inclusion
+//     validation exposes a list of valid options.
+//   - `sdk.record.format.options` - Options are used to configure the format.
+type DestinationWithRecordFormat struct {
+	// DefaultRecordFormat is the default record format.
+	DefaultRecordFormat string
+	RecordFormatters    []RecordFormatter
+}
+
+func (d DestinationWithRecordFormat) RecordFormatParameterName() string {
+	return configDestinationRecordFormat
+}
+func (d DestinationWithRecordFormat) RecordFormatOptionsParameterName() string {
+	return configDestinationRecordFormatOptions
+}
+
+// DefaultRecordFormatters returns the list of record formatters that are used
+// if DestinationWithRecordFormat.RecordFormatters is nil.
+func (d DestinationWithRecordFormat) DefaultRecordFormatters() []RecordFormatter {
+	formatters := []RecordFormatter{
+		// define specific formatters here
+	}
+
+	// add generic formatters here, they are combined in all possible combinations
+	genericConverters := []Converter{
+		OpenCDCConverter{},
+		DebeziumConverter{},
+	}
+	genericEncoders := []Encoder{
+		JSONEncoder{},
+	}
+
+	for _, c := range genericConverters {
+		for _, e := range genericEncoders {
+			formatters = append(
+				formatters,
+				GenericRecordFormatter{
+					Converter: c,
+					Encoder:   e,
+				},
+			)
+		}
+	}
+	return formatters
+}
+
+// Wrap a Destination into the record format middleware.
+func (d DestinationWithRecordFormat) Wrap(impl Destination) Destination {
+	if d.DefaultRecordFormat == "" {
+		d.DefaultRecordFormat = defaultFormatter.Name()
+	}
+	if len(d.RecordFormatters) == 0 {
+		d.RecordFormatters = d.DefaultRecordFormatters()
+	}
+
+	// sort record formatters by name to ensure we can binary search them
+	sort.Slice(d.RecordFormatters, func(i, j int) bool { return d.RecordFormatters[i].Name() < d.RecordFormatters[j].Name() })
+
+	return &destinationWithRecordFormat{
+		Destination: impl,
+		defaults:    d,
+	}
+}
+
+type destinationWithRecordFormat struct {
+	Destination
+	defaults DestinationWithRecordFormat
+
+	formatter RecordFormatter
+}
+
+func (d *destinationWithRecordFormat) formats() []string {
+	names := make([]string, len(d.defaults.RecordFormatters))
+	i := 0
+	for _, c := range d.defaults.RecordFormatters {
+		names[i] = c.Name()
+		i++
+	}
+	return names
+}
+
+func (d *destinationWithRecordFormat) Parameters() map[string]Parameter {
+	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
+		configDestinationRecordFormat: {
+			Default:     d.defaults.DefaultRecordFormat,
+			Description: "The format of the output record.",
+			Validations: []Validation{
+				ValidationInclusion{List: d.formats()},
+			},
+		},
+		configDestinationRecordFormatOptions: {
+			Description: "Options to configure the chosen output record format. Options are key=value pairs separated with comma (e.g. opt1=val2,opt2=val2).",
+		},
+	})
+}
+
+func (d *destinationWithRecordFormat) Configure(ctx context.Context, config map[string]string) error {
+	err := d.Destination.Configure(ctx, config)
+	if err != nil {
+		return err
+	}
+
+	format := d.defaults.DefaultRecordFormat
+	if f, ok := config[configDestinationRecordFormat]; ok {
+		format = f
+	}
+
+	i := sort.SearchStrings(d.formats(), format)
+	// if the string is not found i is equal to the size of the slice
+	if i == len(d.defaults.RecordFormatters) {
+		return fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordFormat, format, d.formats())
+	}
+
+	formatter := d.defaults.RecordFormatters[i]
+	formatter, err = formatter.Configure(config[configDestinationRecordFormatOptions])
+	if err != nil {
+		return fmt.Errorf("invalid %s for %q: %w", configDestinationRecordFormatOptions, format, err)
+	}
+
+	d.formatter = formatter
+	return nil
+}
+
+func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []Record) (int, error) {
+	for i := range recs {
+		recs[i].formatter = d.formatter
 	}
 	return d.Destination.Write(ctx, recs)
 }
