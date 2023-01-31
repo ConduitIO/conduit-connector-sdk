@@ -15,10 +15,13 @@
 package sdk
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"text/template"
 
+	"github.com/Masterminds/sprig/v3"
 	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 )
 
@@ -224,4 +227,31 @@ func (e JSONEncoder) Name() string                                 { return "jso
 func (e JSONEncoder) Configure(map[string]string) (Encoder, error) { return e, nil }
 func (e JSONEncoder) Encode(v any) ([]byte, error) {
 	return json.Marshal(v)
+}
+
+// TemplateRecordFormatter is a RecordFormatter that formats a record using a Go
+// template.
+type TemplateRecordFormatter struct {
+	template *template.Template
+}
+
+func (e TemplateRecordFormatter) Name() string { return "template" }
+func (e TemplateRecordFormatter) Configure(tmpl string) (RecordFormatter, error) {
+	t := template.New("")
+	t = t.Funcs(sprig.TxtFuncMap()) // inject sprig functions
+	t, err := t.Parse(tmpl)
+	if err != nil {
+		return nil, err
+	}
+
+	e.template = t
+	return e, nil
+}
+func (e TemplateRecordFormatter) Format(r Record) ([]byte, error) {
+	var b bytes.Buffer
+	err := e.template.Execute(&b, r)
+	if err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
 }
