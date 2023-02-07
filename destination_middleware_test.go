@@ -304,8 +304,10 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 			configDestinationRecordFormat: "debezium/json",
 		},
 		wantFormatter: GenericRecordFormatter{
-			Converter: DebeziumConverter{},
-			Encoder:   JSONEncoder{},
+			Converter: DebeziumConverter{
+				RawDataKey: debeziumDefaultRawDataKey,
+			},
+			Encoder: JSONEncoder{},
 		},
 	}}
 
