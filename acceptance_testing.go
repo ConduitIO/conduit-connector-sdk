@@ -443,6 +443,20 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	return output
 }
 
+func (d ConfigurableAcceptanceTestDriver) ReadTimeout() time.Duration {
+	if d.Config.ReadTimeout == 0 {
+		return time.Second * 5
+	}
+	return d.Config.ReadTimeout
+}
+
+func (d ConfigurableAcceptanceTestDriver) WriteTimeout() time.Duration {
+	if d.Config.WriteTimeout == 0 {
+		return time.Second * 5
+	}
+	return d.Config.WriteTimeout
+}
+
 type acceptanceTest struct {
 	driver AcceptanceTestDriver
 }
@@ -465,20 +479,6 @@ func (a acceptanceTest) Test(t *testing.T) {
 			av.Method(i).Call([]reflect.Value{reflect.ValueOf(t)})
 		})
 	}
-}
-
-func (d ConfigurableAcceptanceTestDriver) ReadTimeout() time.Duration {
-	if d.Config.ReadTimeout == 0 {
-		return time.Second * 5
-	}
-	return d.Config.ReadTimeout
-}
-
-func (d ConfigurableAcceptanceTestDriver) WriteTimeout() time.Duration {
-	if d.Config.WriteTimeout == 0 {
-		return time.Second * 5
-	}
-	return d.Config.WriteTimeout
 }
 
 func (a acceptanceTest) TestSpecifier_Exists(t *testing.T) {
@@ -561,7 +561,14 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	origCfg := a.driver.SourceConfig(t)
 
 	for name, p := range srcSpec.Parameters() {
-		if p.Required {
+		isRequired := p.Required
+		for _, v := range p.Validations {
+			if _, ok := v.(ValidationRequired); ok {
+				isRequired = true
+				break
+			}
+		}
+		if isRequired {
 			// removing the required parameter from the config should provoke an error
 			t.Run(fmt.Sprintf("without required param: %s", name), func(t *testing.T) {
 				haveCfg := a.cloneConfig(origCfg)
@@ -788,7 +795,14 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	origCfg := a.driver.DestinationConfig(t)
 
 	for name, p := range destSpec.Parameters() {
-		if p.Required {
+		isRequired := p.Required
+		for _, v := range p.Validations {
+			if _, ok := v.(ValidationRequired); ok {
+				isRequired = true
+				break
+			}
+		}
+		if isRequired {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
 				haveCfg := a.cloneConfig(origCfg)
