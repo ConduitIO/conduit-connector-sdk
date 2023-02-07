@@ -142,13 +142,20 @@ func (c OpenCDCConverter) Convert(r Record) (any, error) {
 // DebeziumConverter outputs a Debezium record.
 type DebeziumConverter struct {
 	SchemaName string
+	RawDataKey string
 }
+
+const debeziumDefaultRawDataKey = "opencdc.rawData"
 
 func (c DebeziumConverter) Name() string { return "debezium" }
 func (c DebeziumConverter) Configure(opt map[string]string) (Converter, error) {
 	// allow user to configure the schema name (needed to make the output record
 	// play nicely with Kafka Connect connectors)
 	c.SchemaName = opt["debezium.schema.name"]
+	c.RawDataKey = opt["debezium.rawData.key"]
+	if c.RawDataKey == "" {
+		c.RawDataKey = debeziumDefaultRawDataKey
+	}
 	return c, nil
 }
 func (c DebeziumConverter) Convert(r Record) (any, error) {
@@ -191,7 +198,13 @@ func (c DebeziumConverter) getStructuredData(d Data) (StructuredData, error) {
 		if len(d) == 0 {
 			return nil, nil
 		}
-		return c.parseRawDataAsJSON(d)
+		sd, err := c.parseRawDataAsJSON(d)
+		if err != nil {
+			// we have actually raw data, fall back to artificial structured
+			// data by hoisting it into a field
+			sd = StructuredData{c.RawDataKey: d.Bytes()}
+		}
+		return sd, nil
 	default:
 		return nil, fmt.Errorf("unknown data type: %T", d)
 	}
