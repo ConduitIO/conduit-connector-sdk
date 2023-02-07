@@ -443,6 +443,20 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	return output
 }
 
+func (d ConfigurableAcceptanceTestDriver) ReadTimeout() time.Duration {
+	if d.Config.ReadTimeout == 0 {
+		return time.Second * 5
+	}
+	return d.Config.ReadTimeout
+}
+
+func (d ConfigurableAcceptanceTestDriver) WriteTimeout() time.Duration {
+	if d.Config.WriteTimeout == 0 {
+		return time.Second * 5
+	}
+	return d.Config.WriteTimeout
+}
+
 type acceptanceTest struct {
 	driver AcceptanceTestDriver
 }
@@ -465,20 +479,6 @@ func (a acceptanceTest) Test(t *testing.T) {
 			av.Method(i).Call([]reflect.Value{reflect.ValueOf(t)})
 		})
 	}
-}
-
-func (d ConfigurableAcceptanceTestDriver) ReadTimeout() time.Duration {
-	if d.Config.ReadTimeout == 0 {
-		return time.Second * 5
-	}
-	return d.Config.ReadTimeout
-}
-
-func (d ConfigurableAcceptanceTestDriver) WriteTimeout() time.Duration {
-	if d.Config.WriteTimeout == 0 {
-		return time.Second * 5
-	}
-	return d.Config.WriteTimeout
 }
 
 func (a acceptanceTest) TestSpecifier_Exists(t *testing.T) {
@@ -511,10 +511,13 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 	is.True(spec.Author != "")                             // Specification.Author is missing
 	is.True(strings.TrimSpace(spec.Author) == spec.Author) // Specification.Author starts or ends with whitespace
 
-	semverRegex := regexp.MustCompile(`v([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` +
-		`(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?` +
-		`(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?`)
-	is.True(semverRegex.MatchString(spec.Version)) // Specification.Version is not a valid semantic version (vX.Y.Z)
+	// allow (devel) as the version to match default behavior from runtime/debug
+	if spec.Version != "(devel)" {
+		semverRegex := regexp.MustCompile(`v([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` +
+			`(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?` +
+			`(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?`)
+		is.True(semverRegex.MatchString(spec.Version)) // Specification.Version is not a valid semantic version "vX.Y.Z" or "(devel)"
+	}
 }
 
 func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
@@ -561,7 +564,14 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	origCfg := a.driver.SourceConfig(t)
 
 	for name, p := range srcSpec.Parameters() {
-		if p.Required {
+		isRequired := p.Required
+		for _, v := range p.Validations {
+			if _, ok := v.(ValidationRequired); ok {
+				isRequired = true
+				break
+			}
+		}
+		if isRequired {
 			// removing the required parameter from the config should provoke an error
 			t.Run(fmt.Sprintf("without required param: %s", name), func(t *testing.T) {
 				haveCfg := a.cloneConfig(origCfg)
@@ -788,7 +798,14 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	origCfg := a.driver.DestinationConfig(t)
 
 	for name, p := range destSpec.Parameters() {
-		if p.Required {
+		isRequired := p.Required
+		for _, v := range p.Validations {
+			if _, ok := v.(ValidationRequired); ok {
+				isRequired = true
+				break
+			}
+		}
+		if isRequired {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
 				haveCfg := a.cloneConfig(origCfg)
