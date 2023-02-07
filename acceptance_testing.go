@@ -511,10 +511,13 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 	is.True(spec.Author != "")                             // Specification.Author is missing
 	is.True(strings.TrimSpace(spec.Author) == spec.Author) // Specification.Author starts or ends with whitespace
 
-	semverRegex := regexp.MustCompile(`v([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` +
-		`(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?` +
-		`(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?`)
-	is.True(semverRegex.MatchString(spec.Version)) // Specification.Version is not a valid semantic version (vX.Y.Z)
+	// allow (devel) as the version to match default behavior from runtime/debug
+	if spec.Version != "(devel)" {
+		semverRegex := regexp.MustCompile(`v([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` +
+			`(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?` +
+			`(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?`)
+		is.True(semverRegex.MatchString(spec.Version)) // Specification.Version is not a valid semantic version "vX.Y.Z" or "(devel)"
+	}
 }
 
 func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
