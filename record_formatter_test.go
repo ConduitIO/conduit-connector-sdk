@@ -44,18 +44,22 @@ func TestOpenCDCConverter(t *testing.T) {
 	is.Equal(got, want)
 }
 
-func TestDebeziumConverter(t *testing.T) {
+func TestDebeziumConverter_Structured(t *testing.T) {
 	is := is.New(t)
-	var converter DebeziumConverter
-	converter.SchemaName = "custom.name"
+	converter, err := DebeziumConverter{}.Configure(map[string]string{
+		"debezium.schema.name": "custom.name",
+	})
+	is.NoErr(err)
 
 	r := Record{
 		Position:  Position("foo"),
-		Operation: OperationCreate,
+		Operation: OperationUpdate,
 		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
 		Key:       RawData("bar"),
 		Payload: Change{
-			Before: nil,
+			Before: StructuredData{
+				"bar": 123,
+			},
 			After: StructuredData{
 				"foo": "bar",
 				"baz": "qux",
@@ -71,11 +75,8 @@ func TestDebeziumConverter(t *testing.T) {
 				Type:     kafkaconnect.TypeStruct,
 				Optional: true,
 				Fields: []kafkaconnect.Schema{{
-					Field: "foo",
-					Type:  kafkaconnect.TypeString,
-				}, {
-					Field: "baz",
-					Type:  kafkaconnect.TypeString,
+					Field: "bar",
+					Type:  kafkaconnect.TypeInt64,
 				}},
 			}, {
 				Field:    "after",
@@ -120,8 +121,97 @@ func TestDebeziumConverter(t *testing.T) {
 			}},
 		},
 		Payload: kafkaconnect.DebeziumPayload{
-			Before:          nil,
+			Before:          r.Payload.Before.(StructuredData),
 			After:           r.Payload.After.(StructuredData),
+			Source:          r.Metadata,
+			Op:              kafkaconnect.DebeziumOpUpdate,
+			TimestampMillis: 0,
+			Transaction:     nil,
+		},
+	}
+
+	got, err := converter.Convert(r)
+	is.NoErr(err)
+
+	gotEnvelope, ok := got.(kafkaconnect.Envelope)
+	is.True(ok)
+	// fields in maps don't have a deterministic order, let's sort all fields
+	kafkaconnect.SortFields(&want.Schema)
+	kafkaconnect.SortFields(&gotEnvelope.Schema)
+
+	is.Equal(got, want)
+}
+
+func TestDebeziumConverter_RawData(t *testing.T) {
+	is := is.New(t)
+	converter, err := DebeziumConverter{}.Configure(map[string]string{})
+	is.NoErr(err)
+
+	r := Record{
+		Position:  Position("foo"),
+		Operation: OperationCreate,
+		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
+		Key:       RawData("bar"),
+		Payload: Change{
+			Before: RawData("foo"),
+			After:  nil,
+		},
+	}
+	want := kafkaconnect.Envelope{
+		Schema: kafkaconnect.Schema{
+			Type: kafkaconnect.TypeStruct,
+			Fields: []kafkaconnect.Schema{{
+				Field:    "before",
+				Type:     kafkaconnect.TypeStruct,
+				Optional: true,
+				Fields: []kafkaconnect.Schema{{
+					Optional: true,
+					Field:    "opencdc.rawData",
+					Type:     kafkaconnect.TypeBytes,
+				}},
+			}, {
+				Field:    "after",
+				Type:     kafkaconnect.TypeStruct,
+				Optional: true,
+				Fields: []kafkaconnect.Schema{{
+					Optional: true,
+					Field:    "opencdc.rawData",
+					Type:     kafkaconnect.TypeBytes,
+				}},
+			}, {
+				Field:    "source",
+				Type:     kafkaconnect.TypeStruct,
+				Optional: true,
+				Fields: []kafkaconnect.Schema{{
+					Field: "conduit.source.plugin.name",
+					Type:  kafkaconnect.TypeString,
+				}},
+			}, {
+				Field: "op",
+				Type:  kafkaconnect.TypeString,
+			}, {
+				Field:    "ts_ms",
+				Type:     kafkaconnect.TypeInt64,
+				Optional: true,
+			}, {
+				Field:    "transaction",
+				Type:     kafkaconnect.TypeStruct,
+				Optional: true,
+				Fields: []kafkaconnect.Schema{{
+					Field: "id",
+					Type:  kafkaconnect.TypeString,
+				}, {
+					Field: "total_order",
+					Type:  kafkaconnect.TypeInt64,
+				}, {
+					Field: "data_collection_order",
+					Type:  kafkaconnect.TypeInt64,
+				}},
+			}},
+		},
+		Payload: kafkaconnect.DebeziumPayload{
+			Before:          StructuredData{"opencdc.rawData": []byte("foo")},
+			After:           nil,
 			Source:          r.Metadata,
 			Op:              kafkaconnect.DebeziumOpCreate,
 			TimestampMillis: 0,
