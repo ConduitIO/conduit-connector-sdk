@@ -53,11 +53,13 @@ func TestDebeziumConverter_Structured(t *testing.T) {
 
 	r := Record{
 		Position:  Position("foo"),
-		Operation: OperationCreate,
+		Operation: OperationUpdate,
 		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
 		Key:       RawData("bar"),
 		Payload: Change{
-			Before: nil,
+			Before: StructuredData{
+				"bar": 123,
+			},
 			After: StructuredData{
 				"foo": "bar",
 				"baz": "qux",
@@ -73,11 +75,8 @@ func TestDebeziumConverter_Structured(t *testing.T) {
 				Type:     kafkaconnect.TypeStruct,
 				Optional: true,
 				Fields: []kafkaconnect.Schema{{
-					Field: "foo",
-					Type:  kafkaconnect.TypeString,
-				}, {
-					Field: "baz",
-					Type:  kafkaconnect.TypeString,
+					Field: "bar",
+					Type:  kafkaconnect.TypeInt64,
 				}},
 			}, {
 				Field:    "after",
@@ -122,10 +121,10 @@ func TestDebeziumConverter_Structured(t *testing.T) {
 			}},
 		},
 		Payload: kafkaconnect.DebeziumPayload{
-			Before:          nil,
+			Before:          r.Payload.Before.(StructuredData),
 			After:           r.Payload.After.(StructuredData),
 			Source:          r.Metadata,
-			Op:              kafkaconnect.DebeziumOpCreate,
+			Op:              kafkaconnect.DebeziumOpUpdate,
 			TimestampMillis: 0,
 			Transaction:     nil,
 		},

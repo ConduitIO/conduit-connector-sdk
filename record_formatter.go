@@ -118,12 +118,12 @@ func (rf GenericRecordFormatter) parseFormatOptions(options string) map[string]s
 func (rf GenericRecordFormatter) Format(r Record) ([]byte, error) {
 	converted, err := rf.Converter.Convert(r)
 	if err != nil {
-		return nil, fmt.Errorf("converter fail: %w", err)
+		return nil, fmt.Errorf("converter %s failed: %w", rf.Converter.Name(), err)
 	}
 
 	out, err := rf.Encoder.Encode(converted)
 	if err != nil {
-		return nil, fmt.Errorf("encoder fail: %w", err)
+		return nil, fmt.Errorf("encoder %s failed: %w", rf.Encoder.Name(), err)
 	}
 
 	return out, nil
