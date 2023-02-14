@@ -10,7 +10,7 @@ require (
 	github.com/matryer/is v1.4.0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/rs/zerolog v1.29.0
-	go.uber.org/goleak v1.2.0
+	go.uber.org/goleak v1.2.1
 	go.uber.org/multierr v1.9.0
 	golang.org/x/exp v0.0.0-20221114191408-850992195362
 	golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9
@@ -42,7 +42,6 @@ require (
 	golang.org/x/net v0.3.0 // indirect
 	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/text v0.5.0 // indirect
-	golang.org/x/tools v0.4.0 // indirect
 	google.golang.org/genproto v0.0.0-20211104193956-4c6863e31247 // indirect
 	google.golang.org/grpc v1.50.1 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
