@@ -34,7 +34,7 @@ func TestParseSpecificationSuccess(t *testing.T) {
 		name: "SourceConfig",
 		pkg:  "example",
 		want: map[string]sdk.Parameter{
-			"globalConfig.foo": {
+			"foo": {
 				Default:     "bar",
 				Description: "foo is a required field in the global config with the name \"foo\" and default value \"bar\".",
 				Type:        sdk.ParameterTypeString,
@@ -107,7 +107,7 @@ func TestParseSpecificationSuccess(t *testing.T) {
 			name: "Config",
 			pkg:  "tags",
 			want: map[string]sdk.Parameter{
-				"innerConfig.my-name": {
+				"my-name": {
 					Type:        sdk.ParameterTypeString,
 					Validations: []sdk.Validation{sdk.ValidationRequired{}},
 				},

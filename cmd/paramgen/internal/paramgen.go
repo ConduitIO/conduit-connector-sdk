@@ -430,10 +430,6 @@ func (p *parameterParser) attachPrefix(f *ast.Field, params map[string]sdk.Param
 	if prefix == "" && len(f.Names) > 0 {
 		prefix = p.formatFieldName(f.Names[0].Name)
 	}
-	// if it's a struct, then prefix is the struct name
-	if n, ok := f.Type.(*ast.Ident); ok && prefix == "" {
-		prefix = p.formatFieldName(n.Name)
-	}
 	if prefix == "" {
 		// no prefix to attach
 		return params
