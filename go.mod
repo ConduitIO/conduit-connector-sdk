@@ -7,7 +7,7 @@ require (
 	github.com/conduitio/conduit-connector-protocol v0.4.0
 	github.com/golang/mock v1.6.0
 	github.com/jpillora/backoff v1.0.0
-	github.com/matryer/is v1.4.0
+	github.com/matryer/is v1.4.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/rs/zerolog v1.29.0
 	go.uber.org/goleak v1.2.1
