@@ -255,6 +255,58 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	<-runDone
 }
 
+func TestSourcePluginAdapter_LifecycleOnCreated(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	src := NewMockSource(ctrl)
+
+	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+
+	want := map[string]string{"foo": "bar"}
+	src.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
+
+	req := cpluginv1.SourceLifecycleOnCreatedRequest{Config: want}
+	_, err := srcPlugin.LifecycleOnCreated(ctx, req)
+	is.NoErr(err)
+}
+
+func TestSourcePluginAdapter_LifecycleOnUpdated(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	src := NewMockSource(ctrl)
+
+	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+
+	wantBefore := map[string]string{"foo": "bar"}
+	wantAfter := map[string]string{"foo": "baz"}
+	src.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
+
+	req := cpluginv1.SourceLifecycleOnUpdatedRequest{
+		ConfigBefore: wantBefore,
+		ConfigAfter:  wantAfter,
+	}
+	_, err := srcPlugin.LifecycleOnUpdated(ctx, req)
+	is.NoErr(err)
+}
+
+func TestSourcePluginAdapter_LifecycleOnDeleted(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	src := NewMockSource(ctrl)
+
+	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+
+	want := map[string]string{"foo": "bar"}
+	src.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
+
+	req := cpluginv1.SourceLifecycleOnDeletedRequest{Config: want}
+	_, err := srcPlugin.LifecycleOnDeleted(ctx, req)
+	is.NoErr(err)
+}
+
 func newSourceRunStreamMock(
 	ctrl *gomock.Controller,
 ) (

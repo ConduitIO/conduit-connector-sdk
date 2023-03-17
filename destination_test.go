@@ -253,6 +253,58 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	<-runDone
 }
 
+func TestDestinationPluginAdapter_LifecycleOnCreated(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+
+	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+
+	want := map[string]string{"foo": "bar"}
+	dst.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
+
+	req := cpluginv1.DestinationLifecycleOnCreatedRequest{Config: want}
+	_, err := dstPlugin.LifecycleOnCreated(ctx, req)
+	is.NoErr(err)
+}
+
+func TestDestinationPluginAdapter_LifecycleOnUpdated(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+
+	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+
+	wantBefore := map[string]string{"foo": "bar"}
+	wantAfter := map[string]string{"foo": "baz"}
+	dst.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
+
+	req := cpluginv1.DestinationLifecycleOnUpdatedRequest{
+		ConfigBefore: wantBefore,
+		ConfigAfter:  wantAfter,
+	}
+	_, err := dstPlugin.LifecycleOnUpdated(ctx, req)
+	is.NoErr(err)
+}
+
+func TestDestinationPluginAdapter_LifecycleOnDeleted(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+
+	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+
+	want := map[string]string{"foo": "bar"}
+	dst.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
+
+	req := cpluginv1.DestinationLifecycleOnDeletedRequest{Config: want}
+	_, err := dstPlugin.LifecycleOnDeleted(ctx, req)
+	is.NoErr(err)
+}
+
 func newDestinationRunStreamMock(
 	ctrl *gomock.Controller,
 ) (
