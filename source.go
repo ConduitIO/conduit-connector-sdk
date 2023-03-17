@@ -95,7 +95,7 @@ type Source interface {
 	// skipped if the connector configuration did not change. It can be used to
 	// update anything that was initialized in LifecycleOnCreated, in case the
 	// configuration change affects it.
-	LifecycleOnUpdated(ctx context.Context, configBefore map[string]string, configAfter map[string]string) error
+	LifecycleOnUpdated(ctx context.Context, configBefore, configAfter map[string]string) error
 	// LifecycleOnDeleted is called when the connector was deleted. It will be
 	// the only method that is called in that case. This method can be used to
 	// clean up anything that was initialized in LifecycleOnCreated.
