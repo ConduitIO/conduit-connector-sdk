@@ -80,6 +80,27 @@ type Source interface {
 	// graceful shutdown.
 	Teardown(context.Context) error
 
+	// -- Lifecycle events -----------------------------------------------------
+
+	// LifecycleOnCreated is called after Configure and before Open when the
+	// connector is run for the first time. This call will be skipped if the
+	// connector was already started before. This method can be used to do some
+	// initialization that needs to happen only once in the lifetime of a
+	// connector (e.g. create a logical replication slot). Anything that the
+	// connector creates in this method is considered to be owned by this
+	// connector and should be cleaned up in LifecycleOnDeleted.
+	LifecycleOnCreated(ctx context.Context, config map[string]string) error
+	// LifecycleOnUpdated is called after Configure and before Open when the
+	// connector configuration has changed since the last run. This call will be
+	// skipped if the connector configuration did not change. It can be used to
+	// update anything that was initialized in LifecycleOnCreated, in case the
+	// configuration change affects it.
+	LifecycleOnUpdated(ctx context.Context, configBefore map[string]string, configAfter map[string]string) error
+	// LifecycleOnDeleted is called when the connector was deleted. It will be
+	// the only method that is called in that case. This method can be used to
+	// clean up anything that was initialized in LifecycleOnCreated.
+	LifecycleOnDeleted(ctx context.Context, config map[string]string) error
+
 	mustEmbedUnimplementedSource()
 }
 
@@ -252,6 +273,16 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, req cpluginv1.Source
 	}
 
 	return cpluginv1.SourceTeardownResponse{}, waitErr
+}
+
+func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req cpluginv1.SourceLifecycleOnCreatedRequest) (cpluginv1.SourceLifecycleOnCreatedResponse, error) {
+	return cpluginv1.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
+}
+func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req cpluginv1.SourceLifecycleOnUpdatedRequest) (cpluginv1.SourceLifecycleOnUpdatedResponse, error) {
+	return cpluginv1.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
+}
+func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cpluginv1.SourceLifecycleOnDeletedRequest) (cpluginv1.SourceLifecycleOnDeletedResponse, error) {
+	return cpluginv1.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
 
 // waitForRun returns once the Run function returns or the context gets

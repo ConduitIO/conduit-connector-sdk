@@ -61,6 +61,48 @@ func (mr *MockSourceMockRecorder) Configure(arg0, arg1 interface{}) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Configure", reflect.TypeOf((*MockSource)(nil).Configure), arg0, arg1)
 }
 
+// LifecycleOnCreated mocks base method.
+func (m *MockSource) LifecycleOnCreated(arg0 context.Context, arg1 map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LifecycleOnCreated", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LifecycleOnCreated indicates an expected call of LifecycleOnCreated.
+func (mr *MockSourceMockRecorder) LifecycleOnCreated(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnCreated", reflect.TypeOf((*MockSource)(nil).LifecycleOnCreated), arg0, arg1)
+}
+
+// LifecycleOnDeleted mocks base method.
+func (m *MockSource) LifecycleOnDeleted(arg0 context.Context, arg1 map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LifecycleOnDeleted", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LifecycleOnDeleted indicates an expected call of LifecycleOnDeleted.
+func (mr *MockSourceMockRecorder) LifecycleOnDeleted(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnDeleted", reflect.TypeOf((*MockSource)(nil).LifecycleOnDeleted), arg0, arg1)
+}
+
+// LifecycleOnUpdated mocks base method.
+func (m *MockSource) LifecycleOnUpdated(arg0 context.Context, arg1, arg2 map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LifecycleOnUpdated", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LifecycleOnUpdated indicates an expected call of LifecycleOnUpdated.
+func (mr *MockSourceMockRecorder) LifecycleOnUpdated(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnUpdated", reflect.TypeOf((*MockSource)(nil).LifecycleOnUpdated), arg0, arg1, arg2)
+}
+
 // Open mocks base method.
 func (m *MockSource) Open(arg0 context.Context, arg1 Position) error {
 	m.ctrl.T.Helper()

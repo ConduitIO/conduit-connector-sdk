@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
-	github.com/conduitio/conduit-connector-protocol v0.4.1
+	github.com/conduitio/conduit-connector-protocol v0.4.2-0.20230317135836-683b23ba5a0a
 	github.com/golang/mock v1.6.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/matryer/is v1.4.1

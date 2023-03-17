@@ -62,6 +62,27 @@ type Destination interface {
 	// plugin should be ready for a graceful shutdown.
 	Teardown(context.Context) error
 
+	// -- Lifecycle events -----------------------------------------------------
+
+	// LifecycleOnCreated is called after Configure and before Open when the
+	// connector is run for the first time. This call will be skipped if the
+	// connector was already started before. This method can be used to do some
+	// initialization that needs to happen only once in the lifetime of a
+	// connector (e.g. create a bucket). Anything that the connector creates in
+	// this method is considered to be owned by this connector and should be
+	// cleaned up in LifecycleOnDeleted.
+	LifecycleOnCreated(ctx context.Context, config map[string]string) error
+	// LifecycleOnUpdated is called after Configure and before Open when the
+	// connector configuration has changed since the last run. This call will be
+	// skipped if the connector configuration did not change. It can be used to
+	// update anything that was initialized in LifecycleOnCreated, in case the
+	// configuration change affects it.
+	LifecycleOnUpdated(ctx context.Context, configBefore map[string]string, configAfter map[string]string) error
+	// LifecycleOnDeleted is called when the connector was deleted. It will be
+	// the only method that is called in that case. This method can be used to
+	// clean up anything that was initialized in LifecycleOnCreated.
+	LifecycleOnDeleted(ctx context.Context, config map[string]string) error
+
 	mustEmbedUnimplementedDestination()
 }
 
@@ -244,6 +265,16 @@ func (a *destinationPluginAdapter) Teardown(ctx context.Context, req cpluginv1.D
 		return cpluginv1.DestinationTeardownResponse{}, err
 	}
 	return cpluginv1.DestinationTeardownResponse{}, nil
+}
+
+func (a *destinationPluginAdapter) LifecycleOnCreated(ctx context.Context, req cpluginv1.DestinationLifecycleOnCreatedRequest) (cpluginv1.DestinationLifecycleOnCreatedResponse, error) {
+	return cpluginv1.DestinationLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
+}
+func (a *destinationPluginAdapter) LifecycleOnUpdated(ctx context.Context, req cpluginv1.DestinationLifecycleOnUpdatedRequest) (cpluginv1.DestinationLifecycleOnUpdatedResponse, error) {
+	return cpluginv1.DestinationLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
+}
+func (a *destinationPluginAdapter) LifecycleOnDeleted(ctx context.Context, req cpluginv1.DestinationLifecycleOnDeletedRequest) (cpluginv1.DestinationLifecycleOnDeletedResponse, error) {
+	return cpluginv1.DestinationLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
 
 func (a *destinationPluginAdapter) convertRecord(r cpluginv1.Record) Record {
