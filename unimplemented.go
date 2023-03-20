@@ -43,6 +43,22 @@ func (UnimplementedDestination) Write(context.Context, []Record) (int, error) {
 func (UnimplementedDestination) Teardown(context.Context) error {
 	return ErrUnimplemented
 }
+
+// LifecycleOnCreated won't do anything by default.
+func (UnimplementedDestination) LifecycleOnCreated(context.Context, map[string]string) error {
+	return nil
+}
+
+// LifecycleOnUpdated won't do anything by default.
+func (UnimplementedDestination) LifecycleOnUpdated(context.Context, map[string]string, map[string]string) error {
+	return nil
+}
+
+// LifecycleOnDeleted won't do anything by default.
+func (UnimplementedDestination) LifecycleOnDeleted(context.Context, map[string]string) error {
+	return nil
+}
+
 func (UnimplementedDestination) mustEmbedUnimplementedDestination() {}
 
 // UnimplementedSource should be embedded to have forward compatible implementations.
@@ -78,4 +94,20 @@ func (UnimplementedSource) Ack(context.Context, Position) error {
 func (UnimplementedSource) Teardown(context.Context) error {
 	return ErrUnimplemented
 }
+
+// LifecycleOnCreated won't do anything by default.
+func (UnimplementedSource) LifecycleOnCreated(context.Context, map[string]string) error {
+	return nil
+}
+
+// LifecycleOnUpdated won't do anything by default.
+func (UnimplementedSource) LifecycleOnUpdated(context.Context, map[string]string, map[string]string) error {
+	return nil
+}
+
+// LifecycleOnDeleted won't do anything by default.
+func (UnimplementedSource) LifecycleOnDeleted(context.Context, map[string]string) error {
+	return nil
+}
+
 func (UnimplementedSource) mustEmbedUnimplementedSource() {}
