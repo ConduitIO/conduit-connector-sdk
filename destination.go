@@ -172,7 +172,7 @@ func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, c
 	return nil
 }
 
-func (a *destinationPluginAdapter) Start(ctx context.Context, req cpluginv1.DestinationStartRequest) (cpluginv1.DestinationStartResponse, error) {
+func (a *destinationPluginAdapter) Start(ctx context.Context, _ cpluginv1.DestinationStartRequest) (cpluginv1.DestinationStartResponse, error) {
 	a.lastPosition = new(internal.AtomicValueWatcher[Position])
 
 	// detach context, so we can control when it's canceled
@@ -259,7 +259,7 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 	return cpluginv1.DestinationStopResponse{}, err
 }
 
-func (a *destinationPluginAdapter) Teardown(ctx context.Context, req cpluginv1.DestinationTeardownRequest) (cpluginv1.DestinationTeardownResponse, error) {
+func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ cpluginv1.DestinationTeardownRequest) (cpluginv1.DestinationTeardownResponse, error) {
 	err := a.impl.Teardown(ctx)
 	if err != nil {
 		return cpluginv1.DestinationTeardownResponse{}, err
@@ -340,7 +340,7 @@ func (w *writeStrategySingle) Write(ctx context.Context, r Record, ack func(erro
 	return ack(err)
 }
 
-func (w *writeStrategySingle) Flush(ctx context.Context) error {
+func (w *writeStrategySingle) Flush(context.Context) error {
 	return nil // nothing to flush
 }
 
@@ -356,10 +356,10 @@ type writeStrategyBatch struct {
 	batchDelay time.Duration
 }
 
-func (w *writeStrategyBatch) Write(ctx context.Context, r Record, ack func(error) error) error {
+func (w *writeStrategyBatch) Write(context.Context, Record, func(error) error) error {
 	panic("batching not implemented yet")
 }
-func (w *writeStrategyBatch) Flush(ctx context.Context) error {
+func (w *writeStrategyBatch) Flush(context.Context) error {
 	panic("batching not implemented yet")
 }
 

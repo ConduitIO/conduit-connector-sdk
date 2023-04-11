@@ -78,7 +78,7 @@ type specifierPluginAdapter struct {
 	destinationParams map[string]Parameter
 }
 
-func (s *specifierPluginAdapter) Specify(ctx context.Context, req cpluginv1.SpecifierSpecifyRequest) (cpluginv1.SpecifierSpecifyResponse, error) {
+func (s *specifierPluginAdapter) Specify(context.Context, cpluginv1.SpecifierSpecifyRequest) (cpluginv1.SpecifierSpecifyResponse, error) {
 	return cpluginv1.SpecifierSpecifyResponse{
 		Name:              s.specs.Name,
 		Summary:           s.specs.Summary,

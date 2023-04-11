@@ -103,7 +103,7 @@ func (h *AtomicValueWatcher[T]) subscribe() (T, error) {
 func (h *AtomicValueWatcher[T]) unsubscribe() {
 	// drain channel and remove it
 	go func(in chan T) {
-		for range in {
+		for range in { //nolint:revive // empty block for reason below
 			// do nothing, just drain channel in case new values come in
 			// while we try to unsubscribe
 		}
