@@ -240,7 +240,7 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cpluginv1.Sourc
 	}
 }
 
-func (a *sourcePluginAdapter) Stop(ctx context.Context, req cpluginv1.SourceStopRequest) (cpluginv1.SourceStopResponse, error) {
+func (a *sourcePluginAdapter) Stop(context.Context, cpluginv1.SourceStopRequest) (cpluginv1.SourceStopResponse, error) {
 	// stop reading new messages
 	a.openCancel()
 	a.readCancel()
@@ -253,7 +253,7 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, req cpluginv1.SourceStop
 	}, nil
 }
 
-func (a *sourcePluginAdapter) Teardown(ctx context.Context, req cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
+func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
 	var waitErr error
 	if a.t != nil {
 		// wait for at most 1 minute
