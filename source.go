@@ -30,6 +30,12 @@ import (
 	"gopkg.in/tomb.v2"
 )
 
+var (
+	// TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
+	stopTimeout     = time.Minute
+	teardownTimeout = time.Minute
+)
+
 // Source fetches records from 3rd party resources and sends them to Conduit.
 // All implementations must embed UnimplementedSource for forward compatibility.
 type Source interface {
@@ -240,13 +246,21 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cpluginv1.Sourc
 	}
 }
 
-func (a *sourcePluginAdapter) Stop(context.Context, cpluginv1.SourceStopRequest) (cpluginv1.SourceStopResponse, error) {
+func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRequest) (cpluginv1.SourceStopResponse, error) {
 	// stop reading new messages
 	a.openCancel()
 	a.readCancel()
 
-	// TODO timeout for badly written connectors
-	<-a.readDone // wait for read to actually stop running
+	// wait for read to actually stop running with a timeout, in case the
+	// connector gets stuck
+	waitCtx, cancel := context.WithTimeout(ctx, stopTimeout)
+	defer cancel()
+
+	err := a.waitForClose(waitCtx, a.readDone)
+	if err != nil {
+		Logger(ctx).Warn().Err(err).Msg("failed to wait for Read to stop running")
+		return cpluginv1.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
+	}
 
 	return cpluginv1.SourceStopResponse{
 		LastPosition: a.lastPosition,
@@ -254,16 +268,23 @@ func (a *sourcePluginAdapter) Stop(context.Context, cpluginv1.SourceStopRequest)
 }
 
 func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
+	// cancel open and read context, in case Stop was not called (can happen in
+	// case the stop was triggered by an error)
+	a.openCancel()
+	a.readCancel()
+
 	var waitErr error
 	if a.t != nil {
 		// wait for at most 1 minute
-		waitCtx, cancel := context.WithTimeout(ctx, time.Minute) // TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
+		waitCtx, cancel := context.WithTimeout(ctx, teardownTimeout)
 		defer cancel()
 
 		waitErr = a.waitForRun(waitCtx) // wait for Run to stop running
 		if waitErr != nil {
 			// just log error and continue to call Teardown to keep guarantee
 			Logger(ctx).Warn().Err(waitErr).Msg("failed to wait for Run to stop running")
+			// kill tomb to release Run
+			a.t.Kill(errors.New("forceful teardown"))
 		}
 	}
 

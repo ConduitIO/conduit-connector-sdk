@@ -16,6 +16,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"testing"
@@ -196,6 +197,66 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	close(respStream)
 
 	// wait for Run to exit
+	<-runDone
+}
+
+func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	src := NewMockSource(ctrl)
+
+	teardownTimeout = time.Second
+	stopTimeout = time.Second
+	defer func() {
+		teardownTimeout = time.Minute // reset
+		stopTimeout = time.Minute
+	}()
+
+	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+
+	want := Record{
+		Position: Position("foo"),
+	}
+
+	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
+
+	// first produce "normal" records, then produce last record, then return ErrBackoffRetry
+	r1 := src.EXPECT().Read(gomock.Any()).Return(want, nil)
+	src.EXPECT().Read(gomock.Any()).DoAndReturn(func(ctx context.Context) {
+		<-make(chan struct{}) // block forever and ever
+	}).After(r1)
+
+	stream, _, respStream := newSourceRunStreamMock(ctrl)
+
+	ctx := context.Background()
+	_, err := srcPlugin.Start(ctx, cpluginv1.SourceStartRequest{Position: nil})
+	is.NoErr(err)
+
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		err := srcPlugin.Run(ctx, stream)
+		is.Equal("forceful teardown", err.Error())
+	}()
+
+	resp := <-respStream
+	is.Equal(resp, cpluginv1.SourceRunResponse{
+		Record: cpluginv1.Record{
+			Position: want.Position,
+		},
+	})
+
+	// after this the connector starts blocking, we try to trigger a stop
+	stopResp, err := srcPlugin.Stop(ctx, cpluginv1.SourceStopRequest{})
+	is.True(errors.Is(err, context.DeadlineExceeded))
+	is.Equal(nil, stopResp.LastPosition) // unexpected last position
+
+	// the connector is still blocking, teardown should detach the goroutine
+	src.EXPECT().Teardown(gomock.Any()).Return(nil)
+	_, err = srcPlugin.Teardown(ctx, cpluginv1.SourceTeardownRequest{})
+	is.True(errors.Is(err, context.DeadlineExceeded))
+
+	// wait for Run to exit, teardown killed it
 	<-runDone
 }
 
