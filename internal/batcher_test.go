@@ -16,6 +16,7 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -24,17 +25,25 @@ import (
 )
 
 func BenchmarkBatcher_Enqueue(b *testing.B) {
-	batcher := NewBatcher(
-		1000,
-		time.Second,
-		func(batch []int) error { return nil },
-	)
+	batchSizes := []int{10, 100, 1000, 10000, 100000}
 
-	var er EnqueueResult
-	for i := 0; i < b.N; i++ {
-		er = batcher.Enqueue(i)
+	var es EnqueueStatus
+	for _, batchSize := range batchSizes {
+		b.Run(fmt.Sprint(batchSize), func(b *testing.B) {
+			batcher := NewBatcher(
+				batchSize,
+				time.Hour, // don't trigger based on time
+				func(batch []int) error { return nil },
+			)
+
+			for i := 0; i < b.N; i++ {
+				es = batcher.Enqueue(i)
+				if es == Flushed {
+					<-batcher.Results()
+				}
+			}
+		})
 	}
-	_ = er
 }
 
 func TestBatcher_Enqueue_Scheduled(t *testing.T) {
@@ -50,11 +59,10 @@ func TestBatcher_Enqueue_Scheduled(t *testing.T) {
 		},
 	)
 
-	result := b.Enqueue(1)
-	rs, ok := result.(Scheduled)
-	is.True(ok)
+	status := b.Enqueue(1)
+	is.Equal(Scheduled, status)
 	select {
-	case <-rs.Err:
+	case <-b.Results():
 		t.Fatal("did not expect the channel to contain a value")
 	default:
 		// all good
@@ -75,19 +83,16 @@ func TestBatcher_Enqueue_Flushed(t *testing.T) {
 		},
 	)
 
-	result := b.Enqueue(1) // first item gets scheduled
-	rs, ok := result.(Scheduled)
-	is.True(ok)
+	status := b.Enqueue(1) // first item gets scheduled
+	is.Equal(Scheduled, status)
 
-	result = b.Enqueue(2) // second item triggers a flush
-	rf, ok := result.(Flushed)
-	is.True(ok)
-	is.NoErr(rf.Err)
+	status = b.Enqueue(2) // second item triggers a flush
+	is.Equal(Flushed, status)
 
 	// the scheduled result should contain the same error, i.e. nil
 	select {
-	case err := <-rs.Err:
-		is.NoErr(err)
+	case result := <-b.Results():
+		is.NoErr(result.Err)
 	default:
 		t.Fatal("expected the channel to contain a value")
 	}
@@ -111,23 +116,21 @@ func TestBatcher_Enqueue_Delay(t *testing.T) {
 	)
 
 	start := time.Now()
-	result := b.Enqueue(1) // first item gets scheduled
-	rs, ok := result.(Scheduled)
-	is.True(ok)
+	status := b.Enqueue(1) // first item gets scheduled
+	is.Equal(Scheduled, status)
 
 	select {
-	case err := <-rs.Err:
-		is.NoErr(err)
+	case result := <-b.Results():
+		is.NoErr(result.Err)
 		is.True(time.Since(start) >= wantDelay)
 		is.Equal(len(gotBatches), 1)
-		is.Equal(gotBatches[0], []int{1, 2})
+		is.Equal(gotBatches[0], []int{1})
 	case <-time.After(wantDelay + time.Millisecond*5):
 		t.Fatal("expected the channel to contain a value after delay")
 	}
 
-	result = b.Enqueue(1) // next item gets scheduled again
-	_, ok = result.(Scheduled)
-	is.True(ok)
+	status = b.Enqueue(1) // next item gets scheduled again
+	is.Equal(Scheduled, status)
 }
 
 func TestBatcher_Enqueue_FlushedError(t *testing.T) {
@@ -142,18 +145,15 @@ func TestBatcher_Enqueue_FlushedError(t *testing.T) {
 		},
 	)
 
-	result := b.Enqueue(1) // first item gets scheduled
-	rs, ok := result.(Scheduled)
-	is.True(ok)
+	status := b.Enqueue(1) // first item gets scheduled
+	is.Equal(Scheduled, status)
 
-	result = b.Enqueue(2) // second item triggers a flush
-	rf, ok := result.(Flushed)
-	is.True(ok)
-	is.Equal(wantErr, rf.Err)
+	status = b.Enqueue(2) // second item triggers a flush
+	is.Equal(Flushed, status)
 
 	select {
-	case err := <-rs.Err:
-		is.Equal(wantErr, err)
+	case result := <-b.Results():
+		is.Equal(wantErr, result.Err)
 	default:
 		t.Fatal("expected the channel to contain a value")
 	}
@@ -172,10 +172,9 @@ func TestBatcher_Flush(t *testing.T) {
 		},
 	)
 
-	var results []Scheduled
 	for i := 0; i < 9; i++ {
-		result := b.Enqueue(i)
-		results = append(results, result.(Scheduled))
+		status := b.Enqueue(i)
+		is.Equal(Scheduled, status)
 	}
 
 	is.Equal(len(gotBatches), 0)
@@ -184,14 +183,14 @@ func TestBatcher_Flush(t *testing.T) {
 	is.Equal(len(gotBatches), 1)
 	is.Equal(gotBatches[0], []int{0, 1, 2, 3, 4, 5, 6, 7, 8})
 
-	for _, rs := range results {
-		select {
-		case err := <-rs.Err:
-			is.NoErr(err)
-		default:
-			t.Fatal("expected the channel to contain a value")
-		}
+	select {
+	case result := <-b.Results():
+		is.NoErr(result.Err)
+		is.Equal(result.Size, 9)
+	default:
+		t.Fatal("expected the channel to contain a value")
 	}
+
 }
 
 func TestBatcher_Concurrent(t *testing.T) {
@@ -214,25 +213,18 @@ func TestBatcher_Concurrent(t *testing.T) {
 	for i := 0; i < workers; i++ {
 		go func(c int) {
 			defer wg.Done()
-			var results []EnqueueResult
 			for i := 0; i < batchSize; i++ {
-				r := b.Enqueue(c*batchSize + i)
-				results = append(results, r)
-			}
-			for _, r := range results {
-				switch r := r.(type) {
-				case Scheduled:
-					is.NoErr(<-r.Err)
-				case Flushed:
-					is.NoErr(r.Err)
-				default:
-					t.Fatal("unknown result type")
-				}
+				_ = b.Enqueue(c*batchSize + i)
 			}
 		}(i)
 	}
 
+	for i := 0; i < workers; i++ {
+		result := <-b.Results()
+		is.NoErr(result.Err)
+	}
 	wg.Wait()
+
 	is.Equal(len(gotBatches), workers)
 	for _, gotBatch := range gotBatches {
 		is.Equal(len(gotBatch), batchSize)

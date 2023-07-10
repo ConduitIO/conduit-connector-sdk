@@ -23,49 +23,56 @@ type Batcher[T any] struct {
 	sizeThreshold  int
 	delayThreshold time.Duration
 	fn             BatchFn[T]
+	results        chan BatchResult
 
 	batch      []T
-	results    []chan error
 	flushTimer *time.Timer
 	m          sync.Mutex
 }
 
 type BatchFn[T any] func([]T) error
 
-type (
-	EnqueueResult interface{ enqueueResult() }
-	Scheduled     struct{ Err <-chan error }
-	Flushed       struct{ Err error }
-)
+type BatchResult struct {
+	At   time.Time
+	Size int
+	Err  error
+}
 
-func (Scheduled) enqueueResult() {}
-func (Flushed) enqueueResult()   {}
+type EnqueueStatus int
+
+const (
+	Scheduled EnqueueStatus = iota + 1
+	Flushed
+)
 
 func NewBatcher[T any](sizeThreshold int, delayThreshold time.Duration, fn BatchFn[T]) *Batcher[T] {
 	return &Batcher[T]{
 		sizeThreshold:  sizeThreshold,
 		delayThreshold: delayThreshold,
 		fn:             fn,
+		results:        make(chan BatchResult, 1),
 	}
 }
 
-func (b *Batcher[T]) Enqueue(item T) EnqueueResult {
+func (b *Batcher[T]) Results() <-chan BatchResult {
+	return b.results
+}
+
+func (b *Batcher[T]) Enqueue(item T) EnqueueStatus {
 	b.m.Lock()
 	defer b.m.Unlock()
 
-	result := make(chan error, 1)
 	b.batch = append(b.batch, item)
-	b.results = append(b.results, result)
 
 	if len(b.batch) == b.sizeThreshold {
 		// trigger flush synchronously
 		b.flushNow()
-		return Flushed{Err: <-result}
+		return Flushed
 	}
 	if b.flushTimer == nil {
 		b.flushTimer = time.AfterFunc(b.delayThreshold, b.Flush)
 	}
-	return Scheduled{Err: result}
+	return Scheduled
 }
 
 func (b *Batcher[T]) Flush() {
@@ -86,11 +93,13 @@ func (b *Batcher[T]) flushNow() {
 	batchCopy := make([]T, len(b.batch))
 	copy(batchCopy, b.batch)
 
+	at := time.Now()
 	err := b.fn(batchCopy)
-	for _, c := range b.results {
-		c <- err
+	r := BatchResult{
+		At:   at,
+		Size: len(batchCopy),
+		Err:  err,
 	}
-
+	b.results <- r
 	b.batch = b.batch[:0]
-	b.results = b.results[:0]
 }
