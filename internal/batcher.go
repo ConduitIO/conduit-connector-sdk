@@ -15,10 +15,7 @@
 package internal
 
 import (
-	"errors"
-	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -27,114 +24,73 @@ type Batcher[T any] struct {
 	delayThreshold time.Duration
 	fn             BatchFn[T]
 
-	batch      chan T // batch collects elements of a batch
+	batch      []T
+	results    []chan error
 	flushTimer *time.Timer
-	flushedAt  time.Time
-	m          sync.Mutex // m gets locked when a flush is triggered
-
-	stop    chan struct{}
-	stopped chan struct{}
-	flush   chan struct{}
-	errors  chan error
+	m          sync.Mutex
 }
 
 type BatchFn[T any] func([]T) error
 
-type EnqueueResult int
-
-const (
-	Scheduled EnqueueResult = iota + 1
-	Flushed
+type (
+	EnqueueResult interface{ enqueueResult() }
+	Scheduled     struct{ Err <-chan error }
+	Flushed       struct{ Err error }
 )
 
-func NewBatcher[T any](sizeThreshold int, delayThreshold time.Duration, fn BatchFn[T]) *Batcher[T] {
-	if sizeThreshold < 2 {
-		panic(fmt.Errorf("batch size threshold must be at least 2, got %d", sizeThreshold))
-	}
+func (Scheduled) enqueueResult() {}
+func (Flushed) enqueueResult()   {}
 
-	status := atomic.Value{}
-	status.Store(Scheduled)
+func NewBatcher[T any](sizeThreshold int, delayThreshold time.Duration, fn BatchFn[T]) *Batcher[T] {
 	return &Batcher[T]{
 		sizeThreshold:  sizeThreshold,
 		delayThreshold: delayThreshold,
-		batch:          make(chan T),
-		errors:         make(chan error, 1),
-		flush:          make(chan struct{}),
 		fn:             fn,
 	}
 }
 
-func (b *Batcher[T]) Start() error {
+func (b *Batcher[T]) Enqueue(item T) EnqueueResult {
 	b.m.Lock()
 	defer b.m.Unlock()
 
-	if b.stop != nil {
-		return errors.New("batcher already started")
+	result := make(chan error, 1)
+	b.batch = append(b.batch, item)
+	b.results = append(b.results, result)
+
+	if len(b.batch) == b.sizeThreshold {
+		// trigger flush synchronously
+		b.flushNow()
+		return Flushed{Err: <-result}
 	}
-	b.stop = make(chan struct{})
-	b.stopped = make(chan struct{})
-	go func() {
-		batch := make([]T, 0, b.sizeThreshold)
-		var flushTimer *time.Timer
-		var flushTimerC <-chan time.Time
-		for {
-			select {
-			case <-b.stop:
-				b.m.Lock()
-				b.stop = nil
-				close(b.stopped)
-				b.m.Unlock()
-				return
-
-			case item := <-b.batch:
-				batch = append(batch, item)
-				switch len(batch) {
-				case 1:
-					// start timer for flush
-					flushTimer = time.NewTimer(b.delayThreshold)
-					flushTimerC = flushTimer.C
-				}
-				if len(batch) == b.sizeThreshold {
-					flushTimer.Stop()
-					b.errors <- b.fn(batch)
-				}
-			case <-flushTimerC:
-				flushTimer.Stop()
-				b.errors <- b.fn(batch)
-			case <-b.flush:
-				flushTimer.Stop()
-				b.errors <- b.fn(batch)
-			}
-		}
-	}()
-	return nil
-}
-
-func (b *Batcher[T]) Stop() {
-	b.m.Lock()
-	if b.stop == nil {
-		b.m.Unlock()
-		return // batcher is not started
+	if b.flushTimer == nil {
+		b.flushTimer = time.AfterFunc(b.delayThreshold, b.Flush)
 	}
-	select {
-	case <-b.stop:
-		// stop already closed
-	default:
-		close(b.stop)
-	}
-	b.m.Unlock()
-
-	<-b.stopped
-}
-
-func (b *Batcher[T]) Enqueue(item T) {
-	b.batch <- item
+	return Scheduled{Err: result}
 }
 
 func (b *Batcher[T]) Flush() {
-	b.flush <- struct{}{}
+	b.m.Lock()
+	defer b.m.Unlock()
+	b.flushNow()
 }
 
-func (b *Batcher[T]) Errors() chan error {
-	return b.errors
+func (b *Batcher[T]) flushNow() {
+	if b.flushTimer != nil {
+		b.flushTimer.Stop()
+		b.flushTimer = nil
+	}
+	if len(b.batch) == 0 {
+		// nothing to flush
+		return
+	}
+	batchCopy := make([]T, len(b.batch))
+	copy(batchCopy, b.batch)
+
+	err := b.fn(batchCopy)
+	for _, c := range b.results {
+		c <- err
+	}
+
+	b.batch = b.batch[:0]
+	b.results = b.results[:0]
 }
