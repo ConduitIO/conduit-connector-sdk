@@ -190,7 +190,6 @@ func TestBatcher_Flush(t *testing.T) {
 	default:
 		t.Fatal("expected the channel to contain a value")
 	}
-
 }
 
 func TestBatcher_Concurrent(t *testing.T) {

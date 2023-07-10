@@ -66,29 +66,29 @@ func (b *Batcher[T]) Enqueue(item T) EnqueueStatus {
 
 	if len(b.batch) == b.sizeThreshold {
 		// trigger flush synchronously
-		b.flushNow()
+		_ = b.flushNow()
 		return Flushed
 	}
 	if b.flushTimer == nil {
-		b.flushTimer = time.AfterFunc(b.delayThreshold, b.Flush)
+		b.flushTimer = time.AfterFunc(b.delayThreshold, func() { b.Flush() })
 	}
 	return Scheduled
 }
 
-func (b *Batcher[T]) Flush() {
+func (b *Batcher[T]) Flush() bool {
 	b.m.Lock()
 	defer b.m.Unlock()
-	b.flushNow()
+	return b.flushNow()
 }
 
-func (b *Batcher[T]) flushNow() {
+func (b *Batcher[T]) flushNow() bool {
 	if b.flushTimer != nil {
 		b.flushTimer.Stop()
 		b.flushTimer = nil
 	}
 	if len(b.batch) == 0 {
 		// nothing to flush
-		return
+		return false
 	}
 	batchCopy := make([]T, len(b.batch))
 	copy(batchCopy, b.batch)
@@ -102,4 +102,5 @@ func (b *Batcher[T]) flushNow() {
 	}
 	b.results <- r
 	b.batch = b.batch[:0]
+	return true
 }

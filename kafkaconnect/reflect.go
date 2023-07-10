@@ -129,6 +129,7 @@ func reflectInternal(v reflect.Value, t reflect.Type) *Schema {
 		for _, kv := range v.MapKeys() {
 			keyValue = kv
 			valValue = v.MapIndex(kv)
+			break
 		}
 		return &Schema{
 			Type:   TypeMap,

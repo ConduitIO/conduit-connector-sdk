@@ -360,7 +360,8 @@ func (a *sourcePluginAdapter) convertData(d Data) cpluginv1.Data {
 	}
 }
 
-// SourceUtil provides utility methods for implementing a source.
+// SourceUtil provides utility methods for implementing a source. Use it by
+// calling Util.Source.*.
 type SourceUtil struct{}
 
 // NewRecordCreate can be used to instantiate a record with OperationCreate.

@@ -19,7 +19,6 @@ package sdk
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -160,13 +159,7 @@ func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, c
 	}
 
 	if batchSize > 0 || batchDelay > 0 {
-		a.writeStrategy = &writeStrategyBatch{
-			impl:       a.impl,
-			batchSize:  batchSize,
-			batchDelay: batchDelay,
-		}
-		// TODO remove this once batching is implemented
-		return errors.New("batching not implemented")
+		a.writeStrategy = newWriteStrategyBatch(a.impl, batchSize, batchDelay)
 	}
 
 	return nil
@@ -248,8 +241,11 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 		return bytes.Equal(val, req.LastPosition)
 	})
 
-	// flush cached records
-	flushErr := a.writeStrategy.Flush(ctx)
+	// flush cached records, allow it to take at most 1 minute
+	flushCtx, cancel := context.WithTimeout(ctx, time.Minute) // TODO make the timeout configurable
+	defer cancel()
+
+	flushErr := a.writeStrategy.Flush(flushCtx)
 	if flushErr != nil && err == nil {
 		err = flushErr
 	} else if flushErr != nil {
@@ -348,22 +344,125 @@ func (w *writeStrategySingle) Flush(context.Context) error {
 // grouped into batches that get written when they reach the size batchSize or
 // when the time since adding the first record to the current batch reaches
 // batchDelay.
-// TODO needs to be implemented
 type writeStrategyBatch struct {
-	impl Destination
-
-	batchSize  int
-	batchDelay time.Duration
+	impl    Destination
+	batcher *internal.Batcher[writeBatchItem]
 }
 
-func (w *writeStrategyBatch) Write(context.Context, Record, func(error) error) error {
-	panic("batching not implemented yet")
-}
-func (w *writeStrategyBatch) Flush(context.Context) error {
-	panic("batching not implemented yet")
+type writeBatchItem struct {
+	ctx    context.Context
+	record Record
+	ack    func(error) error
 }
 
-// DestinationUtil provides utility methods for implementing a destination.
+func newWriteStrategyBatch(impl Destination, batchSize int, batchDelay time.Duration) *writeStrategyBatch {
+	strategy := &writeStrategyBatch{impl: impl}
+	strategy.batcher = internal.NewBatcher(
+		batchSize,
+		batchDelay,
+		strategy.writeBatch,
+	)
+	return strategy
+}
+
+func (w *writeStrategyBatch) writeBatch(batch []writeBatchItem) error {
+	records := make([]Record, len(batch))
+	for i, item := range batch {
+		records[i] = item.record
+	}
+	// use the last record's context as the write context
+	ctx := batch[len(batch)-1].ctx
+
+	n, err := w.impl.Write(ctx, records)
+	if n == len(batch) && err != nil {
+		err = fmt.Errorf("connector reported a successful write of all records in the batch and simultaneously returned an error, this is probably a bug in the connector. Original error: %w", err)
+		n = 0 // nack all messages in the batch
+	} else if n < len(batch) && err == nil {
+		err = fmt.Errorf("batch contained %d messages, connector has only written %d without reporting the error, this is probably a bug in the connector", len(batch), n)
+	}
+
+	var (
+		firstErr error
+		errOnce  bool
+	)
+	for i, item := range batch {
+		if i < n {
+			err := item.ack(err)
+			if err != nil && !errOnce {
+				firstErr = err
+				errOnce = true
+			}
+		}
+	}
+	return firstErr
+}
+
+func (w *writeStrategyBatch) Write(ctx context.Context, r Record, ack func(error) error) error {
+	select {
+	case result := <-w.batcher.Results():
+		Logger(ctx).Debug().
+			Int("batchSize", result.Size).
+			Time("at", result.At).Err(result.Err).
+			Msg("last batch was flushed asynchronously")
+		if result.Err != nil {
+			return fmt.Errorf("last batch write failed: %w", result.Err)
+			// TODO should we stop writing new records altogether and just nack? probably
+		}
+	default:
+		// last batch was not flushed yet
+	}
+
+	result := w.batcher.Enqueue(writeBatchItem{
+		ctx:    ctx,
+		record: r,
+		ack:    ack,
+	})
+
+	switch result {
+	case internal.Scheduled:
+		// This message was scheduled for the next batch.
+		// We need to check the results channel of the previous batch, in case
+		// the flush happened just before enqueuing this record.
+		select {
+		case result := <-w.batcher.Results():
+			if result.Err != nil {
+				return fmt.Errorf("last batch write failed: %w", result.Err)
+			}
+		default:
+			// last batch was not flushed yet
+		}
+		return nil
+	case internal.Flushed:
+		// This record caused a flush, get the result.
+		result := <-w.batcher.Results()
+		Logger(ctx).Debug().
+			Int("batchSize", result.Size).
+			Time("at", result.At).Err(result.Err).
+			Msg("batch was flushed synchronously")
+		return result.Err
+	default:
+		return fmt.Errorf("unknown batcher enqueue status type: %T", result)
+	}
+}
+func (w *writeStrategyBatch) Flush(ctx context.Context) error {
+	w.batcher.Flush()
+	select {
+	case result := <-w.batcher.Results():
+		Logger(ctx).Debug().
+			Int("batchSize", result.Size).
+			Time("at", result.At).Err(result.Err).
+			Msg("batch was flushed synchronously")
+		if result.Err != nil {
+			return fmt.Errorf("last batch write failed: %w", result.Err)
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
+}
+
+// DestinationUtil provides utility methods for implementing a destination. Use
+// it by calling Util.Destination.*.
 type DestinationUtil struct{}
 
 // Route makes it easier to implement a destination that mutates entities in
