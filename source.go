@@ -270,8 +270,13 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRe
 func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
 	// cancel open and read context, in case Stop was not called (can happen in
 	// case the stop was triggered by an error)
-	a.openCancel()
-	a.readCancel()
+	// teardown can be called without "open" or read
+	if a.openCancel != nil {
+		a.openCancel()
+	}
+	if a.readCancel != nil {
+		a.readCancel()
+	}
 
 	var waitErr error
 	if a.t != nil {
