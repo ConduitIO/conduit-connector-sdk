@@ -425,6 +425,10 @@ func (w *writeStrategyBatch) Write(ctx context.Context, r Record, ack func(error
 		// the flush happened just before enqueuing this record.
 		select {
 		case result := <-w.batcher.Results():
+			Logger(ctx).Debug().
+				Int("batchSize", result.Size).
+				Time("at", result.At).Err(result.Err).
+				Msg("last batch was flushed asynchronously")
 			if result.Err != nil {
 				return fmt.Errorf("last batch write failed: %w", result.Err)
 			}
