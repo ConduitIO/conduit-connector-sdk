@@ -35,7 +35,7 @@ func DefaultDestinationMiddleware() []DestinationMiddleware {
 	return []DestinationMiddleware{
 		DestinationWithRateLimit{},
 		DestinationWithRecordFormat{},
-		// DestinationWithBatch{}, // TODO enable batch middleware once batching is implemented
+		DestinationWithBatch{},
 	}
 }
 
