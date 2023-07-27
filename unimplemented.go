@@ -14,7 +14,10 @@
 
 package sdk
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // UnimplementedDestination should be embedded to have forward compatible implementations.
 type UnimplementedDestination struct{}
@@ -26,22 +29,22 @@ func (UnimplementedDestination) Parameters() map[string]Parameter {
 
 // Configure needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Configure(context.Context, map[string]string) error {
-	return ErrUnimplemented
+	return fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
 }
 
 // Open needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Open(context.Context) error {
-	return ErrUnimplemented
+	return fmt.Errorf("action \"Open\": %w", ErrUnimplemented)
 }
 
 // Write needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Write(context.Context, []Record) (int, error) {
-	return 0, ErrUnimplemented
+	return 0, fmt.Errorf("action \"Write\": %w", ErrUnimplemented)
 }
 
 // Teardown needs to be overridden in the actual implementation.
 func (UnimplementedDestination) Teardown(context.Context) error {
-	return ErrUnimplemented
+	return fmt.Errorf("action \"Teardown\": %w", ErrUnimplemented)
 }
 
 // LifecycleOnCreated won't do anything by default.
@@ -71,28 +74,28 @@ func (UnimplementedSource) Parameters() map[string]Parameter {
 
 // Configure needs to be overridden in the actual implementation.
 func (UnimplementedSource) Configure(context.Context, map[string]string) error {
-	return ErrUnimplemented
+	return fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
 }
 
 // Open needs to be overridden in the actual implementation.
 func (UnimplementedSource) Open(context.Context, Position) error {
-	return ErrUnimplemented
+	return fmt.Errorf("action \"Open\": %w", ErrUnimplemented)
 }
 
 // Read needs to be overridden in the actual implementation.
 func (UnimplementedSource) Read(context.Context) (Record, error) {
-	return Record{}, ErrUnimplemented
+	return Record{}, fmt.Errorf("action \"Read\": %w", ErrUnimplemented)
 }
 
 // Ack should be overridden if acks need to be forwarded to the source,
 // otherwise it is optional.
 func (UnimplementedSource) Ack(context.Context, Position) error {
-	return ErrUnimplemented
+	return fmt.Errorf("action \"Ack\": %w", ErrUnimplemented)
 }
 
 // Teardown needs to be overridden in the actual implementation.
 func (UnimplementedSource) Teardown(context.Context) error {
-	return ErrUnimplemented
+	return fmt.Errorf("action \"Teardown\": %w", ErrUnimplemented)
 }
 
 // LifecycleOnCreated won't do anything by default.

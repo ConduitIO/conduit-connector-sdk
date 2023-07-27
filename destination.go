@@ -406,19 +406,18 @@ func (w *writeStrategyBatch) Write(ctx context.Context, r Record, ack func(error
 			Msg("last batch was flushed asynchronously")
 		if result.Err != nil {
 			return fmt.Errorf("last batch write failed: %w", result.Err)
-			// TODO should we stop writing new records altogether and just nack? probably
 		}
 	default:
 		// last batch was not flushed yet
 	}
 
-	result := w.batcher.Enqueue(writeBatchItem{
+	status := w.batcher.Enqueue(writeBatchItem{
 		ctx:    ctx,
 		record: r,
 		ack:    ack,
 	})
 
-	switch result {
+	switch status {
 	case internal.Scheduled:
 		// This message was scheduled for the next batch.
 		// We need to check the results channel of the previous batch, in case
@@ -445,7 +444,7 @@ func (w *writeStrategyBatch) Write(ctx context.Context, r Record, ack func(error
 			Msg("batch was flushed synchronously")
 		return result.Err
 	default:
-		return fmt.Errorf("unknown batcher enqueue status type: %T", result)
+		return fmt.Errorf("unknown batcher enqueue status: %v", status)
 	}
 }
 func (w *writeStrategyBatch) Flush(ctx context.Context) error {
