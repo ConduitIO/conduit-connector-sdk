@@ -69,7 +69,7 @@ func (b *Batcher[T]) Enqueue(item T) EnqueueStatus {
 		_ = b.flushNow()
 		return Flushed
 	}
-	if b.flushTimer == nil {
+	if b.flushTimer == nil && b.delayThreshold > 0 {
 		b.flushTimer = time.AfterFunc(b.delayThreshold, func() { b.Flush() })
 	}
 	return Scheduled
