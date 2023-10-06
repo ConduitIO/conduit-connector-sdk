@@ -53,7 +53,7 @@ func TestWaitGroup_WaitTimeout_DeadlineReached(t *testing.T) {
 	wg.Add(1)
 
 	start := time.Now()
-	err := wg.WaitTimeout(ctx, time.Millisecond*100)
+	err := wg.Wait(ctx, WithTimeout(time.Millisecond*100))
 	since := time.Since(start)
 
 	is.Equal(err, context.DeadlineExceeded)

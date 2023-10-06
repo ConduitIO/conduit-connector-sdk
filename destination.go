@@ -233,14 +233,10 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 	// last thing we do is cancel context in Open
 	defer a.openCancel()
 
-	// wait for at most 1 minute
-	waitCtx, cancel := context.WithTimeout(ctx, time.Minute) // TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
-	defer cancel()
-
 	// wait for last record to be received
-	_, err := a.lastPosition.Watch(waitCtx, func(val Position) bool {
+	_, err := a.lastPosition.Watch(ctx, func(val Position) bool {
 		return bytes.Equal(val, req.LastPosition)
-	})
+	}, csync.WithTimeout(time.Minute)) // TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
 
 	// flush cached records, allow it to take at most 1 minute
 	flushCtx, cancel := context.WithTimeout(ctx, time.Minute) // TODO make the timeout configurable

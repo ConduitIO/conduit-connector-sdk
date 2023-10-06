@@ -168,7 +168,7 @@ func TestValueWatcher_WatchMultiple(t *testing.T) {
 	}
 
 	// wait for all watchers to be subscribed
-	err := (*WaitGroup)(&wg1).WaitTimeout(context.Background(), time.Second)
+	err := (*WaitGroup)(&wg1).Wait(context.Background(), WithTimeout(time.Second))
 	is.NoErr(err)
 
 	// set the value incrementally higher
@@ -177,7 +177,7 @@ func TestValueWatcher_WatchMultiple(t *testing.T) {
 	}
 
 	// wait for all watchers to be done
-	err = (*WaitGroup)(&wg2).WaitTimeout(context.Background(), time.Second)
+	err = (*WaitGroup)(&wg2).Wait(context.Background(), WithTimeout(time.Second))
 	is.NoErr(err)
 }
 
@@ -215,7 +215,7 @@ func TestValueWatcher_Concurrency(t *testing.T) {
 	}
 
 	// wait for all watchers to be subscribed
-	err := (*WaitGroup)(&wg1).WaitTimeout(context.Background(), time.Second)
+	err := (*WaitGroup)(&wg1).Wait(context.Background(), WithTimeout(time.Second))
 	is.NoErr(err)
 
 	// wg3 waits for all setters to stop setting values
@@ -231,10 +231,10 @@ func TestValueWatcher_Concurrency(t *testing.T) {
 	}
 
 	// wait for all setters to be done
-	err = (*WaitGroup)(&wg3).WaitTimeout(context.Background(), time.Second)
+	err = (*WaitGroup)(&wg3).Wait(context.Background(), WithTimeout(time.Second))
 	is.NoErr(err)
 
 	// wait for all watchers to be done
-	err = (*WaitGroup)(&wg2).WaitTimeout(context.Background(), time.Second)
+	err = (*WaitGroup)(&wg2).Wait(context.Background(), WithTimeout(time.Second))
 	is.NoErr(err)
 }

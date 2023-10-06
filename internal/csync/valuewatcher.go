@@ -16,8 +16,10 @@ package csync
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
+	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
 	"github.com/google/uuid"
 )
 
@@ -85,7 +87,13 @@ func (vw *ValueWatcher[T]) Get() T {
 //
 // Watch can be safely called by multiple goroutines. If the context gets
 // cancelled before f returns true, the function will return the context error.
-func (vw *ValueWatcher[T]) Watch(ctx context.Context, f ValueWatcherFunc[T]) (T, error) {
+func (vw *ValueWatcher[T]) Watch(ctx context.Context, f ValueWatcherFunc[T], opts ...Option) (T, error) {
+	ctx, cancel, opts := applyAndRemoveCtxOptions(ctx, opts)
+	if len(opts) > 0 {
+		panic(fmt.Sprintf("invalid option type: %T", opts[0]))
+	}
+	defer cancel()
+
 	val, found, listener, unsubscribe := vw.findOrSubscribe(f)
 	if found {
 		return val, nil
@@ -93,15 +101,15 @@ func (vw *ValueWatcher[T]) Watch(ctx context.Context, f ValueWatcherFunc[T]) (T,
 	defer unsubscribe()
 
 	// val was not found yet, we need to keep watching
+	clistener := cchan.ChanOut[T](listener)
 	for {
-		select {
-		case <-ctx.Done():
+		val, ok, err := clistener.Recv(ctx)
+		if err != nil {
 			var empty T
 			return empty, ctx.Err()
-		case val = <-listener:
-			if f(val) {
-				return val, nil
-			}
+		}
+		if ok && f(val) {
+			return val, nil
 		}
 	}
 }
