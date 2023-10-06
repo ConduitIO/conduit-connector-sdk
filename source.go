@@ -126,6 +126,8 @@ func NewSourcePlugin(impl Source) cpluginv1.SourcePlugin {
 type sourcePluginAdapter struct {
 	impl Source
 
+	state internal.ConnectorStateWatcher
+
 	// readDone will be closed after runRead stops running.
 	readDone chan struct{}
 
@@ -137,7 +139,12 @@ type sourcePluginAdapter struct {
 	t          *tomb.Tomb
 }
 
-func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.SourceConfigureRequest) (cpluginv1.SourceConfigureResponse, error) {
+func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.SourceConfigureRequest) (resp cpluginv1.SourceConfigureResponse, err error) {
+	if err := a.state.CompareAndSwap(internal.StateInitial, internal.StateConfiguring); err != nil {
+		return resp, err
+	}
+	defer func() { a.state.CheckErrorAndSwap(err, internal.StateConfigured) }()
+
 	v := validator(a.impl.Parameters())
 	// init config and apply default values
 	updatedCfg, multiErr := v.InitConfig(req.Config)
@@ -146,10 +153,15 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.Sourc
 	// run custom validations written by developer
 	multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, updatedCfg))
 
-	return cpluginv1.SourceConfigureResponse{}, multiErr
+	return resp, multiErr
 }
 
-func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceStartRequest) (cpluginv1.SourceStartResponse, error) {
+func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceStartRequest) (resp cpluginv1.SourceStartResponse, err error) {
+	if err := a.state.CompareAndSwap(internal.StateConfigured, internal.StateStarting); err != nil {
+		return resp, err
+	}
+	defer func() { a.state.CheckErrorAndSwap(err, internal.StateStarted) }()
+
 	// detach context, so we can control when it's canceled
 	ctxOpen := internal.DetachContext(ctx)
 	ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
@@ -168,11 +180,15 @@ func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceSta
 		}
 	}()
 
-	err := a.impl.Open(ctxOpen, req.Position)
-	return cpluginv1.SourceStartResponse{}, err
+	err = a.impl.Open(ctxOpen, req.Position)
+	return resp, err
 }
 
 func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRunStream) error {
+	if err := a.state.Compare(internal.StateStarted); err != nil {
+		return err
+	}
+
 	t, ctx := tomb.WithContext(ctx)
 	readCtx, readCancel := context.WithCancel(ctx)
 
@@ -188,6 +204,7 @@ func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRu
 		return a.runAck(ctx, stream)
 	})
 
+	a.state.Swap(internal.StateRunning)
 	<-t.Dying() // stop as soon as it's dying
 	return t.Err()
 }
