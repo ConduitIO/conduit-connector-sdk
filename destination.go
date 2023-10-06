@@ -26,6 +26,7 @@ import (
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
+	"github.com/conduitio/conduit-connector-sdk/internal/csync"
 	"go.uber.org/multierr"
 )
 
@@ -99,7 +100,7 @@ func NewDestinationPlugin(impl Destination) cpluginv1.DestinationPlugin {
 type destinationPluginAdapter struct {
 	impl Destination
 
-	lastPosition *internal.AtomicValueWatcher[Position]
+	lastPosition *csync.ValueWatcher[Position]
 	openCancel   context.CancelFunc
 
 	// write is the chosen write strategy, either single records or batches
@@ -166,7 +167,7 @@ func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, c
 }
 
 func (a *destinationPluginAdapter) Start(ctx context.Context, _ cpluginv1.DestinationStartRequest) (cpluginv1.DestinationStartResponse, error) {
-	a.lastPosition = new(internal.AtomicValueWatcher[Position])
+	a.lastPosition = new(csync.ValueWatcher[Position])
 
 	// detach context, so we can control when it's canceled
 	ctxOpen := internal.DetachContext(ctx)
@@ -205,7 +206,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv1.Des
 		err = a.writeStrategy.Write(ctx, r, func(err error) error {
 			return a.ack(r, err, stream)
 		})
-		a.lastPosition.Store(r.Position)
+		a.lastPosition.Set(r.Position)
 		if err != nil {
 			return err
 		}
@@ -237,7 +238,7 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 	defer cancel()
 
 	// wait for last record to be received
-	err := a.lastPosition.Await(waitCtx, func(val Position) bool {
+	_, err := a.lastPosition.Watch(waitCtx, func(val Position) bool {
 		return bytes.Equal(val, req.LastPosition)
 	})
 
