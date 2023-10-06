@@ -379,17 +379,17 @@ func (w *writeStrategyBatch) writeBatch(batch []writeBatchItem) error {
 	}
 
 	var (
-		ackRespose error
-		firstErr   error
-		errOnce    bool
+		ackResponse error
+		firstErr    error
+		errOnce     bool
 	)
 	for i, item := range batch {
 		if i == n {
 			// records from this index on failed to be written, include the
 			// error in the response
-			ackRespose = err
+			ackResponse = err
 		}
-		err := item.ack(ackRespose)
+		err := item.ack(ackResponse)
 		if err != nil && !errOnce {
 			firstErr = err
 			errOnce = true
