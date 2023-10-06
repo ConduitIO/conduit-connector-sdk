@@ -16,7 +16,6 @@ package csync
 
 import (
 	"context"
-	"slices"
 	"time"
 )
 
@@ -54,10 +53,10 @@ func applyAndRemoveCtxOptions(ctx context.Context, opts []Option) (context.Conte
 		ctx, cancel = ctxOpt.applyCtx(ctx)
 		cancelFns = append(cancelFns, cancel)
 	}
-	slices.Reverse(cancelFns) // call cancel functions in reverse
 	return ctx, func() {
-		for _, cancelFn := range cancelFns {
-			cancelFn()
+		// call cancel functions in reverse
+		for i := len(cancelFns) - 1; i >= 0; i-- {
+			cancelFns[i]()
 		}
 	}, remainingOpts
 }
