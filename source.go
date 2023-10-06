@@ -25,6 +25,8 @@ import (
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
+	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
+	"github.com/conduitio/conduit-connector-sdk/internal/csync"
 	"github.com/jpillora/backoff"
 	"go.uber.org/multierr"
 	"gopkg.in/tomb.v2"
@@ -206,14 +208,13 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cpluginv1.Sour
 			}
 			if errors.Is(err, ErrBackoffRetry) {
 				// the plugin wants us to retry reading later
-				select {
-				case <-ctx.Done():
+				_, _, err := cchan.ChanOut[time.Time](time.After(b.Duration())).Recv(ctx)
+				if err != nil {
 					// the plugin is using the SDK for long polling and relying
 					// on the SDK to check for a cancelled context
 					return nil
-				case <-time.After(b.Duration()):
-					continue
 				}
+				continue
 			}
 			return fmt.Errorf("read plugin error: %w", err)
 		}
@@ -253,10 +254,7 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRe
 
 	// wait for read to actually stop running with a timeout, in case the
 	// connector gets stuck
-	waitCtx, cancel := context.WithTimeout(ctx, stopTimeout)
-	defer cancel()
-
-	err := a.waitForClose(waitCtx, a.readDone)
+	_, _, err := cchan.ChanOut[struct{}](a.readDone).RecvTimeout(ctx, stopTimeout)
 	if err != nil {
 		Logger(ctx).Warn().Err(err).Msg("failed to wait for Read to stop running")
 		return cpluginv1.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
@@ -282,11 +280,7 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTe
 
 	var waitErr error
 	if a.t != nil {
-		// wait for at most 1 minute
-		waitCtx, cancel := context.WithTimeout(ctx, teardownTimeout)
-		defer cancel()
-
-		waitErr = a.waitForRun(waitCtx) // wait for Run to stop running
+		waitErr = a.waitForRun(ctx, teardownTimeout) // wait for Run to stop running
 		if waitErr != nil {
 			// just log error and continue to call Teardown to keep guarantee
 			Logger(ctx).Warn().Err(waitErr).Msg("failed to wait for Run to stop running")
@@ -316,23 +310,14 @@ func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugi
 // waitForRun returns once the Run function returns or the context gets
 // cancelled, whichever happens first. If the context gets cancelled the context
 // error will be returned.
-func (a *sourcePluginAdapter) waitForRun(ctx context.Context) error {
-	// wait for all acks to be sent back to Conduit
-	ackFuncsDone := make(chan struct{})
-	go func() {
-		_ = a.t.Wait() // ignore tomb error, it will be returned in Run anyway
-		close(ackFuncsDone)
-	}()
-	return a.waitForClose(ctx, ackFuncsDone)
-}
-
-func (a *sourcePluginAdapter) waitForClose(ctx context.Context, stop chan struct{}) error {
-	select {
-	case <-stop:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+func (a *sourcePluginAdapter) waitForRun(ctx context.Context, timeout time.Duration) error {
+	// wait for all acks to be sent back to Conduit, stop waiting if context
+	// gets cancelled or timeout is reached
+	return csync.Run(
+		ctx,
+		func() { _ = a.t.Wait() }, // ignore tomb error, it will be returned in Run anyway
+		csync.WithTimeout(timeout),
+	)
 }
 
 func (a *sourcePluginAdapter) convertRecord(r Record) cpluginv1.Record {
