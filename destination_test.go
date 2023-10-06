@@ -16,6 +16,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"testing"
@@ -161,6 +162,172 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 		is.Equal(resp, cpluginv1.DestinationRunResponse{
 			AckPosition: want.Position,
 			Error:       "",
+		})
+	}
+
+	// close stream
+	close(reqStream)
+	close(respStream)
+
+	// wait for Run to exit
+	<-runDone
+}
+
+func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+
+	dstPlugin := NewDestinationPlugin(
+		DestinationWithMiddleware(dst, DestinationWithBatch{}),
+	).(*destinationPluginAdapter)
+
+	want := Record{
+		Position:  Position("foo"),
+		Operation: OperationCreate,
+		Metadata:  map[string]string{"foo": "bar"},
+		Key:       RawData("bar"),
+		Payload: Change{
+			Before: nil, // create has no before
+			After: StructuredData{
+				"x": "y",
+				"z": 3,
+			},
+		},
+	}
+
+	batchConfig := map[string]string{
+		configDestinationBatchDelay: "0s",
+		configDestinationBatchSize:  "5",
+	}
+
+	dst.EXPECT().Parameters()
+	dst.EXPECT().Configure(gomock.Any(), batchConfig).Return(nil)
+	dst.EXPECT().Open(gomock.Any()).Return(nil)
+	dst.EXPECT().Write(gomock.Any(), []Record{want, want, want, want, want}).Return(5, nil)
+
+	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
+
+	ctx := context.Background()
+	_, err := dstPlugin.Configure(ctx, cpluginv1.DestinationConfigureRequest{Config: batchConfig})
+	is.NoErr(err)
+	_, err = dstPlugin.Start(ctx, cpluginv1.DestinationStartRequest{})
+	is.NoErr(err)
+
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		err := dstPlugin.Run(ctx, stream)
+		is.NoErr(err)
+	}()
+
+	// write 5 records
+	for i := 0; i < 5; i++ {
+		reqStream <- cpluginv1.DestinationRunRequest{
+			Record: cpluginv1.Record{
+				Position:  want.Position,
+				Operation: cpluginv1.Operation(want.Operation),
+				Metadata:  want.Metadata,
+				Key:       cpluginv1.RawData(want.Key.(RawData)),
+				Payload: cpluginv1.Change{
+					Before: nil, // create has no before
+					After:  cpluginv1.StructuredData(want.Payload.After.(StructuredData)),
+				},
+			},
+		}
+	}
+	for i := 0; i < 5; i++ {
+		resp := <-respStream
+		is.Equal(resp, cpluginv1.DestinationRunResponse{
+			AckPosition: want.Position,
+			Error:       "",
+		})
+	}
+
+	// close stream
+	close(reqStream)
+	close(respStream)
+
+	// wait for Run to exit
+	<-runDone
+}
+
+func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+
+	dstPlugin := NewDestinationPlugin(
+		DestinationWithMiddleware(dst, DestinationWithBatch{}),
+	).(*destinationPluginAdapter)
+
+	want := Record{
+		Position:  Position("foo"),
+		Operation: OperationCreate,
+		Metadata:  map[string]string{"foo": "bar"},
+		Key:       RawData("bar"),
+		Payload: Change{
+			Before: nil, // create has no before
+			After: StructuredData{
+				"x": "y",
+				"z": 3,
+			},
+		},
+	}
+
+	batchConfig := map[string]string{
+		configDestinationBatchDelay: "0s",
+		configDestinationBatchSize:  "5",
+	}
+	wantErr := errors.New("write error")
+
+	dst.EXPECT().Parameters()
+	dst.EXPECT().Configure(gomock.Any(), batchConfig).Return(nil)
+	dst.EXPECT().Open(gomock.Any()).Return(nil)
+	dst.EXPECT().Write(gomock.Any(), []Record{want, want, want, want, want}).Return(3, wantErr) // only 3 records are written
+
+	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
+
+	ctx := context.Background()
+	_, err := dstPlugin.Configure(ctx, cpluginv1.DestinationConfigureRequest{Config: batchConfig})
+	is.NoErr(err)
+	_, err = dstPlugin.Start(ctx, cpluginv1.DestinationStartRequest{})
+	is.NoErr(err)
+
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		err := dstPlugin.Run(ctx, stream)
+		is.NoErr(err)
+	}()
+
+	// write 5 records
+	for i := 0; i < 5; i++ {
+		reqStream <- cpluginv1.DestinationRunRequest{
+			Record: cpluginv1.Record{
+				Position:  want.Position,
+				Operation: cpluginv1.Operation(want.Operation),
+				Metadata:  want.Metadata,
+				Key:       cpluginv1.RawData(want.Key.(RawData)),
+				Payload: cpluginv1.Change{
+					Before: nil, // create has no before
+					After:  cpluginv1.StructuredData(want.Payload.After.(StructuredData)),
+				},
+			},
+		}
+	}
+	for i := 0; i < 3; i++ {
+		resp := <-respStream
+		is.Equal(resp, cpluginv1.DestinationRunResponse{
+			AckPosition: want.Position,
+			Error:       "",
+		})
+	}
+	for i := 0; i < 2; i++ {
+		resp := <-respStream
+		is.Equal(resp, cpluginv1.DestinationRunResponse{
+			AckPosition: want.Position,
+			Error:       wantErr.Error(),
 		})
 	}
 
