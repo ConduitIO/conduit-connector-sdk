@@ -21,6 +21,32 @@ import (
 	"github.com/matryer/is"
 )
 
+var (
+	encBytesSink []byte
+	encErrSink   error
+)
+
+func BenchmarkJSONEncoder(b *testing.B) {
+	rec := Record{
+		Position:  Position("foo"),
+		Operation: OperationCreate,
+		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
+		Key:       RawData("bar"),
+		Payload: Change{
+			Before: nil,
+			After: StructuredData{
+				"foo": "bar",
+				"baz": "qux",
+			},
+		},
+	}
+
+	enc := JSONEncoder{}
+	for i := 0; i < b.N; i++ {
+		encBytesSink, encErrSink = enc.Encode(rec)
+	}
+}
+
 func TestOpenCDCConverter(t *testing.T) {
 	is := is.New(t)
 	var converter OpenCDCConverter

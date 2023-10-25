@@ -18,12 +18,12 @@ package sdk
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
+	"github.com/goccy/go-json"
 )
 
 const (

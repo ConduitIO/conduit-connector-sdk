@@ -27,11 +27,13 @@ func TestParseConfig_Simple_Struct(t *testing.T) {
 	type Person struct {
 		Name string `json:"person_name"`
 		Age  int
+		Dur  time.Duration
 	}
 
 	input := map[string]string{
 		"person_name": "meroxa",
 		"age":         "91",
+		"dur":         "", // empty value should result in zero value
 	}
 	want := Person{
 		Name: "meroxa",

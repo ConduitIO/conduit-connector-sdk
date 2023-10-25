@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand"
 	"reflect"
 	"regexp"
@@ -179,11 +180,11 @@ func (d ConfigurableAcceptanceTestDriver) Connector() Connector {
 }
 
 func (d ConfigurableAcceptanceTestDriver) SourceConfig(*testing.T) map[string]string {
-	return d.Config.SourceConfig
+	return maps.Clone(d.Config.SourceConfig)
 }
 
 func (d ConfigurableAcceptanceTestDriver) DestinationConfig(*testing.T) map[string]string {
-	return d.Config.DestinationConfig
+	return maps.Clone(d.Config.DestinationConfig)
 }
 
 func (d ConfigurableAcceptanceTestDriver) BeforeTest(t *testing.T) {
