@@ -11,7 +11,7 @@ require (
 	github.com/matryer/is v1.4.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/rs/zerolog v1.31.0
-	go.uber.org/goleak v1.2.1
+	go.uber.org/goleak v1.3.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20221114191408-850992195362
 	golang.org/x/time v0.3.0
