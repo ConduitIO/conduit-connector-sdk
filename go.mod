@@ -1,6 +1,6 @@
 module github.com/conduitio/conduit-connector-sdk
 
-go 1.20
+go 1.21
 
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
