@@ -1,10 +1,11 @@
 module github.com/conduitio/conduit-connector-sdk
 
-go 1.20
+go 1.21
 
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/conduitio/conduit-connector-protocol v0.5.0
+	github.com/goccy/go-json v0.10.2
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.4.0
 	github.com/jpillora/backoff v1.0.0

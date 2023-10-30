@@ -16,6 +16,7 @@ package sdk
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
@@ -81,6 +82,7 @@ func parseConfig(raw map[string]string, config interface{}) error {
 		WeaklyTypedInput: true,
 		Result:           &config,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			emptyStringToZeroValueHookFunc(),
 			mapstructure.StringToTimeDurationHookFunc(),
 			mapstructure.StringToSliceHookFunc(","),
 		),
@@ -94,4 +96,16 @@ func parseConfig(raw map[string]string, config interface{}) error {
 	}
 	err = decoder.Decode(breakUpConfig(raw))
 	return err
+}
+
+func emptyStringToZeroValueHookFunc() mapstructure.DecodeHookFunc {
+	return func(
+		f reflect.Type,
+		t reflect.Type,
+		data interface{}) (interface{}, error) {
+		if f.Kind() != reflect.String || data != "" {
+			return data, nil
+		}
+		return reflect.New(t).Elem().Interface(), nil
+	}
 }
