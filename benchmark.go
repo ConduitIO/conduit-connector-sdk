@@ -161,12 +161,15 @@ func (*benchmarkSource) measure(out *time.Duration, f func()) {
 
 func (bm *benchmarkSource) reportMetrics(b *testing.B) {
 	b.ReportMetric(0, "ns/op") // suppress ns/op metric, it is misleading in this benchmarkSource
+
 	b.ReportMetric(bm.configure.Seconds(), "configure")
 	b.ReportMetric(bm.open.Seconds(), "open")
-	b.ReportMetric(bm.firstRead.Seconds(), "firstRead")
 	b.ReportMetric(bm.stop.Seconds(), "stop")
 	b.ReportMetric(bm.teardown.Seconds(), "teardown")
-	b.ReportMetric(float64(b.N-1)/b.Elapsed().Seconds(), "msg/s")
+
+	b.ReportMetric(bm.firstRead.Seconds(), "firstRead")
+	b.ReportMetric(float64(b.N-1)/bm.allReads.Seconds(), "reads/s")
+
 	b.ReportMetric(bm.firstAck.Seconds(), "firstAck")
 	b.ReportMetric(float64(b.N-1)/bm.allAcks.Seconds(), "acks/s")
 }
