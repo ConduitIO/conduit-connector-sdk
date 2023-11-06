@@ -100,34 +100,6 @@ func (w *ConnectorStateWatcher) DoWithLock(
 	return nil
 }
 
-// func (w *ConnectorStateWatcher) DoAndSwap(f func(currentState ConnectorState) error, newState ConnectorState) (bool, error) {
-// 	lockedWatcher := (*csync.ValueWatcher[ConnectorState])(w).Lock()
-// 	defer lockedWatcher.Unlock()
-//
-// 	currentState := lockedWatcher.Get()
-// 	err := f(currentState)
-// 	if err != nil {
-// 		return false, err
-// 	}
-//
-// 	// only swap the state if the current state is greater
-// 	swap := currentState <= newState
-// 	if swap {
-// 		lockedWatcher.Set(newState)
-// 	}
-//
-// 	return swap, nil
-// }
-//
-// func (w *ConnectorStateWatcher) CompareAndSwap(expectedState ConnectorState, newState ConnectorState) (bool, error) {
-// 	return w.DoAndSwap(func(currentState ConnectorState) error {
-// 		if currentState != expectedState {
-// 			return fmt.Errorf("expected connector state %q, actual connector state is %q", expectedState, currentState)
-// 		}
-// 		return nil
-// 	}, newState)
-// }
-
 func (w *ConnectorStateWatcher) CheckErrorAndSwap(err error, newState ConnectorState) bool {
 	if err != nil {
 		return w.Set(StateErrored)
@@ -141,14 +113,6 @@ func (w *ConnectorStateWatcher) Set(newState ConnectorState) bool {
 	defer lockedWatcher.Unlock()
 	return w.swap(lockedWatcher, newState)
 }
-
-//
-// func (w *ConnectorStateWatcher) Watch(ctx context.Context, states ...ConnectorState) (ConnectorState, error) {
-// 	return (*csync.ValueWatcher[ConnectorState])(w).Watch(
-// 		ctx,
-// 		csync.WatchValues(states...),
-// 	)
-// }
 
 func (w *ConnectorStateWatcher) swap(lvw *csync.LockedValueWatcher[ConnectorState], newState ConnectorState) bool {
 	if lvw.Get() >= newState {
