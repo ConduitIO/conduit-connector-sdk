@@ -233,13 +233,18 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 	// last thing we do is cancel context in Open
 	defer a.openCancel()
 
-	// wait for last record to be received
-	_, err := a.lastPosition.Watch(ctx, func(val Position) bool {
-		return bytes.Equal(val, req.LastPosition)
-	}, csync.WithTimeout(time.Minute)) // TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
+	// wait for last record to be received, if it doesn't arrive in time we try
+	// to flush what we have s far
+	_, err := a.lastPosition.Watch(
+		ctx,
+		func(val Position) bool {
+			return bytes.Equal(val, req.LastPosition)
+		},
+		csync.WithTimeout(stopTimeout),
+	)
 
 	// flush cached records, allow it to take at most 1 minute
-	flushCtx, cancel := context.WithTimeout(ctx, time.Minute) // TODO make the timeout configurable
+	flushCtx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
 	flushErr := a.writeStrategy.Flush(flushCtx)
@@ -253,6 +258,15 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 }
 
 func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ cpluginv1.DestinationTeardownRequest) (cpluginv1.DestinationTeardownResponse, error) {
+	// cancel open context, in case Stop was not called (can happen in case the
+	// stop was triggered by an error)
+	// teardown can be called without "open" being called previously
+	// e.g. when Conduit is validating a connector configuration,
+	// it will call "configure" and then "teardown".
+	if a.openCancel != nil {
+		a.openCancel()
+	}
+
 	err := a.impl.Teardown(ctx)
 	if err != nil {
 		return cpluginv1.DestinationTeardownResponse{}, err

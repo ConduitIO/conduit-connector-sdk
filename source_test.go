@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conduitio/conduit-connector-sdk/internal"
+
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	cpluginv1mock "github.com/conduitio/conduit-connector-protocol/cpluginv1/mock"
 	"github.com/golang/mock/gomock"
@@ -35,6 +37,7 @@ func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {
 	src := NewMockSource(ctrl)
 
 	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	var gotCtx context.Context
 	src.EXPECT().Open(gomock.Any(), Position(nil)).
@@ -59,6 +62,7 @@ func TestSourcePluginAdapter_Start_ClosedContext(t *testing.T) {
 	src := NewMockSource(ctrl)
 
 	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	var gotCtx context.Context
 	src.EXPECT().Open(gomock.Any(), Position(nil)).
@@ -87,6 +91,7 @@ func TestSourcePluginAdapter_Start_Logger(t *testing.T) {
 	src := NewMockSource(ctrl)
 
 	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 	wantLogger := zerolog.New(zerolog.NewTestWriter(t))
 
 	src.EXPECT().Open(gomock.Any(), Position(nil)).
@@ -109,6 +114,7 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	src := NewMockSource(ctrl)
 
 	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	want := Record{
 		Position:  Position("foo"),
@@ -213,6 +219,7 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 	}()
 
 	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	want := Record{
 		Position: Position("foo"),
@@ -266,6 +273,7 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	src := NewMockSource(ctrl)
 
 	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
 	r1 := src.EXPECT().Read(gomock.Any()).Return(Record{}, nil)

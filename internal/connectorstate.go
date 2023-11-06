@@ -12,10 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:generate stringer -type ConnectorState -trimprefix State
+
 package internal
 
 import (
+	"context"
 	"fmt"
+	"slices"
 
 	"github.com/conduitio/conduit-connector-sdk/internal/csync"
 )
@@ -31,54 +35,126 @@ const (
 	StateRunning
 	StateStopping
 	StateStopped
-	StateTorndown
+	StateTearingDown
+	StateTornDown
 
 	StateErrored ConnectorState = 500
 )
 
-type UnexpectedConnectorStateError struct {
-	ExpectedState ConnectorState
-	ActualState   ConnectorState
-}
-
-func (e *UnexpectedConnectorStateError) Error() string {
-	return fmt.Sprintf("expected connector state %q, actual connector state is %q", e.ExpectedState, e.ActualState)
-}
-
-func NewUnexpectedConnectorStateError(expected, actual ConnectorState) *UnexpectedConnectorStateError {
-	return &UnexpectedConnectorStateError{
-		ExpectedState: expected,
-		ActualState:   actual,
-	}
-}
-
 type ConnectorStateWatcher csync.ValueWatcher[ConnectorState]
 
-func (w *ConnectorStateWatcher) Compare(expectedState ConnectorState) error {
+type DoWithLockOptions struct {
+	ExpectedStates       []ConnectorState
+	StateBefore          ConnectorState
+	StateAfter           ConnectorState
+	WaitForExpectedState bool
+}
+
+func (w *ConnectorStateWatcher) DoWithLock(
+	ctx context.Context,
+	opts DoWithLockOptions,
+	f func(currentState ConnectorState) error,
+) error {
 	vw := (*csync.ValueWatcher[ConnectorState])(w)
-	if s := vw.Get(); s != expectedState {
-		return NewUnexpectedConnectorStateError(expectedState, s)
+	lockedWatcher := vw.Lock()
+	locked := true // keep track if the lock is still locked
+	defer func() {
+		if locked {
+			lockedWatcher.Unlock()
+		}
+	}()
+
+	currentState := lockedWatcher.Get()
+
+	if len(opts.ExpectedStates) > 0 {
+		for !slices.Contains(opts.ExpectedStates, currentState) {
+			if !opts.WaitForExpectedState {
+				return fmt.Errorf("expected connector state %q, actual connector state is %q", opts.ExpectedStates, currentState)
+			}
+			lockedWatcher.Unlock()
+			lockedWatcher = nil // discard locked watcher after unlock
+			locked = false      // prevent another unlock in defer
+
+			_, err := vw.Watch(ctx, csync.WatchValues(opts.ExpectedStates...))
+			if err != nil {
+				return err
+			}
+
+			// lock watcher again and check current state in case it changed between
+			// watch and the second lock
+			lockedWatcher = vw.Lock()
+			locked = true
+			currentState = lockedWatcher.Get()
+		}
 	}
-	return nil
-}
 
-func (w *ConnectorStateWatcher) Swap(newState ConnectorState) {
-	(*csync.ValueWatcher[ConnectorState])(w).Set(newState)
-}
+	w.swap(lockedWatcher, opts.StateBefore)
 
-func (w *ConnectorStateWatcher) CompareAndSwap(oldState ConnectorState, newState ConnectorState) error {
-	if err := w.Compare(oldState); err != nil {
-		return fmt.Errorf("can't change connector state to %q: %w", newState, err)
-	}
-	w.Swap(newState)
-	return nil
-}
-
-func (w *ConnectorStateWatcher) CheckErrorAndSwap(err error, newState ConnectorState) {
-	vw := (*csync.ValueWatcher[ConnectorState])(w)
+	err := f(currentState)
 	if err != nil {
-		vw.Set(StateErrored)
-	} else {
-		vw.Set(newState)
+		lockedWatcher.Set(StateErrored)
+		return err
 	}
+
+	w.swap(lockedWatcher, opts.StateAfter)
+	return nil
+}
+
+// func (w *ConnectorStateWatcher) DoAndSwap(f func(currentState ConnectorState) error, newState ConnectorState) (bool, error) {
+// 	lockedWatcher := (*csync.ValueWatcher[ConnectorState])(w).Lock()
+// 	defer lockedWatcher.Unlock()
+//
+// 	currentState := lockedWatcher.Get()
+// 	err := f(currentState)
+// 	if err != nil {
+// 		return false, err
+// 	}
+//
+// 	// only swap the state if the current state is greater
+// 	swap := currentState <= newState
+// 	if swap {
+// 		lockedWatcher.Set(newState)
+// 	}
+//
+// 	return swap, nil
+// }
+//
+// func (w *ConnectorStateWatcher) CompareAndSwap(expectedState ConnectorState, newState ConnectorState) (bool, error) {
+// 	return w.DoAndSwap(func(currentState ConnectorState) error {
+// 		if currentState != expectedState {
+// 			return fmt.Errorf("expected connector state %q, actual connector state is %q", expectedState, currentState)
+// 		}
+// 		return nil
+// 	}, newState)
+// }
+
+func (w *ConnectorStateWatcher) CheckErrorAndSwap(err error, newState ConnectorState) bool {
+	if err != nil {
+		return w.Set(StateErrored)
+	} else {
+		return w.Set(newState)
+	}
+}
+
+func (w *ConnectorStateWatcher) Set(newState ConnectorState) bool {
+	lockedWatcher := (*csync.ValueWatcher[ConnectorState])(w).Lock()
+	defer lockedWatcher.Unlock()
+	return w.swap(lockedWatcher, newState)
+}
+
+//
+// func (w *ConnectorStateWatcher) Watch(ctx context.Context, states ...ConnectorState) (ConnectorState, error) {
+// 	return (*csync.ValueWatcher[ConnectorState])(w).Watch(
+// 		ctx,
+// 		csync.WatchValues(states...),
+// 	)
+// }
+
+func (w *ConnectorStateWatcher) swap(lvw *csync.LockedValueWatcher[ConnectorState], newState ConnectorState) bool {
+	if lvw.Get() >= newState {
+		// states can only increase
+		return false
+	}
+	lvw.Set(newState)
+	return true
 }

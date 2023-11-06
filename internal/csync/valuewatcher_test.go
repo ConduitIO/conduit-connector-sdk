@@ -61,7 +61,7 @@ func TestValueWatcher_PutGetPtr(t *testing.T) {
 }
 
 func TestValueWatcher_WatchSuccess(t *testing.T) {
-	goleak.VerifyNone(t)
+	goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	is := is.New(t)
 
 	var h ValueWatcher[int]
@@ -74,8 +74,7 @@ func TestValueWatcher_WatchSuccess(t *testing.T) {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	i := 0
 	val, err := h.Watch(ctx, func(val int) bool {
@@ -96,7 +95,7 @@ func TestValueWatcher_WatchSuccess(t *testing.T) {
 			is.Fail() // unexpected value for i
 			return false
 		}
-	})
+	}, WithTimeout(time.Second))
 	is.NoErr(err)
 	is.Equal(3, i)
 	is.Equal(555, val)
@@ -111,11 +110,11 @@ func TestValueWatcher_WatchSuccess(t *testing.T) {
 }
 
 func TestValueWatcher_WatchContextCancel(t *testing.T) {
-	goleak.VerifyNone(t)
+	goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	is := is.New(t)
 
 	var h ValueWatcher[int]
-	h.Set(1)
+	h.Set(5)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10)
 	defer cancel()
@@ -123,18 +122,18 @@ func TestValueWatcher_WatchContextCancel(t *testing.T) {
 	i := 0
 	val, err := h.Watch(ctx, func(val int) bool {
 		i++
-		is.Equal(1, val)
+		is.Equal(5, val)
 		return false
 	})
 
 	is.Equal(ctx.Err(), err)
 	is.Equal(1, i)
-	is.Equal(0, val)
+	is.Equal(5, val)
 }
 
 func TestValueWatcher_WatchMultiple(t *testing.T) {
 	const watcherCount = 100
-	goleak.VerifyNone(t)
+	goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	is := is.New(t)
 
 	var h ValueWatcher[int]
@@ -186,7 +185,7 @@ func TestValueWatcher_Concurrency(t *testing.T) {
 	const setterCount = 40
 	const setCount = 20
 
-	goleak.VerifyNone(t)
+	goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	is := is.New(t)
 
 	var h ValueWatcher[int]
@@ -237,4 +236,69 @@ func TestValueWatcher_Concurrency(t *testing.T) {
 	// wait for all watchers to be done
 	err = (*WaitGroup)(&wg2).Wait(context.Background(), WithTimeout(time.Second))
 	is.NoErr(err)
+}
+
+func TestValueWatcher_Lock_Set(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+
+	var h ValueWatcher[int]
+	lockedWatcher := h.Lock()
+
+	want := 10
+
+	var wg WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		got := h.Get()
+		is.Equal(want, got)
+	}()
+
+	// goroutine should be blocked because value watcher is locked
+	err := wg.Wait(ctx, WithTimeout(time.Millisecond*100))
+	is.Equal(err, context.DeadlineExceeded)
+
+	// we can set the value while we hold the lock
+	lockedWatcher.Set(want)
+	lockedWatcher.Unlock()
+
+	// now that the watcher is unlocked the goroutine should be unblocked
+	err = wg.Wait(ctx, WithTimeout(time.Millisecond*100))
+	is.NoErr(err)
+
+	got := h.Get()
+	is.Equal(want, got)
+}
+
+func TestValueWatcher_Lock_Get(t *testing.T) {
+	is := is.New(t)
+
+	var h ValueWatcher[int]
+	lockedWatcher := h.Lock()
+
+	want := 10
+
+	var wg WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		h.Set(want)
+	}()
+
+	// goroutine should be blocked because value watcher is locked
+	err := wg.Wait(context.Background(), WithTimeout(time.Millisecond*100))
+	is.Equal(err, context.DeadlineExceeded)
+
+	got := lockedWatcher.Get()
+	is.Equal(0, got)
+
+	lockedWatcher.Unlock()
+
+	// now that the watcher is unlocked the goroutine should be unblocked
+	err = wg.Wait(context.Background(), WithTimeout(time.Millisecond*100))
+	is.NoErr(err)
+
+	got = h.Get()
+	is.Equal(want, got)
 }

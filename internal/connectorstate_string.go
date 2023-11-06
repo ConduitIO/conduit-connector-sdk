@@ -16,22 +16,23 @@ func _() {
 	_ = x[StateRunning-5]
 	_ = x[StateStopping-6]
 	_ = x[StateStopped-7]
-	_ = x[StateTorndown-8]
+	_ = x[StateTearingDown-8]
+	_ = x[StateTornDown-9]
 	_ = x[StateErrored-500]
 }
 
 const (
-	_ConnectorState_name_0 = "InitialConfiguringConfiguredStartingStartedRunningStoppingStoppedTorndown"
+	_ConnectorState_name_0 = "InitialConfiguringConfiguredStartingStartedRunningStoppingStoppedTearingDownTornDown"
 	_ConnectorState_name_1 = "Errored"
 )
 
 var (
-	_ConnectorState_index_0 = [...]uint8{0, 7, 18, 28, 36, 43, 50, 58, 65, 73}
+	_ConnectorState_index_0 = [...]uint8{0, 7, 18, 28, 36, 43, 50, 58, 65, 76, 84}
 )
 
 func (i ConnectorState) String() string {
 	switch {
-	case 0 <= i && i <= 8:
+	case 0 <= i && i <= 9:
 		return _ConnectorState_name_0[_ConnectorState_index_0[i]:_ConnectorState_index_0[i+1]]
 	case i == 500:
 		return _ConnectorState_name_1
