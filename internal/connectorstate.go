@@ -32,7 +32,9 @@ const (
 	StateConfigured
 	StateStarting
 	StateStarted
+	StateInitiatingRun
 	StateRunning
+	StateInitiatingStop
 	StateStopping
 	StateStopped
 	StateTearingDown
@@ -98,14 +100,6 @@ func (w *ConnectorStateWatcher) DoWithLock(
 
 	w.swap(lockedWatcher, opts.StateAfter)
 	return nil
-}
-
-func (w *ConnectorStateWatcher) CheckErrorAndSwap(err error, newState ConnectorState) bool {
-	if err != nil {
-		return w.Set(StateErrored)
-	} else {
-		return w.Set(newState)
-	}
 }
 
 func (w *ConnectorStateWatcher) Set(newState ConnectorState) bool {

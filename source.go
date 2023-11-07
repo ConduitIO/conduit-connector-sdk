@@ -194,7 +194,7 @@ func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceSta
 func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRunStream) (err error) {
 	err = a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateStarted},
-		StateBefore:          internal.StateRunning, // TODO create another state
+		StateBefore:          internal.StateInitiatingRun,
 		StateAfter:           internal.StateRunning,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
@@ -218,7 +218,13 @@ func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRu
 		return err
 	}
 
-	defer func() { a.state.CheckErrorAndSwap(err, internal.StateStopped) }()
+	defer func() {
+		if err != nil {
+			a.state.Set(internal.StateErrored)
+		} else {
+			a.state.Set(internal.StateStopped)
+		}
+	}()
 
 	<-a.t.Dying() // stop as soon as it's dying
 	return a.t.Err()
@@ -287,9 +293,9 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRe
 		ExpectedStates: []internal.ConnectorState{
 			internal.StateRunning, internal.StateStopping, internal.StateTornDown, internal.StateErrored,
 		},
-		StateBefore:          internal.StateStopping,
-		StateAfter:           internal.StateStopping, // TODO create another state?
-		WaitForExpectedState: true,                   // wait for one of the expected states
+		StateBefore:          internal.StateInitiatingStop,
+		StateAfter:           internal.StateStopping,
+		WaitForExpectedState: true, // wait for one of the expected states
 	}, func(state internal.ConnectorState) error {
 		if state != internal.StateRunning {
 			// stop already executed or we errored out, in any case we don't do anything
@@ -320,10 +326,11 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRe
 }
 
 func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
+	var waitErr error // store waitErr
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates: nil, // Teardown can be called from any state
 		StateBefore:    internal.StateTearingDown,
-		StateAfter:     internal.StateTornDown, // TODO set state regardless of error
+		StateAfter:     internal.StateTornDown,
 	}, func(state internal.ConnectorState) error {
 		// cancel open and read context, in case Stop was not called (can happen in
 		// case the stop was triggered by an error)
@@ -337,7 +344,6 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTe
 			a.readCancel()
 		}
 
-		var waitErr error
 		if a.t != nil {
 			waitErr = a.waitForRun(ctx, teardownTimeout) // wait for Run to stop running
 			if waitErr != nil {
@@ -348,14 +354,12 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTe
 			}
 		}
 
-		err := a.impl.Teardown(ctx)
-		if err != nil {
-			return err
-		}
-
-		return waitErr
+		return a.impl.Teardown(ctx)
 	})
 
+	if err == nil {
+		err = waitErr
+	}
 	return cpluginv1.SourceTeardownResponse{}, err
 }
 
