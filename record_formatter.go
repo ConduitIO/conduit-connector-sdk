@@ -16,13 +16,13 @@ package sdk
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
+	"github.com/goccy/go-json"
 )
 
 // RecordFormatter is a type that can format a record to bytes. It's used in
