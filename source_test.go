@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
+
 	"github.com/conduitio/conduit-connector-sdk/internal"
 
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
@@ -265,6 +267,74 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 
 	// wait for Run to exit, teardown killed it
 	<-runDone
+}
+
+func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	src := NewMockSource(ctrl)
+
+	stopTimeout = time.Second
+	defer func() {
+		stopTimeout = time.Minute // reset
+	}()
+
+	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
+
+	want := Record{
+		Position: Position("foo"),
+	}
+
+	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
+
+	// produce one record, then return ErrBackoffRetry
+	r1 := src.EXPECT().Read(gomock.Any()).Return(want, nil)
+	src.EXPECT().Read(gomock.Any()).Return(Record{}, ErrBackoffRetry).After(r1)
+
+	stream, reqStream, respStream := newSourceRunStreamMock(ctrl)
+
+	// Start connector now
+	ctx := context.Background()
+	_, err := srcPlugin.Start(ctx, cpluginv1.SourceStartRequest{Position: nil})
+
+	// Run was not triggered yet, but we try to stop
+	stopResp, err := srcPlugin.Stop(ctx, cpluginv1.SourceStopRequest{})
+	is.True(errors.Is(err, context.DeadlineExceeded))
+	is.Equal(nil, stopResp.LastPosition) // unexpected last position
+
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		err := srcPlugin.Run(ctx, stream)
+		is.NoErr(err)
+	}()
+
+	// Stop should still be blocked because there is a pending record that was not read yet
+	stopResp, err = srcPlugin.Stop(ctx, cpluginv1.SourceStopRequest{})
+	is.True(errors.Is(err, context.DeadlineExceeded))
+	is.Equal(nil, stopResp.LastPosition) // unexpected last position
+
+	// fetch produced record
+	resp := <-respStream
+	is.Equal(resp, cpluginv1.SourceRunResponse{
+		Record: cpluginv1.Record{
+			Position: want.Position,
+		},
+	})
+
+	// after this the connector can be stopped
+	stopResp, err = srcPlugin.Stop(ctx, cpluginv1.SourceStopRequest{})
+	is.NoErr(err)
+	is.Equal([]byte(want.Position), stopResp.LastPosition) // unexpected last position
+
+	// close stream
+	close(reqStream)
+	close(respStream)
+
+	// wait for Run to exit
+	_, _, err = cchan.ChanOut[struct{}](runDone).RecvTimeout(ctx, time.Second)
+	is.NoErr(err)
 }
 
 func TestSourcePluginAdapter_Teardown(t *testing.T) {
