@@ -22,12 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
-
-	"github.com/conduitio/conduit-connector-sdk/internal"
-
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	cpluginv1mock "github.com/conduitio/conduit-connector-protocol/cpluginv1/mock"
+	"github.com/conduitio/conduit-connector-sdk/internal"
+	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
 	"github.com/golang/mock/gomock"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"

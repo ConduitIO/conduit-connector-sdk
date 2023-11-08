@@ -326,7 +326,6 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRe
 }
 
 func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
-	var waitErr error // store waitErr
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates: nil, // Teardown can be called from any state
 		StateBefore:    internal.StateTearingDown,
@@ -344,6 +343,7 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTe
 			a.readCancel()
 		}
 
+		var waitErr error
 		if a.t != nil {
 			waitErr = a.waitForRun(ctx, teardownTimeout) // wait for Run to stop running
 			if waitErr != nil {
@@ -354,12 +354,13 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTe
 			}
 		}
 
-		return a.impl.Teardown(ctx)
+		err := a.impl.Teardown(ctx)
+		if err == nil {
+			err = waitErr
+		}
+		return err
 	})
 
-	if err == nil {
-		err = waitErr
-	}
 	return cpluginv1.SourceTeardownResponse{}, err
 }
 
