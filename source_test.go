@@ -297,6 +297,7 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 	// Start connector now
 	ctx := context.Background()
 	_, err := srcPlugin.Start(ctx, cpluginv1.SourceStartRequest{Position: nil})
+	is.NoErr(err)
 
 	// Run was not triggered yet, but we try to stop
 	stopResp, err := srcPlugin.Stop(ctx, cpluginv1.SourceStopRequest{})
