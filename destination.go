@@ -234,7 +234,7 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 	defer a.openCancel()
 
 	// wait for last record to be received, if it doesn't arrive in time we try
-	// to flush what we have s far
+	// to flush what we have so far
 	_, err := a.lastPosition.Watch(
 		ctx,
 		func(val Position) bool {
