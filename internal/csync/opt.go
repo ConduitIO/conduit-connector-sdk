@@ -53,6 +53,7 @@ func applyAndRemoveCtxOptions(ctx context.Context, opts []Option) (context.Conte
 		ctx, cancel = ctxOpt.applyCtx(ctx)
 		cancelFns = append(cancelFns, cancel)
 	}
+
 	return ctx, func() {
 		// call cancel functions in reverse
 		for i := len(cancelFns) - 1; i >= 0; i-- {

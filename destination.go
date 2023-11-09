@@ -229,17 +229,34 @@ func (a *destinationPluginAdapter) ack(r Record, writeErr error, stream cpluginv
 	return nil
 }
 
+// Stop will initiate the stop of the destination connector. It will first wait
+// that the last position processed by the connector matches the last position
+// in the request and then trigger a flush, in case there are any cached records
+// (relevant in case of batching).
+// If the requested last position is not encountered in 1 minute it will proceed
+// flushing records received so far and return an error. Flushing of records
+// also has a timeout of 1 minute, after which the stop operation returns with
+// an error. In the worst case this operation can thus take 2 minutes.
 func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.DestinationStopRequest) (cpluginv1.DestinationStopResponse, error) {
 	// last thing we do is cancel context in Open
 	defer a.openCancel()
 
-	// wait for last record to be received
-	_, err := a.lastPosition.Watch(ctx, func(val Position) bool {
-		return bytes.Equal(val, req.LastPosition)
-	}, csync.WithTimeout(time.Minute)) // TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
+	// wait for last record to be received, if it doesn't arrive in time we try
+	// to flush what we have so far
+	actualLastPosition, err := a.lastPosition.Watch(
+		ctx,
+		func(val Position) bool {
+			return bytes.Equal(val, req.LastPosition)
+		},
+		csync.WithTimeout(stopTimeout),
+	)
+	if err != nil {
+		err = fmt.Errorf("did not encounter expected last position %q, actual last position %q: %w", req.LastPosition, actualLastPosition, err)
+		Logger(ctx).Warn().Err(err).Msg("proceeding to flush records that were received so far (other records won't be acked)")
+	}
 
 	// flush cached records, allow it to take at most 1 minute
-	flushCtx, cancel := context.WithTimeout(ctx, time.Minute) // TODO make the timeout configurable
+	flushCtx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
 	flushErr := a.writeStrategy.Flush(flushCtx)
@@ -253,6 +270,15 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv1.Desti
 }
 
 func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ cpluginv1.DestinationTeardownRequest) (cpluginv1.DestinationTeardownResponse, error) {
+	// cancel open context, in case Stop was not called (can happen in case the
+	// stop was triggered by an error)
+	// teardown can be called without "open" being called previously
+	// e.g. when Conduit is validating a connector configuration,
+	// it will call "configure" and then "teardown".
+	if a.openCancel != nil {
+		a.openCancel()
+	}
+
 	err := a.impl.Teardown(ctx)
 	if err != nil {
 		return cpluginv1.DestinationTeardownResponse{}, err
