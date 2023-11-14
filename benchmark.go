@@ -70,14 +70,14 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bm.measure(&bm.configure, func() {
+	bm.configure = bm.measure(func() {
 		err := bm.source.Configure(ctx, bm.config)
 		if err != nil {
 			b.Fatal(err)
 		}
 	})
 
-	bm.measure(&bm.open, func() {
+	bm.open = bm.measure(func() {
 		err := bm.source.Open(ctx, nil)
 		if err != nil {
 			b.Fatal(err)
@@ -90,7 +90,7 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 	go bm.acker(b, acks, &wg)
 
 	// measure first record read manually, it might be slower
-	bm.measure(&bm.firstRead, func() {
+	bm.firstRead = bm.measure(func() {
 		rec, err := bm.source.Read(ctx)
 		if err != nil {
 			b.Fatal("Read: ", err)
@@ -98,8 +98,7 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 		acks <- rec
 	})
 
-	b.ResetTimer() // we are only interested in measuring the read times
-	bm.measure(&bm.allReads, func() {
+	bm.allReads = bm.measure(func() {
 		for i := 0; i < b.N-1; i++ {
 			rec, err := bm.source.Read(ctx)
 			if err != nil {
@@ -108,17 +107,16 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 			acks <- rec
 		}
 	})
-	b.StopTimer()
 
 	// stop
-	bm.measure(&bm.stop, func() {
+	bm.stop = bm.measure(func() {
 		close(acks)
 		cancel()
 		wg.Wait()
 	})
 
 	// teardown
-	bm.measure(&bm.teardown, func() {
+	bm.teardown = bm.measure(func() {
 		err := bm.source.Teardown(context.Background())
 		if err != nil {
 			b.Fatal(err)
@@ -134,17 +132,15 @@ func (bm *benchmarkSource) acker(b *testing.B, c <-chan Record, wg *sync.WaitGro
 	ctx := context.Background()
 
 	rec := <-c // read first ack manually
-	bm.measure(&bm.firstAck, func() {
+	bm.firstAck = bm.measure(func() {
 		err := bm.source.Ack(ctx, rec.Position)
 		if err != nil {
 			b.Fatal("Ack: ", err)
 		}
 	})
 
-	count := 0
-	bm.measure(&bm.allAcks, func() {
+	bm.allAcks = bm.measure(func() {
 		for rec := range c {
-			count++
 			err := bm.source.Ack(context.Background(), rec.Position)
 			if err != nil {
 				b.Fatal("Ack: ", err)
@@ -153,10 +149,10 @@ func (bm *benchmarkSource) acker(b *testing.B, c <-chan Record, wg *sync.WaitGro
 	})
 }
 
-func (*benchmarkSource) measure(out *time.Duration, f func()) {
+func (*benchmarkSource) measure(f func()) time.Duration {
 	start := time.Now()
 	f()
-	*out = time.Since(start)
+	return time.Since(start)
 }
 
 func (bm *benchmarkSource) reportMetrics(b *testing.B) {
