@@ -28,10 +28,10 @@ import (
 // that don't take a context and can potentially block the execution forever.
 func Run(ctx context.Context, fn func(), opts ...Option) error {
 	ctx, cancel, opts := applyAndRemoveCtxOptions(ctx, opts)
-	if len(opts) > 0 {
-		panic(fmt.Sprintf("invalid option type: %T", opts[0]))
-	}
 	defer cancel()
+	if len(opts) > 0 {
+		return fmt.Errorf("invalid option type: %T", opts[0])
+	}
 
 	done := make(chan struct{})
 	go func() {

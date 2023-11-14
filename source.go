@@ -126,6 +126,8 @@ func NewSourcePlugin(impl Source) cpluginv1.SourcePlugin {
 type sourcePluginAdapter struct {
 	impl Source
 
+	state internal.ConnectorStateWatcher
+
 	// readDone will be closed after runRead stops running.
 	readDone chan struct{}
 
@@ -138,58 +140,94 @@ type sourcePluginAdapter struct {
 }
 
 func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.SourceConfigureRequest) (cpluginv1.SourceConfigureResponse, error) {
-	v := validator(a.impl.Parameters())
-	// init config and apply default values
-	updatedCfg, multiErr := v.InitConfig(req.Config)
-	// run builtin validations
-	multiErr = multierr.Append(multiErr, validator(a.impl.Parameters()).Validate(updatedCfg))
-	// run custom validations written by developer
-	multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, updatedCfg))
+	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
+		ExpectedStates:       []internal.ConnectorState{internal.StateInitial},
+		StateBefore:          internal.StateConfiguring,
+		StateAfter:           internal.StateConfigured,
+		WaitForExpectedState: false,
+	}, func(_ internal.ConnectorState) error {
+		v := validator(a.impl.Parameters())
+		// init config and apply default values
+		updatedCfg, multiErr := v.InitConfig(req.Config)
+		// run builtin validations
+		multiErr = multierr.Append(multiErr, validator(a.impl.Parameters()).Validate(updatedCfg))
+		// run custom validations written by developer
+		multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, updatedCfg))
 
-	return cpluginv1.SourceConfigureResponse{}, multiErr
+		return multiErr
+	})
+
+	return cpluginv1.SourceConfigureResponse{}, err
 }
 
 func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceStartRequest) (cpluginv1.SourceStartResponse, error) {
-	// detach context, so we can control when it's canceled
-	ctxOpen := internal.DetachContext(ctx)
-	ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
+	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
+		ExpectedStates:       []internal.ConnectorState{internal.StateConfigured},
+		StateBefore:          internal.StateStarting,
+		StateAfter:           internal.StateStarted,
+		WaitForExpectedState: false,
+	}, func(_ internal.ConnectorState) error {
+		// detach context, so we can control when it's canceled
+		ctxOpen := internal.DetachContext(ctx)
+		ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
 
-	startDone := make(chan struct{})
-	defer close(startDone)
-	go func() {
-		// for duration of the Start call we propagate the cancellation of ctx to
-		// ctxOpen, after Start returns we decouple the context and let it live
-		// until the plugin should stop running
-		select {
-		case <-ctx.Done():
-			a.openCancel()
-		case <-startDone:
-			// start finished before ctx was canceled, leave context open
-		}
-	}()
+		startDone := make(chan struct{})
+		defer close(startDone)
+		go func() {
+			// for duration of the Start call we propagate the cancellation of ctx to
+			// ctxOpen, after Start returns we decouple the context and let it live
+			// until the plugin should stop running
+			select {
+			case <-ctx.Done():
+				a.openCancel()
+			case <-startDone:
+				// start finished before ctx was canceled, leave context open
+			}
+		}()
 
-	err := a.impl.Open(ctxOpen, req.Position)
+		return a.impl.Open(ctxOpen, req.Position)
+	})
+
 	return cpluginv1.SourceStartResponse{}, err
 }
 
-func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRunStream) error {
-	t, ctx := tomb.WithContext(ctx)
-	readCtx, readCancel := context.WithCancel(ctx)
+func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRunStream) (err error) {
+	err = a.state.DoWithLock(ctx, internal.DoWithLockOptions{
+		ExpectedStates:       []internal.ConnectorState{internal.StateStarted},
+		StateBefore:          internal.StateInitiatingRun,
+		StateAfter:           internal.StateRunning,
+		WaitForExpectedState: false,
+	}, func(_ internal.ConnectorState) error {
+		t, ctx := tomb.WithContext(ctx)
+		readCtx, readCancel := context.WithCancel(ctx)
 
-	a.t = t
-	a.readCancel = readCancel
-	a.readDone = make(chan struct{})
+		a.t = t
+		a.readCancel = readCancel
+		a.readDone = make(chan struct{})
 
-	t.Go(func() error {
-		defer close(a.readDone)
-		return a.runRead(readCtx, stream)
+		t.Go(func() error {
+			defer close(a.readDone)
+			return a.runRead(readCtx, stream)
+		})
+		t.Go(func() error {
+			return a.runAck(ctx, stream)
+		})
+		return nil
 	})
-	t.Go(func() error {
-		return a.runAck(ctx, stream)
-	})
+	if err != nil {
+		return err
+	}
 
-	<-t.Dying() // stop as soon as it's dying
-	return t.Err()
+	defer func() {
+		if err != nil {
+			a.state.Set(internal.StateErrored)
+		} else {
+			a.state.Set(internal.StateStopped)
+		}
+	}()
+
+	<-a.t.Dying() // stop as soon as it's dying
+	return a.t.Err()
 }
 
 func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cpluginv1.SourceRunStream) error {
@@ -248,13 +286,35 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cpluginv1.Sourc
 }
 
 func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRequest) (cpluginv1.SourceStopResponse, error) {
-	// stop reading new messages
-	a.openCancel()
-	a.readCancel()
+	ctx, cancel := context.WithTimeout(ctx, stopTimeout)
+	defer cancel()
+
+	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
+		ExpectedStates: []internal.ConnectorState{
+			internal.StateRunning, internal.StateStopping, internal.StateTornDown, internal.StateErrored,
+		},
+		StateBefore:          internal.StateInitiatingStop,
+		StateAfter:           internal.StateStopping,
+		WaitForExpectedState: true, // wait for one of the expected states
+	}, func(state internal.ConnectorState) error {
+		if state != internal.StateRunning {
+			// stop already executed or we errored out, in any case we don't do anything
+			Logger(ctx).Warn().Str("state", state.String()).Msg("connector state is not \"Running\", skipping stop")
+			return nil
+		}
+
+		// stop reading new messages
+		a.openCancel()
+		a.readCancel()
+		return nil
+	})
+	if err != nil {
+		return cpluginv1.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
+	}
 
 	// wait for read to actually stop running with a timeout, in case the
 	// connector gets stuck
-	_, _, err := cchan.ChanOut[struct{}](a.readDone).RecvTimeout(ctx, stopTimeout)
+	_, _, err = cchan.ChanOut[struct{}](a.readDone).Recv(ctx)
 	if err != nil {
 		Logger(ctx).Warn().Err(err).Msg("failed to wait for Read to stop running")
 		return cpluginv1.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
@@ -266,35 +326,42 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRe
 }
 
 func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
-	// cancel open and read context, in case Stop was not called (can happen in
-	// case the stop was triggered by an error)
-	// teardown can be called without "open" or "read" being called previously
-	// e.g. when Conduit is validating a connector configuration,
-	// it will call "configure" and then "teardown".
-	if a.openCancel != nil {
-		a.openCancel()
-	}
-	if a.readCancel != nil {
-		a.readCancel()
-	}
-
-	var waitErr error
-	if a.t != nil {
-		waitErr = a.waitForRun(ctx, teardownTimeout) // wait for Run to stop running
-		if waitErr != nil {
-			// just log error and continue to call Teardown to keep guarantee
-			Logger(ctx).Warn().Err(waitErr).Msg("failed to wait for Run to stop running")
-			// kill tomb to release Run
-			a.t.Kill(errors.New("forceful teardown"))
+	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
+		ExpectedStates: nil, // Teardown can be called from any state
+		StateBefore:    internal.StateTearingDown,
+		StateAfter:     internal.StateTornDown,
+	}, func(state internal.ConnectorState) error {
+		// cancel open and read context, in case Stop was not called (can happen in
+		// case the stop was triggered by an error)
+		// teardown can be called without "open" or "read" being called previously
+		// e.g. when Conduit is validating a connector configuration,
+		// it will call "configure" and then "teardown".
+		if a.openCancel != nil {
+			a.openCancel()
 		}
-	}
+		if a.readCancel != nil {
+			a.readCancel()
+		}
 
-	err := a.impl.Teardown(ctx)
-	if err != nil {
-		return cpluginv1.SourceTeardownResponse{}, err
-	}
+		var waitErr error
+		if a.t != nil {
+			waitErr = a.waitForRun(ctx, teardownTimeout) // wait for Run to stop running
+			if waitErr != nil {
+				// just log error and continue to call Teardown to keep guarantee
+				Logger(ctx).Warn().Err(waitErr).Msg("failed to wait for Run to stop running")
+				// kill tomb to release Run
+				a.t.Kill(errors.New("forceful teardown"))
+			}
+		}
 
-	return cpluginv1.SourceTeardownResponse{}, waitErr
+		err := a.impl.Teardown(ctx)
+		if err == nil {
+			err = waitErr
+		}
+		return err
+	})
+
+	return cpluginv1.SourceTeardownResponse{}, err
 }
 
 func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req cpluginv1.SourceLifecycleOnCreatedRequest) (cpluginv1.SourceLifecycleOnCreatedResponse, error) {
