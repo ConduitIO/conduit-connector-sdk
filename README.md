@@ -96,6 +96,17 @@ log messages that will be included in Conduit logs.
 Keep in mind that logging in the hot path (e.g. reading or writing a record) can have a negative impact on performance and should
 be avoided. If you _really_ want to add a log message in the hot path please use the "trace" level.
 
+**Q: How do I enable logging on my tests?**
+
+By default, logging calls made using the `sdk.Logger` in your development environment will not produce any output. To enable logging while running your connector tests or debugging, you need to configure `zerolog.DefaultContextLogger` explicitly. This can be done by adding the following code snippet to your project:
+
+```go
+func init() {
+    log := log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+    zerolog.DefaultContextLogger = &log
+}
+```
+
 **Q: Do I need to worry about ordering?**
 
 In case of the destination connector you do not have to worry about ordering. Conduit will supply records one by one in the order
