@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
-
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
@@ -372,9 +371,11 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTe
 func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req cpluginv1.SourceLifecycleOnCreatedRequest) (cpluginv1.SourceLifecycleOnCreatedResponse, error) {
 	return cpluginv1.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
+
 func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req cpluginv1.SourceLifecycleOnUpdatedRequest) (cpluginv1.SourceLifecycleOnUpdatedResponse, error) {
 	return cpluginv1.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
+
 func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cpluginv1.SourceLifecycleOnDeletedRequest) (cpluginv1.SourceLifecycleOnDeletedResponse, error) {
 	return cpluginv1.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }

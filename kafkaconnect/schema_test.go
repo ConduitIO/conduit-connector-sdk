@@ -15,9 +15,8 @@
 package kafkaconnect
 
 import (
-	"testing"
-
 	"encoding/json"
+	"testing"
 
 	"github.com/matryer/is"
 )

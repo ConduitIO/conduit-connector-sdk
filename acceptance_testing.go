@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
-
 	"github.com/jpillora/backoff"
 	"github.com/matryer/is"
 	"go.uber.org/goleak"

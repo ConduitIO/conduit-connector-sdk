@@ -19,8 +19,10 @@ import (
 	"testing"
 )
 
-var valSink int
-var errSink error
+var (
+	valSink int
+	errSink error
+)
 
 func BenchmarkValueWatcher_Watch(b *testing.B) {
 	var w ValueWatcher[int]

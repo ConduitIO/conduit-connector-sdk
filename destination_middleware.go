@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
-
 	"golang.org/x/time/rate"
 )
 
@@ -76,6 +75,7 @@ type DestinationWithBatch struct {
 func (d DestinationWithBatch) BatchSizeParameterName() string {
 	return configDestinationBatchSize
 }
+
 func (d DestinationWithBatch) BatchDelayParameterName() string {
 	return configDestinationBatchDelay
 }
@@ -102,6 +102,7 @@ func (DestinationWithBatch) setBatchEnabled(ctx context.Context, enabled bool) c
 	}
 	return ctx
 }
+
 func (DestinationWithBatch) getBatchEnabled(ctx context.Context) bool {
 	flag, ok := ctx.Value(ctxKeyBatchEnabled{}).(*bool)
 	if !ok {
@@ -278,6 +279,7 @@ type DestinationWithRecordFormat struct {
 func (d DestinationWithRecordFormat) RecordFormatParameterName() string {
 	return configDestinationRecordFormat
 }
+
 func (d DestinationWithRecordFormat) RecordFormatOptionsParameterName() string {
 	return configDestinationRecordFormatOptions
 }

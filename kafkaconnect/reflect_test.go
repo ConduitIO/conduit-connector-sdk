@@ -77,12 +77,14 @@ func TestReflect_Types(t *testing.T) {
 				Type:   TypeMap,
 				Keys:   &Schema{Type: TypeInt64},
 				Values: &Schema{Type: TypeFloat},
-			}, {
+			},
+			{
 				Field:    "MyArray",
 				Type:     TypeArray,
 				Items:    &Schema{Type: TypeInt32},
 				Optional: true,
-			}, {
+			},
+			{
 				Field:    "MySlice",
 				Type:     TypeArray,
 				Items:    &Schema{Type: TypeBoolean},
@@ -174,12 +176,14 @@ func TestReflect_MapAsStruct(t *testing.T) {
 				Type:   TypeMap,
 				Keys:   &Schema{Type: TypeInt64},
 				Values: &Schema{Type: TypeFloat},
-			}, {
+			},
+			{
 				Field:    "MyArray",
 				Type:     TypeArray,
 				Items:    &Schema{Type: TypeInt32},
 				Optional: true,
-			}, {
+			},
+			{
 				Field:    "MySlice",
 				Type:     TypeArray,
 				Items:    &Schema{Type: TypeBoolean},

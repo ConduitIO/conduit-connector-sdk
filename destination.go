@@ -295,9 +295,11 @@ func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ cpluginv1.Des
 func (a *destinationPluginAdapter) LifecycleOnCreated(ctx context.Context, req cpluginv1.DestinationLifecycleOnCreatedRequest) (cpluginv1.DestinationLifecycleOnCreatedResponse, error) {
 	return cpluginv1.DestinationLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
+
 func (a *destinationPluginAdapter) LifecycleOnUpdated(ctx context.Context, req cpluginv1.DestinationLifecycleOnUpdatedRequest) (cpluginv1.DestinationLifecycleOnUpdatedResponse, error) {
 	return cpluginv1.DestinationLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
+
 func (a *destinationPluginAdapter) LifecycleOnDeleted(ctx context.Context, req cpluginv1.DestinationLifecycleOnDeletedRequest) (cpluginv1.DestinationLifecycleOnDeletedResponse, error) {
 	return cpluginv1.DestinationLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
@@ -480,6 +482,7 @@ func (w *writeStrategyBatch) Write(ctx context.Context, r Record, ack func(error
 		return fmt.Errorf("unknown batcher enqueue status: %v", status)
 	}
 }
+
 func (w *writeStrategyBatch) Flush(ctx context.Context) error {
 	w.batcher.Flush()
 	select {
