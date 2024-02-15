@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
-
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/csync"
