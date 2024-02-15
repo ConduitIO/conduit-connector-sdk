@@ -20,8 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/matryer/is"
+	"go.uber.org/mock/gomock"
 	"golang.org/x/time/rate"
 )
 
@@ -32,7 +33,7 @@ func TestDestinationWithBatch_Parameters(t *testing.T) {
 
 	d := DestinationWithBatch{}.Wrap(dst)
 
-	want := map[string]Parameter{
+	want := config.Parameters{
 		"foo": {
 			Default:     "bar",
 			Description: "baz",
@@ -114,7 +115,7 @@ func TestDestinationWithRateLimit_Parameters(t *testing.T) {
 
 	d := DestinationWithRateLimit{}.Wrap(dst)
 
-	want := map[string]Parameter{
+	want := config.Parameters{
 		"foo": {
 			Default:     "bar",
 			Description: "baz",

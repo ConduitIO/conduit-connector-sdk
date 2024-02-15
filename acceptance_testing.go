@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conduitio/conduit-commons/config"
+
 	"github.com/jpillora/backoff"
 	"github.com/matryer/is"
 	"go.uber.org/goleak"
@@ -565,9 +567,9 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	origCfg := a.driver.SourceConfig(t)
 
 	for name, p := range srcSpec.Parameters() {
-		isRequired := p.Required
+		var isRequired bool
 		for _, v := range p.Validations {
-			if _, ok := v.(ValidationRequired); ok {
+			if _, ok := v.(config.ValidationRequired); ok {
 				isRequired = true
 				break
 			}
@@ -799,9 +801,9 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	origCfg := a.driver.DestinationConfig(t)
 
 	for name, p := range destSpec.Parameters() {
-		isRequired := p.Required
+		var isRequired bool
 		for _, v := range p.Validations {
-			if _, ok := v.(ValidationRequired); ok {
+			if _, ok := v.(config.ValidationRequired); ok {
 				isRequired = true
 				break
 			}

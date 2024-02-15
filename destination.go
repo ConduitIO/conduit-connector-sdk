@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/conduitio/conduit-commons/config"
+
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/csync"
@@ -37,7 +39,7 @@ import (
 type Destination interface {
 	// Parameters is a map of named Parameters that describe how to configure
 	// the Destination.
-	Parameters() map[string]Parameter
+	Parameters() config.Parameters
 
 	// Configure is the first function to be called in a connector. It provides the
 	// connector with the configuration that needs to be validated and stored.
@@ -110,16 +112,20 @@ type destinationPluginAdapter struct {
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.DestinationConfigureRequest) (cpluginv1.DestinationConfigureResponse, error) {
 	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
 
-	v := validator(a.impl.Parameters())
-	// init config and apply default values
-	updatedCfg, multiErr := v.InitConfig(req.Config)
-	// run builtin validations
-	multiErr = multierr.Append(multiErr, v.Validate(updatedCfg))
-	// run custom validations written by developer
-	multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, updatedCfg))
-	multiErr = multierr.Append(multiErr, a.configureWriteStrategy(ctx, updatedCfg))
+	parameters := a.impl.Parameters()
 
-	return cpluginv1.DestinationConfigureResponse{}, multiErr
+	// init config, apply default values and run builtin validations
+	err1 := config.Config(req.Config).
+		Sanitize().
+		ApplyDefaults(parameters).
+		Validate(parameters)
+
+	// run custom validations written by developer
+	err2 := a.impl.Configure(ctx, req.Config)
+
+	err3 := a.configureWriteStrategy(ctx, req.Config)
+
+	return cpluginv1.DestinationConfigureResponse{}, multierr.Combine(err1, err2, err3)
 }
 
 func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config map[string]string) error {
