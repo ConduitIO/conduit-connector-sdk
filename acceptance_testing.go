@@ -31,6 +31,7 @@ import (
 
 	"github.com/jpillora/backoff"
 	"github.com/matryer/is"
+	"github.com/rs/zerolog"
 	"go.uber.org/goleak"
 )
 
@@ -60,6 +61,8 @@ func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 // flexibility is needed you can create your own driver, include the default
 // driver in the struct and override methods as needed.
 type AcceptanceTestDriver interface {
+	// Context returns the context to use in tests.
+	Context() context.Context
 	// Connector is the connector to be tested.
 	Connector() Connector
 
@@ -123,6 +126,9 @@ type ConfigurableAcceptanceTestDriver struct {
 // ConfigurableAcceptanceTestDriverConfig contains the configuration for
 // ConfigurableAcceptanceTestDriver.
 type ConfigurableAcceptanceTestDriverConfig struct {
+	// Context is the context to use in tests. The default is a context with a
+	// logger that writes to the test output.
+	Context context.Context
 	// Connector is the connector to be tested.
 	Connector Connector
 
@@ -174,6 +180,10 @@ const (
 	GenerateRawData
 	GenerateStructuredData
 )
+
+func (d ConfigurableAcceptanceTestDriver) Context() context.Context {
+	return d.Config.Context
+}
 
 func (d ConfigurableAcceptanceTestDriver) Connector() Connector {
 	return d.Config.Connector
@@ -351,7 +361,12 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []
 	}
 
 	is := is.New(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	rootCtx := d.Context()
+	if rootCtx == nil {
+		logger := zerolog.New(zerolog.NewTestWriter(t))
+		rootCtx = logger.WithContext(context.Background())
+	}
+	ctx, cancel := context.WithCancel(rootCtx)
 	defer cancel()
 
 	// writing something to the destination should result in the same record
@@ -364,8 +379,8 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []
 	is.NoErr(err)
 
 	defer func() {
-		cancel() // cancel context to simulate stop
-		err = dest.Teardown(context.Background())
+		cancel()                     // cancel context to simulate stop
+		err = dest.Teardown(rootCtx) // use rootCtx as it's not cancelled
 		is.NoErr(err)
 	}()
 
@@ -385,7 +400,12 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	}
 
 	is := is.New(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	rootCtx := d.Context()
+	if rootCtx == nil {
+		logger := zerolog.New(zerolog.NewTestWriter(t))
+		rootCtx = logger.WithContext(context.Background())
+	}
+	ctx, cancel := context.WithCancel(rootCtx)
 	defer cancel()
 
 	// writing something to the destination should result in the same record
@@ -398,8 +418,8 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	is.NoErr(err)
 
 	defer func() {
-		cancel() // first cancel context to simulate stop
-		err = src.Teardown(context.Background())
+		cancel()                    // first cancel context to simulate stop
+		err = src.Teardown(rootCtx) // use rootCtx as it's not cancelled
 		is.NoErr(err)
 	}()
 
@@ -544,7 +564,7 @@ func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
 func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := a.context(t)
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	source := a.driver.Connector().NewSource()
@@ -559,7 +579,7 @@ func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := a.context(t)
 
 	srcSpec := a.driver.Connector().NewSource()
 	origCfg := a.driver.SourceConfig(t)
@@ -594,7 +614,7 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 func (a acceptanceTest) TestSource_Open_ResumeAtPositionSnapshot(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := a.context(t)
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	// Write expectations before source is started, this means the source will
@@ -646,7 +666,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionSnapshot(t *testing.T) {
 func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := a.context(t)
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
@@ -694,7 +714,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := a.context(t)
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	positions := make(map[string]bool)
@@ -742,7 +762,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := a.context(t)
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
@@ -778,7 +798,7 @@ func (a acceptanceTest) TestDestination_Parameters_Success(t *testing.T) {
 func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := a.context(t)
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	dest := a.driver.Connector().NewDestination()
@@ -793,7 +813,7 @@ func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := a.context(t)
 
 	destSpec := a.driver.Connector().NewDestination()
 	origCfg := a.driver.DestinationConfig(t)
@@ -828,7 +848,7 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := a.context(t)
 	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
 
 	dest, cleanup := a.openDestination(ctx, t)
@@ -1080,4 +1100,14 @@ func (a acceptanceTest) isEqualData(is *is.I, want, got Data) {
 		// we have different types, compare content
 		is.Equal(want.Bytes(), got.Bytes()) // data did not match (want != got)
 	}
+}
+
+func (a acceptanceTest) context(t *testing.T) context.Context {
+	ctx := a.driver.Context()
+	if ctx == nil {
+		// default is a context with a logger
+		logger := zerolog.New(zerolog.NewTestWriter(t))
+		ctx = logger.WithContext(context.Background())
+	}
+	return ctx
 }
