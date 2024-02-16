@@ -50,6 +50,11 @@ type Source interface {
 	// In case the configuration is not valid it should return an error.
 	// Testing if your connector can reach the configured data source should be
 	// done in Open, not in Configure.
+	// The connector SDK will sanitize, apply defaults and validate the
+	// configuration before calling this function. This means that the
+	// configuration will always contain all keys defined in Parameters
+	// (unprovided keys will have their default values) and all non-empty
+	// values will be of the correct type.
 	Configure(context.Context, map[string]string) error
 
 	// Open is called after Configure to signal the plugin it can prepare to
