@@ -98,12 +98,14 @@ be avoided. If you _really_ want to add a log message in the hot path please use
 
 **Q: How do I enable logging on my tests?**
 
-By default, logging calls made using the `sdk.Logger` in your tests will not produce any output. To enable logging while running your connector tests or debugging, you need to configure `zerolog.DefaultContextLogger` explicitly. This can be done by adding the following code snippet to your project:
+By default, logging calls made using the `sdk.Logger` in your tests will not produce any output. To enable logging while running your connector tests or debugging, you need to pass a custom context with a zerolog logger inside:
 
 ```go
-func init() {
-    log := log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-    zerolog.DefaultContextLogger = &log
+func TestFoo(t *testing.T) {
+	logger := zerolog.New(zerolog.NewTestWriter(t))
+	ctx := logger.WithContext(context.Background())
+
+	// pass ctx to connector functions ...
 }
 ```
 
