@@ -17,13 +17,15 @@ package sdk
 import (
 	"context"
 	"fmt"
+
+	"github.com/conduitio/conduit-commons/config"
 )
 
 // UnimplementedDestination should be embedded to have forward compatible implementations.
 type UnimplementedDestination struct{}
 
 // Parameters needs to be overridden in the actual implementation.
-func (UnimplementedDestination) Parameters() map[string]Parameter {
+func (UnimplementedDestination) Parameters() config.Parameters {
 	return nil
 }
 
@@ -68,7 +70,7 @@ func (UnimplementedDestination) mustEmbedUnimplementedDestination() {}
 type UnimplementedSource struct{}
 
 // Parameters needs to be overridden in the actual implementation.
-func (UnimplementedSource) Parameters() map[string]Parameter {
+func (UnimplementedSource) Parameters() config.Parameters {
 	return nil
 }
 

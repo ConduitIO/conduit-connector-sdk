@@ -158,6 +158,7 @@ func (c DebeziumConverter) Configure(opt map[string]string) (Converter, error) {
 	}
 	return c, nil
 }
+
 func (c DebeziumConverter) Convert(r Record) (any, error) {
 	before, err := c.getStructuredData(r.Payload.Before)
 	if err != nil {
@@ -209,6 +210,7 @@ func (c DebeziumConverter) getStructuredData(d Data) (StructuredData, error) {
 		return nil, fmt.Errorf("unknown data type: %T", d)
 	}
 }
+
 func (c DebeziumConverter) parseRawDataAsJSON(d RawData) (StructuredData, error) {
 	// We have raw data, we need structured data.
 	// We can do our best and try to convert it if RawData is carrying raw JSON.
@@ -219,6 +221,7 @@ func (c DebeziumConverter) parseRawDataAsJSON(d RawData) (StructuredData, error)
 	}
 	return sd, nil
 }
+
 func (c DebeziumConverter) getDebeziumOp(o Operation) kafkaconnect.DebeziumOp {
 	switch o {
 	case OperationCreate:
@@ -260,6 +263,7 @@ func (e TemplateRecordFormatter) Configure(tmpl string) (RecordFormatter, error)
 	e.template = t
 	return e, nil
 }
+
 func (e TemplateRecordFormatter) Format(r Record) ([]byte, error) {
 	var b bytes.Buffer
 	err := e.template.Execute(&b, r)

@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/conduitio/conduit-commons/config"
 	"golang.org/x/time/rate"
 )
 
@@ -74,6 +75,7 @@ type DestinationWithBatch struct {
 func (d DestinationWithBatch) BatchSizeParameterName() string {
 	return configDestinationBatchSize
 }
+
 func (d DestinationWithBatch) BatchDelayParameterName() string {
 	return configDestinationBatchDelay
 }
@@ -100,6 +102,7 @@ func (DestinationWithBatch) setBatchEnabled(ctx context.Context, enabled bool) c
 	}
 	return ctx
 }
+
 func (DestinationWithBatch) getBatchEnabled(ctx context.Context) bool {
 	flag, ok := ctx.Value(ctxKeyBatchEnabled{}).(*bool)
 	if !ok {
@@ -113,17 +116,17 @@ type destinationWithBatch struct {
 	defaults DestinationWithBatch
 }
 
-func (d *destinationWithBatch) Parameters() map[string]Parameter {
-	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
+func (d *destinationWithBatch) Parameters() config.Parameters {
+	return mergeParameters(d.Destination.Parameters(), config.Parameters{
 		configDestinationBatchSize: {
 			Default:     strconv.Itoa(d.defaults.DefaultBatchSize),
 			Description: "Maximum size of batch before it gets written to the destination.",
-			Type:        ParameterTypeInt,
+			Type:        config.ParameterTypeInt,
 		},
 		configDestinationBatchDelay: {
 			Default:     d.defaults.DefaultBatchDelay.String(),
 			Description: "Maximum delay before an incomplete batch is written to the destination.",
-			Type:        ParameterTypeDuration,
+			Type:        config.ParameterTypeDuration,
 		},
 	})
 }
@@ -193,17 +196,17 @@ type destinationWithRateLimit struct {
 	limiter  *rate.Limiter
 }
 
-func (d *destinationWithRateLimit) Parameters() map[string]Parameter {
-	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
+func (d *destinationWithRateLimit) Parameters() config.Parameters {
+	return mergeParameters(d.Destination.Parameters(), config.Parameters{
 		configDestinationRatePerSecond: {
 			Default:     strconv.FormatFloat(d.defaults.DefaultRatePerSecond, 'f', -1, 64),
 			Description: "Maximum times records can be written per second (0 means no rate limit).",
-			Type:        ParameterTypeFloat,
+			Type:        config.ParameterTypeFloat,
 		},
 		configDestinationRateBurst: {
 			Default:     strconv.Itoa(d.defaults.DefaultBurst),
 			Description: "Allow bursts of at most X writes (1 or less means that bursts are not allowed). Only takes effect if a rate limit per second is set.",
-			Type:        ParameterTypeInt,
+			Type:        config.ParameterTypeInt,
 		},
 	})
 }
@@ -276,6 +279,7 @@ type DestinationWithRecordFormat struct {
 func (d DestinationWithRecordFormat) RecordFormatParameterName() string {
 	return configDestinationRecordFormat
 }
+
 func (d DestinationWithRecordFormat) RecordFormatOptionsParameterName() string {
 	return configDestinationRecordFormatOptions
 }
@@ -346,13 +350,13 @@ func (d *destinationWithRecordFormat) formats() []string {
 	return names
 }
 
-func (d *destinationWithRecordFormat) Parameters() map[string]Parameter {
-	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
+func (d *destinationWithRecordFormat) Parameters() config.Parameters {
+	return mergeParameters(d.Destination.Parameters(), config.Parameters{
 		configDestinationRecordFormat: {
 			Default:     d.defaults.DefaultRecordFormat,
 			Description: "The format of the output record.",
-			Validations: []Validation{
-				ValidationInclusion{List: d.formats()},
+			Validations: []config.Validation{
+				config.ValidationInclusion{List: d.formats()},
 			},
 		},
 		configDestinationRecordFormatOptions: {

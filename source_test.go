@@ -26,9 +26,9 @@ import (
 	cpluginv1mock "github.com/conduitio/conduit-connector-protocol/cpluginv1/mock"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
-	"github.com/golang/mock/gomock"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
+	"go.uber.org/mock/gomock"
 )
 
 func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {

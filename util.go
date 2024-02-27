@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -32,13 +33,13 @@ var Util = struct {
 	// Under the hood, this function uses the library mitchellh/mapstructure, with the "mapstructure" tag renamed to "json",
 	// so to rename a key, use the "json" tag and set a value directly. To embed structs, append ",squash" to your tag.
 	// for more details and docs, check https://pkg.go.dev/github.com/mitchellh/mapstructure
-	ParseConfig func(map[string]string, interface{}) error
+	ParseConfig func(map[string]string, any) error
 }{
 	ParseConfig: parseConfig,
 }
 
-func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[string]Parameter {
-	params := make(map[string]Parameter, len(p1)+len(p2))
+func mergeParameters(p1 config.Parameters, p2 config.Parameters) config.Parameters {
+	params := make(config.Parameters, len(p1)+len(p2))
 	for k, v := range p1 {
 		params[k] = v
 	}
@@ -52,10 +53,10 @@ func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[strin
 	return params
 }
 
-func breakUpConfig(c map[string]string) map[string]interface{} {
+func breakUpConfig(c map[string]string) map[string]any {
 	const sep = "."
 
-	brokenUp := make(map[string]interface{})
+	brokenUp := make(map[string]any)
 	for k, v := range c {
 		// break up based on dot and put in maps in case target struct is broken up
 		tokens := strings.Split(k, sep)
@@ -64,10 +65,10 @@ func breakUpConfig(c map[string]string) map[string]interface{} {
 		for _, t := range tokens {
 			current[remain] = v // we don't care if we overwrite a map here, the string has precedence
 			if _, ok := current[t]; !ok {
-				current[t] = map[string]interface{}{}
+				current[t] = map[string]any{}
 			}
 			var ok bool
-			current, ok = current[t].(map[string]interface{})
+			current, ok = current[t].(map[string]any)
 			if !ok {
 				break // this key is a string, leave it as it is
 			}
@@ -77,7 +78,7 @@ func breakUpConfig(c map[string]string) map[string]interface{} {
 	return brokenUp
 }
 
-func parseConfig(raw map[string]string, config interface{}) error {
+func parseConfig(raw map[string]string, config any) error {
 	dConfig := &mapstructure.DecoderConfig{
 		WeaklyTypedInput: true,
 		Result:           &config,
@@ -102,7 +103,8 @@ func emptyStringToZeroValueHookFunc() mapstructure.DecodeHookFunc {
 	return func(
 		f reflect.Type,
 		t reflect.Type,
-		data interface{}) (interface{}, error) {
+		data any,
+	) (any, error) {
 		if f.Kind() != reflect.String || data != "" {
 			return data, nil
 		}

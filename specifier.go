@@ -17,6 +17,7 @@ package sdk
 import (
 	"context"
 
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 )
 
@@ -36,21 +37,6 @@ type Specification struct {
 	Version string
 	// Author declares the entity that created or maintains this plugin.
 	Author string
-}
-
-// Parameter defines a single connector parameter.
-type Parameter struct {
-	// Default is the default value of the parameter, if any.
-	Default string
-	// Required controls if the parameter will be shown as required or optional.
-	// Deprecated: add ValidationRequired to Parameter.Validations instead.
-	Required bool
-	// Description holds a description of the field and how to configure it.
-	Description string
-	// Type defines the parameter data type.
-	Type ParameterType
-	// Validations slice of validations to be checked for the parameter.
-	Validations []Validation
 }
 
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that
@@ -74,8 +60,8 @@ func NewSpecifierPlugin(specs Specification, source Source, dest Destination) cp
 
 type specifierPluginAdapter struct {
 	specs             Specification
-	sourceParams      map[string]Parameter
-	destinationParams map[string]Parameter
+	sourceParams      map[string]config.Parameter
+	destinationParams map[string]config.Parameter
 }
 
 func (s *specifierPluginAdapter) Specify(context.Context, cpluginv1.SpecifierSpecifyRequest) (cpluginv1.SpecifierSpecifyResponse, error) {
@@ -90,7 +76,7 @@ func (s *specifierPluginAdapter) Specify(context.Context, cpluginv1.SpecifierSpe
 	}, nil
 }
 
-func (s *specifierPluginAdapter) convertParameters(params map[string]Parameter) map[string]cpluginv1.SpecifierParameter {
+func (s *specifierPluginAdapter) convertParameters(params map[string]config.Parameter) map[string]cpluginv1.SpecifierParameter {
 	out := make(map[string]cpluginv1.SpecifierParameter)
 	for k, v := range params {
 		out[k] = s.convertParameter(v)
@@ -98,12 +84,22 @@ func (s *specifierPluginAdapter) convertParameters(params map[string]Parameter) 
 	return out
 }
 
-func (s *specifierPluginAdapter) convertParameter(p Parameter) cpluginv1.SpecifierParameter {
+func (s *specifierPluginAdapter) convertParameter(p config.Parameter) cpluginv1.SpecifierParameter {
 	return cpluginv1.SpecifierParameter{
 		Default:     p.Default,
-		Required:    p.Required,
 		Description: p.Description,
 		Type:        cpluginv1.ParameterType(p.Type),
-		Validations: convertValidations(p.Validations),
+		Validations: s.convertValidations(p.Validations),
 	}
+}
+
+func (s *specifierPluginAdapter) convertValidations(validations []config.Validation) []cpluginv1.ParameterValidation {
+	out := make([]cpluginv1.ParameterValidation, len(validations))
+	for i, v := range validations {
+		out[i] = cpluginv1.ParameterValidation{
+			Type:  cpluginv1.ValidationType(v.Type()),
+			Value: v.Value(),
+		}
+	}
+	return out
 }
