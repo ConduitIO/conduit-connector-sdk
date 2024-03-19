@@ -81,6 +81,29 @@ Find out more information on building a connector in the [Go doc reference](http
 
 ## FAQ
 
+**Q: What data types in a source connector are supported?**
+
+There are no limitations when it comes to data types a source connector can read
+from a source. However, if a standalone source connector uses `record.StructuredData`
+in its key or any part of the payload, then there are certain limitations in the 
+data types it can send to Conduit.
+
+The following data types are supported:
+* `bool`
+* `int`, `int32`, `int64`, `uint`, `uint32`, `uint64`
+* `float32`, `float64`
+* `string`
+* `[]byte` (stored as a string, base64-encoded)
+* `map[string]interface{}` (a map of strings to any of the values that are supported)
+* `[]interface{}` (a slice of any value that is supported)
+
+A notable limitation are timestamps, i.e. `time.Time` values.
+
+One way to support other values is to encode source data to a `[]byte` (e.g. using
+a JSON encoding) and then storing the value as `record.RawData`.
+
+More information about this limitation can be found [here](https://github.com/ConduitIO/conduit/discussions/922).
+
 **Q: Is there a standard format for errors?**
 
 Conduit doesn't expect any specific error format. We still encourage developers to follow the conventional [error message
