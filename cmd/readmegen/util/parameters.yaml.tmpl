@@ -1,0 +1,17 @@
+{{ define "parameters" }}
+```yaml
+version: 2.2
+pipelines:
+  - id: example
+    status: running
+    connectors:
+      - id: example
+        plugin: "{{ .specification.Name }}"
+        settings:
+        {{- range $name, $param := .parameters }}
+          {{ formatCommentYAML $param.Description 10 }}
+          # Type: {{ $param.Type }}
+          {{ $name }}: "{{ $param.Default }}"
+        {{- end }}
+```
+{{- end }}
