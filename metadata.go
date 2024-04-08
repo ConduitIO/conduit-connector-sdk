@@ -37,6 +37,9 @@ const (
 	// read from the 3rd party system. The expected format is a unix timestamp
 	// in nanoseconds.
 	MetadataReadAt = cpluginv1.MetadataReadAt
+	// MetadataCollection is a Record.Metadata key for the name of the collection
+	// where the record originated from and/or where it should be stored.
+	MetadataCollection = cpluginv1.MetadataCollection
 
 	// MetadataConduitSourcePluginName is a Record.Metadata key for the name of
 	// the source plugin that created this record.
@@ -52,6 +55,16 @@ const (
 	// version of the destination plugin that has written this record
 	// (only available in records once they are written by a destination).
 	MetadataConduitDestinationPluginVersion = cpluginv1.MetadataConduitDestinationPluginVersion
+
+	// MetadataConduitSourceConnectorID is a Record.Metadata key for the ID of
+	// the source connector that produced this record.
+	MetadataConduitSourceConnectorID = cpluginv1.MetadataConduitSourceConnectorID
+	// MetadataConduitDLQNackError is a Record.Metadata key for the error that
+	// caused a record to be nacked and pushed to the dead-letter queue.
+	MetadataConduitDLQNackError = cpluginv1.MetadataConduitDLQNackError
+	// MetadataConduitDLQNackNodeID is a Record.Metadata key for the ID of the
+	// internal node that nacked the record.
+	MetadataConduitDLQNackNodeID = cpluginv1.MetadataConduitDLQNackNodeID
 )
 
 // SetOpenCDCVersion sets the metadata value for key MetadataVersion to the
@@ -115,6 +128,17 @@ func (m Metadata) SetReadAt(createdAt time.Time) {
 	m[MetadataReadAt] = strconv.FormatInt(createdAt.UnixNano(), 10)
 }
 
+// GetCollection returns the value for key MetadataCollection. If the value does
+// not exist or is empty the function returns ErrMetadataFieldNotFound.
+func (m Metadata) GetCollection() (string, error) {
+	return m.getValue(MetadataCollection)
+}
+
+// SetCollection sets the metadata value for key MetadataCollection.
+func (m Metadata) SetCollection(collection string) {
+	m[MetadataCollection] = collection
+}
+
 // GetConduitSourcePluginName returns the value for key
 // MetadataConduitSourcePluginName. If the value does not exist or is empty the
 // function returns ErrMetadataFieldNotFound.
@@ -165,6 +189,45 @@ func (m Metadata) GetConduitDestinationPluginVersion() (string, error) {
 // MetadataConduitDestinationPluginVersion.
 func (m Metadata) SetConduitDestinationPluginVersion(version string) {
 	m[MetadataConduitDestinationPluginVersion] = version
+}
+
+// GetConduitSourceConnectorID returns the value for key
+// MetadataConduitSourceConnectorID. If the value does not exist or is empty the
+// function returns ErrMetadataFieldNotFound.
+func (m Metadata) GetConduitSourceConnectorID() (string, error) {
+	return m.getValue(MetadataConduitSourceConnectorID)
+}
+
+// SetConduitSourceConnectorID sets the metadata value for key
+// MetadataConduitSourceConnectorID.
+func (m Metadata) SetConduitSourceConnectorID(id string) {
+	m[MetadataConduitSourceConnectorID] = id
+}
+
+// GetConduitDLQNackError returns the value for key
+// MetadataConduitDLQNackError. If the value does not exist or is empty the
+// function returns ErrMetadataFieldNotFound.
+func (m Metadata) GetConduitDLQNackError() (string, error) {
+	return m.getValue(MetadataConduitDLQNackError)
+}
+
+// SetConduitDLQNackError sets the metadata value for key
+// MetadataConduitDLQNackError.
+func (m Metadata) SetConduitDLQNackError(err string) {
+	m[MetadataConduitDLQNackError] = err
+}
+
+// GetConduitDLQNackNodeID returns the value for key
+// MetadataConduitDLQNackNodeID. If the value does not exist or is empty the
+// function returns ErrMetadataFieldNotFound.
+func (m Metadata) GetConduitDLQNackNodeID() (string, error) {
+	return m.getValue(MetadataConduitDLQNackNodeID)
+}
+
+// SetConduitDLQNackNodeID sets the metadata value for key
+// MetadataConduitDLQNackNodeID.
+func (m Metadata) SetConduitDLQNackNodeID(id string) {
+	m[MetadataConduitDLQNackNodeID] = id
 }
 
 // getValue returns the value for a specific key. If the value is does
