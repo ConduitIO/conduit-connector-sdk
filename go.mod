@@ -15,8 +15,6 @@ require (
 	github.com/rs/zerolog v1.32.0
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.4.0
-	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8
 	golang.org/x/time v0.5.0
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
 )

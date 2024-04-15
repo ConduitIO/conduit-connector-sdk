@@ -19,9 +19,9 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/matryer/is"
-	"go.uber.org/multierr"
 )
 
 func TestValidation_Param_Type(t *testing.T) {
@@ -194,12 +194,14 @@ func TestValidation_Param_Type(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := validator(tt.params)
-			config, err := v.InitConfig(tt.config)
-			is.NoErr(err)
-			err = v.Validate(config)
+			params := parameters(tt.params).toConfigParameters()
+
+			err := config.Config(tt.config).
+				Sanitize().
+				ApplyDefaults(params).
+				Validate(params)
 			if err != nil && tt.wantErr {
-				is.True(errors.Is(err, ErrInvalidParamType))
+				is.True(errors.Is(err, ErrInvalidParameterType))
 			} else if err != nil || tt.wantErr {
 				t.Errorf("UtilityFunc() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -396,10 +398,12 @@ func TestValidation_Param_Value(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := validator(tt.params)
-			config, err := v.InitConfig(tt.config)
-			is.NoErr(err)
-			err = v.Validate(config)
+			params := parameters(tt.params).toConfigParameters()
+
+			err := config.Config(tt.config).
+				Sanitize().
+				ApplyDefaults(params).
+				Validate(params)
 			if err != nil && tt.wantErr {
 				is.True(errors.Is(err, tt.err))
 			} else if err != nil || tt.wantErr {
@@ -447,7 +451,7 @@ func TestValidation_toCPluginV1(t *testing.T) {
 func TestValidation_Multi_Error(t *testing.T) {
 	is := is.New(t)
 
-	params := map[string]Parameter{
+	specParams := map[string]Parameter{
 		"limit": {
 			Type: ParameterTypeInt,
 			Validations: []Validation{
@@ -471,43 +475,30 @@ func TestValidation_Multi_Error(t *testing.T) {
 		"option": "five",
 	}
 
-	v := validator(params)
-	config, err := v.InitConfig(cfg)
-	is.NoErr(err)
-	err = v.Validate(config)
+	params := parameters(specParams).toConfigParameters()
+
+	err := config.Config(cfg).
+		Sanitize().
+		ApplyDefaults(params).
+		Validate(params)
 	is.True(err != nil)
 
-	errs := multierr.Errors(err)
-	counters := make([]int, len(errs))
-	for i, err := range errs {
-		switch {
-		case errors.Is(err, ErrRequiredParameterMissing):
-			// name is missing
-			counters[i]++
-		case errors.Is(err, ErrInclusionValidationFail):
-			// option is not included in list
-			counters[i]++
-		case errors.Is(err, ErrExclusionValidationFail):
-			// option is not excluded from list
-			counters[i]++
-		case errors.Is(err, ErrGreaterThanValidationFail):
-			// limit is not greater than 0
-			counters[i]++
-		case errors.Is(err, ErrRegexValidationFail):
-			// limit does not match the regex pattern
-			counters[i]++
-		}
-	}
-	// each one of these errors should occur once
-	for _, counter := range counters {
-		is.Equal(counter, 1)
-	}
+	// name is missing
+	is.True(errors.Is(err, ErrRequiredParameterMissing))
+	// option is not included in list
+	is.True(errors.Is(err, ErrInclusionValidationFail))
+	// option is not excluded from list
+	is.True(errors.Is(err, ErrExclusionValidationFail))
+	// limit is not greater than 0
+	is.True(errors.Is(err, ErrGreaterThanValidationFail))
+	// limit does not match the regex pattern
+	is.True(errors.Is(err, ErrRegexValidationFail))
 }
 
 func TestValidation_initConfig(t *testing.T) {
 	is := is.New(t)
 
-	params := map[string]Parameter{
+	specParams := map[string]Parameter{
 		"param1": {
 			Type:    ParameterTypeString,
 			Default: "param1",
@@ -525,7 +516,7 @@ func TestValidation_initConfig(t *testing.T) {
 			Default: "param4",
 		},
 	}
-	config := map[string]string{
+	cfg := map[string]string{
 		"param1": "not-default",
 		"param2": "",
 	}
@@ -537,8 +528,11 @@ func TestValidation_initConfig(t *testing.T) {
 		"param4": "param4",
 	}
 
-	v := validator(params)
-	got, err := v.InitConfig(config)
-	is.NoErr(err)
-	is.Equal(got, want)
+	params := parameters(specParams).toConfigParameters()
+
+	got := config.Config(cfg).
+		Sanitize().
+		ApplyDefaults(params)
+
+	is.Equal(map[string]string(got), want)
 }

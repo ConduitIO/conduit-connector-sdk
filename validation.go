@@ -15,27 +15,24 @@
 package sdk
 
 import (
-	"errors"
-	"fmt"
 	"regexp"
-	"strconv"
-	"strings"
-	"time"
 
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
-	"go.uber.org/multierr"
-	"golang.org/x/exp/slices"
 )
 
 var (
-	ErrInvalidParamValue         = errors.New("invalid parameter value")
-	ErrInvalidParamType          = errors.New("invalid parameter type")
-	ErrRequiredParameterMissing  = errors.New("required parameter is not provided")
-	ErrLessThanValidationFail    = errors.New("less-than validation failed")
-	ErrGreaterThanValidationFail = errors.New("greater-than validation failed")
-	ErrInclusionValidationFail   = errors.New("inclusion validation failed")
-	ErrExclusionValidationFail   = errors.New("exclusion validation failed")
-	ErrRegexValidationFail       = errors.New("regex validation failed")
+	ErrUnrecognizedParameter    = config.ErrUnrecognizedParameter
+	ErrInvalidParameterValue    = config.ErrInvalidParameterValue
+	ErrInvalidParameterType     = config.ErrInvalidParameterType
+	ErrInvalidValidationType    = config.ErrInvalidValidationType
+	ErrRequiredParameterMissing = config.ErrRequiredParameterMissing
+
+	ErrLessThanValidationFail    = config.ErrLessThanValidationFail
+	ErrGreaterThanValidationFail = config.ErrGreaterThanValidationFail
+	ErrInclusionValidationFail   = config.ErrInclusionValidationFail
+	ErrExclusionValidationFail   = config.ErrExclusionValidationFail
+	ErrRegexValidationFail       = config.ErrRegexValidationFail
 )
 
 const (
@@ -47,7 +44,7 @@ const (
 	ParameterTypeDuration
 )
 
-type ParameterType int
+type ParameterType config.ParameterType
 
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -58,234 +55,83 @@ func _() {
 	_ = cTypes[int(ParameterTypeBool)-int(cpluginv1.ParameterTypeBool)]
 	_ = cTypes[int(ParameterTypeFile)-int(cpluginv1.ParameterTypeFile)]
 	_ = cTypes[int(ParameterTypeDuration)-int(cpluginv1.ParameterTypeDuration)]
+
+	_ = cTypes[int(ParameterTypeString)-int(config.ParameterTypeString)]
+	_ = cTypes[int(ParameterTypeInt)-int(config.ParameterTypeInt)]
+	_ = cTypes[int(ParameterTypeFloat)-int(config.ParameterTypeFloat)]
+	_ = cTypes[int(ParameterTypeBool)-int(config.ParameterTypeBool)]
+	_ = cTypes[int(ParameterTypeFile)-int(config.ParameterTypeFile)]
+	_ = cTypes[int(ParameterTypeDuration)-int(config.ParameterTypeDuration)]
+
+	_ = cTypes[int(config.ValidationTypeRequired)-int(cpluginv1.ValidationTypeRequired)]
+	_ = cTypes[int(config.ValidationTypeGreaterThan)-int(cpluginv1.ValidationTypeGreaterThan)]
+	_ = cTypes[int(config.ValidationTypeLessThan)-int(cpluginv1.ValidationTypeLessThan)]
+	_ = cTypes[int(config.ValidationTypeInclusion)-int(cpluginv1.ValidationTypeInclusion)]
+	_ = cTypes[int(config.ValidationTypeExclusion)-int(cpluginv1.ValidationTypeExclusion)]
+	_ = cTypes[int(config.ValidationTypeRegex)-int(cpluginv1.ValidationTypeRegex)]
 }
 
 type Validation interface {
-	validate(value string) error
-	toCPluginV1() cpluginv1.ParameterValidation
+	configValidation() config.Validation
 }
 
-type ValidationRequired struct {
-}
+type ValidationRequired struct{}
 
-func (v ValidationRequired) validate(value string) error {
-	if value == "" {
-		return ErrRequiredParameterMissing
-	}
-	return nil
-}
-
-func (v ValidationRequired) toCPluginV1() cpluginv1.ParameterValidation {
-	return cpluginv1.ParameterValidation{
-		Type:  cpluginv1.ValidationTypeRequired,
-		Value: "",
-	}
+func (v ValidationRequired) configValidation() config.Validation {
+	return config.ValidationRequired(v)
 }
 
 type ValidationLessThan struct {
 	Value float64
 }
 
-func (v ValidationLessThan) validate(value string) error {
-	val, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return fmt.Errorf("%q value should be a number: %w", value, ErrInvalidParamValue)
-	}
-	if !(val < v.Value) {
-		formatted := strconv.FormatFloat(v.Value, 'f', -1, 64)
-		return fmt.Errorf("%q should be less than %s: %w", value, formatted, ErrLessThanValidationFail)
-	}
-	return nil
-}
-
-func (v ValidationLessThan) toCPluginV1() cpluginv1.ParameterValidation {
-	return cpluginv1.ParameterValidation{
-		Type:  cpluginv1.ValidationTypeLessThan,
-		Value: strconv.FormatFloat(v.Value, 'f', -1, 64),
-	}
+func (v ValidationLessThan) configValidation() config.Validation {
+	return config.ValidationLessThan{V: v.Value}
 }
 
 type ValidationGreaterThan struct {
 	Value float64
 }
 
-func (v ValidationGreaterThan) validate(value string) error {
-	val, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return fmt.Errorf("%q value should be a number: %w", value, ErrInvalidParamValue)
-	}
-	if !(val > v.Value) {
-		formatted := strconv.FormatFloat(v.Value, 'f', -1, 64)
-		return fmt.Errorf("%q should be greater than %s: %w", value, formatted, ErrGreaterThanValidationFail)
-	}
-	return nil
-}
-
-func (v ValidationGreaterThan) toCPluginV1() cpluginv1.ParameterValidation {
-	return cpluginv1.ParameterValidation{
-		Type:  cpluginv1.ValidationTypeGreaterThan,
-		Value: strconv.FormatFloat(v.Value, 'f', -1, 64),
-	}
+func (v ValidationGreaterThan) configValidation() config.Validation {
+	return config.ValidationGreaterThan{V: v.Value}
 }
 
 type ValidationInclusion struct {
 	List []string
 }
 
-func (v ValidationInclusion) validate(value string) error {
-	if !slices.Contains(v.List, value) {
-		return fmt.Errorf("%q value must be included in the list [%s]: %w", value, strings.Join(v.List, ","), ErrInclusionValidationFail)
-	}
-	return nil
-}
-
-func (v ValidationInclusion) toCPluginV1() cpluginv1.ParameterValidation {
-	return cpluginv1.ParameterValidation{
-		Type:  cpluginv1.ValidationTypeInclusion,
-		Value: strings.Join(v.List, ","),
-	}
+func (v ValidationInclusion) configValidation() config.Validation {
+	return config.ValidationInclusion{List: v.List}
 }
 
 type ValidationExclusion struct {
 	List []string
 }
 
-func (v ValidationExclusion) validate(value string) error {
-	if slices.Contains(v.List, value) {
-		return fmt.Errorf("%q value must be excluded from the list [%s]: %w", value, strings.Join(v.List, ","), ErrExclusionValidationFail)
-	}
-	return nil
-}
-
-func (v ValidationExclusion) toCPluginV1() cpluginv1.ParameterValidation {
-	return cpluginv1.ParameterValidation{
-		Type:  cpluginv1.ValidationTypeExclusion,
-		Value: strings.Join(v.List, ","),
-	}
+func (v ValidationExclusion) configValidation() config.Validation {
+	return config.ValidationExclusion{List: v.List}
 }
 
 type ValidationRegex struct {
 	Regex *regexp.Regexp
 }
 
-func (v ValidationRegex) validate(value string) error {
-	if !v.Regex.MatchString(value) {
-		return fmt.Errorf("%q should match the regex %q: %w", value, v.Regex.String(), ErrRegexValidationFail)
-	}
-
-	return nil
-}
-
-func (v ValidationRegex) toCPluginV1() cpluginv1.ParameterValidation {
-	return cpluginv1.ParameterValidation{
-		Type:  cpluginv1.ValidationTypeRegex,
-		Value: v.Regex.String(),
-	}
+func (v ValidationRegex) configValidation() config.Validation {
+	return config.ValidationRegex{Regex: v.Regex}
 }
 
 func convertValidations(validations []Validation) []cpluginv1.ParameterValidation {
-	out := make([]cpluginv1.ParameterValidation, len(validations))
-	for i, v := range validations {
-		out[i] = v.toCPluginV1()
-	}
-	return out
-}
-
-// private struct to group all validation functions
-type validator map[string]Parameter
-
-// Validate is a utility function that applies all the validations for parameters, returns an error that consists of a
-// combination of errors that happened during the configuration validations.
-func (v validator) Validate(cfg map[string]string) error {
-	var err, multiErr error
-	for pKey := range v {
-		err = v.validateParamType(pKey, cfg[pKey])
-		if err != nil {
-			// append error and continue with next parameter
-			multiErr = multierr.Append(multiErr, err)
-			continue
-		}
-		multiErr = multierr.Append(multiErr, v.validateParamValue(pKey, cfg[pKey]))
-	}
-	return multiErr
-}
-
-// validateParamValue validates that a configuration value matches all the validations required for the parameter.
-func (v validator) validateParamValue(key string, value string) error {
-	var multiErr error
-
-	isRequired := false
-	for _, v := range v[key].Validations {
-		if _, ok := v.(ValidationRequired); ok {
-			isRequired = true
-		}
-		err := v.validate(value)
-		if err != nil {
-			multiErr = multierr.Append(multiErr, fmt.Errorf("error validating %q: %w", key, err))
-		}
-	}
-	if value == "" && !isRequired {
-		return nil // empty otional parameter is valid
-	}
-
-	return multiErr
-}
-
-// InitConfig checks for unrecognized params, and fills any empty configuration with its assigned default value
-// returns an error if a parameter is not recognized.
-func (v validator) InitConfig(config map[string]string) (map[string]string, error) {
-	output := make(map[string]string)
-	var multiErr error
-	for key, val := range config {
-		// trim key and val
-		key = strings.TrimSpace(key)
-		val = strings.TrimSpace(val)
-		// check for unrecognized params
-		if _, ok := v[key]; !ok {
-			multiErr = multierr.Append(multiErr, fmt.Errorf("unrecognized parameter %q", key))
-			continue
-		}
-		// set config map
-		output[key] = val
-	}
-	// assign defaults
-	for key, param := range v {
-		if output[key] == "" {
-			output[key] = param.Default
-		}
-	}
-	return output, multiErr
-}
-
-// validateParamType validates that a parameter value is parsable to its assigned type.
-func (v validator) validateParamType(key string, value string) error {
-	// empty value is valid for all types
-	if value == "" {
+	if validations == nil {
 		return nil
 	}
-	switch v[key].Type {
-	case ParameterTypeInt:
-		_, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("error validating %q: %q value is not an integer: %w", key, value, ErrInvalidParamType)
+	out := make([]cpluginv1.ParameterValidation, len(validations))
+	for i, v := range validations {
+		val := v.configValidation()
+		out[i] = cpluginv1.ParameterValidation{
+			Type:  cpluginv1.ValidationType(val.Type()),
+			Value: val.Value(),
 		}
-	case ParameterTypeFloat:
-		_, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return fmt.Errorf("error validating %q: %q value is not a float: %w", key, value, ErrInvalidParamType)
-		}
-	case ParameterTypeDuration:
-		_, err := time.ParseDuration(value)
-		if err != nil {
-			return fmt.Errorf("error validating %q: %q value is not a duration: %w", key, value, ErrInvalidParamType)
-		}
-	case ParameterTypeBool:
-		_, err := strconv.ParseBool(value)
-		if err != nil {
-			return fmt.Errorf("error validating %q: %q value is not a boolean: %w", key, value, ErrInvalidParamType)
-		}
-		// type ParameterTypeFile and ParameterTypeString don't need type validations, since a file is an array of bytes,
-		// which is a string, and all the configuration values are strings
 	}
-	return nil
+	return out
 }
