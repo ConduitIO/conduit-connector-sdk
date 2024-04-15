@@ -20,7 +20,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"golang.org/x/exp/maps"
 	"io/fs"
 	"os/exec"
 	"reflect"
@@ -30,6 +29,7 @@ import (
 	"unicode"
 
 	sdk "github.com/conduitio/conduit-connector-sdk"
+	"golang.org/x/exp/maps"
 )
 
 const (
