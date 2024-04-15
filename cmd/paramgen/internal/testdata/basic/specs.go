@@ -58,6 +58,14 @@ type SourceConfig struct {
 	MyFloatSlice []float32
 	MyDurSlice   []time.Duration
 
+	MyStringMap map[string]string
+	MyStructMap map[string]structMapVal
+
 	// this field is ignored because it is not exported
 	ignoreThis http.Client
+}
+
+type structMapVal struct {
+	MyString string
+	MyInt    int
 }

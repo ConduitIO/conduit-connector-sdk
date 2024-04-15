@@ -240,6 +240,8 @@ func (p *parameterParser) parseTypeSpec(ts *ast.TypeSpec, f *ast.Field) (params 
 		return p.parseSelectorExpr(v, f)
 	case *ast.Ident:
 		return p.parseIdent(v, f)
+	case *ast.MapType:
+		return p.parseMapType(v, f)
 	default:
 		return nil, fmt.Errorf("unexpected type: %T", ts.Type)
 	}
@@ -296,6 +298,8 @@ func (p *parameterParser) parseField(f *ast.Field) (params map[string]sdk.Parame
 		return p.parseStructType(v, f)
 	case *ast.SelectorExpr:
 		return p.parseSelectorExpr(v, f)
+	case *ast.MapType:
+		return p.parseMapType(v, f)
 	case *ast.ArrayType:
 		strType := fmt.Sprintf("%s", v.Elt)
 		if !p.isBuiltinType(strType) && !strings.Contains(strType, "time Duration") {
@@ -310,6 +314,43 @@ func (p *parameterParser) parseField(f *ast.Field) (params map[string]sdk.Parame
 	default:
 		return nil, fmt.Errorf("unknown type: %T", f.Type)
 	}
+}
+
+func (p *parameterParser) parseMapType(mt *ast.MapType, f *ast.Field) (params map[string]sdk.Parameter, err error) {
+	if fmt.Sprintf("%s", mt.Key) != "string" {
+		return nil, fmt.Errorf("unsupported map key type: %s", mt.Key)
+	}
+
+	// parse map value as if it was a field
+	var tmpParams map[string]sdk.Parameter
+	switch val := mt.Value.(type) {
+	case *ast.Ident:
+		// identifier (builtin type or type in same package)
+		tmpParams, err = p.parseIdent(val, f)
+	case *ast.StructType:
+		// nested type
+		tmpParams, err = p.parseStructType(val, f)
+	case *ast.SelectorExpr:
+		tmpParams, err = p.parseSelectorExpr(val, f)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// inject wildcard
+	params = make(map[string]sdk.Parameter, len(tmpParams))
+	for k, p := range tmpParams {
+		index := strings.Index(k, ".")
+		if index == -1 {
+			index = len(k)
+		}
+		name := k[:index] + ".*"
+		if index < len(k) {
+			name += k[index:]
+		}
+		params[name] = p
+	}
+	return params, nil
 }
 
 func (p *parameterParser) parseSelectorExpr(se *ast.SelectorExpr, f *ast.Field) (params map[string]sdk.Parameter, err error) {
