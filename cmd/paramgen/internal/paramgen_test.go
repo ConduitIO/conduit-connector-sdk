@@ -98,8 +98,8 @@ func TestParseSpecificationSuccess(t *testing.T) {
 					},
 				},
 				"global.renamed.*": {
-					Default: "1",
-					Type:    sdk.ParameterTypeInt,
+					Default: "1s",
+					Type:    sdk.ParameterTypeDuration,
 				},
 				"global.wildcardStructs.*.name": {
 					Type: sdk.ParameterTypeString,

@@ -21,8 +21,8 @@ type GlobalConfig struct {
 	// Duration does not have a name so the type name is used.
 	time.Duration `default:"1s"` // line comments on fields with doc comments are ignored
 
-	WildcardStrings map[string]string `default:"foo" validate:"required"`
-	WildcardInts    map[string]int    `json:"renamed" default:"1"`
+	WildcardStrings map[string]string        `default:"foo" validate:"required"`
+	WildcardInts    map[string]time.Duration `json:"renamed" default:"1s"`
 	WildcardStructs WildcardStruct
 }
 
