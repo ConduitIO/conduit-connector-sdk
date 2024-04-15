@@ -487,7 +487,7 @@ func TestValidation_Multi_Error(t *testing.T) {
 	is.True(errors.Is(err, ErrRequiredParameterMissing))
 	// option is not included in list
 	is.True(errors.Is(err, ErrInclusionValidationFail))
-	// option is not excluded from list
+	// option is excluded from list
 	is.True(errors.Is(err, ErrExclusionValidationFail))
 	// limit is not greater than 0
 	is.True(errors.Is(err, ErrGreaterThanValidationFail))
