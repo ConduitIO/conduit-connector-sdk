@@ -16,10 +16,8 @@ package sdk
 
 import (
 	"fmt"
-	"reflect"
-	"strings"
 
-	"github.com/mitchellh/mapstructure"
+	"github.com/conduitio/conduit-commons/config"
 )
 
 // Util provides utilities for implementing connectors.
@@ -52,60 +50,6 @@ func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[strin
 	return params
 }
 
-func breakUpConfig(c map[string]string) map[string]interface{} {
-	const sep = "."
-
-	brokenUp := make(map[string]interface{})
-	for k, v := range c {
-		// break up based on dot and put in maps in case target struct is broken up
-		tokens := strings.Split(k, sep)
-		remain := k
-		current := brokenUp
-		for _, t := range tokens {
-			current[remain] = v // we don't care if we overwrite a map here, the string has precedence
-			if _, ok := current[t]; !ok {
-				current[t] = map[string]interface{}{}
-			}
-			var ok bool
-			current, ok = current[t].(map[string]interface{})
-			if !ok {
-				break // this key is a string, leave it as it is
-			}
-			_, remain, _ = strings.Cut(remain, sep)
-		}
-	}
-	return brokenUp
-}
-
-func parseConfig(raw map[string]string, config interface{}) error {
-	dConfig := &mapstructure.DecoderConfig{
-		WeaklyTypedInput: true,
-		Result:           &config,
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			emptyStringToZeroValueHookFunc(),
-			mapstructure.StringToTimeDurationHookFunc(),
-			mapstructure.StringToSliceHookFunc(","),
-		),
-		TagName: "json",
-		Squash:  true,
-	}
-
-	decoder, err := mapstructure.NewDecoder(dConfig)
-	if err != nil {
-		return err
-	}
-	err = decoder.Decode(breakUpConfig(raw))
-	return err
-}
-
-func emptyStringToZeroValueHookFunc() mapstructure.DecodeHookFunc {
-	return func(
-		f reflect.Type,
-		t reflect.Type,
-		data interface{}) (interface{}, error) {
-		if f.Kind() != reflect.String || data != "" {
-			return data, nil
-		}
-		return reflect.New(t).Elem().Interface(), nil
-	}
+func parseConfig(cfg map[string]string, v interface{}) error {
+	return config.Config(cfg).DecodeInto(v)
 }
