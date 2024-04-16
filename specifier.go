@@ -17,6 +17,7 @@ package sdk
 import (
 	"context"
 
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 )
 
@@ -51,6 +52,47 @@ type Parameter struct {
 	Type ParameterType
 	// Validations slice of validations to be checked for the parameter.
 	Validations []Validation
+}
+
+func (p Parameter) toConfigParameter() config.Parameter {
+	var validations []config.Validation
+
+	var isRequired bool
+	if p.Validations != nil {
+		validations = make([]config.Validation, len(p.Validations))
+		for i, v := range p.Validations {
+			val := v.configValidation()
+			if val.Type() == config.ValidationTypeRequired {
+				isRequired = true
+			}
+			validations[i] = val
+		}
+	}
+	if p.Required && !isRequired {
+		//nolint:makezero // This is done for backwards compatibility and is the expected behavior.
+		validations = append(validations, config.ValidationRequired{})
+	}
+
+	return config.Parameter{
+		Default:     p.Default,
+		Description: p.Description,
+		Type:        config.ParameterType(p.Type),
+		Validations: validations,
+	}
+}
+
+// utility type to convert a slice of Parameter to a slice of config.Parameter
+type parameters map[string]Parameter
+
+func (p parameters) toConfigParameters() config.Parameters {
+	if p == nil {
+		return nil
+	}
+	out := make(config.Parameters, len(p))
+	for k, v := range p {
+		out[k] = v.toConfigParameter()
+	}
+	return out
 }
 
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that

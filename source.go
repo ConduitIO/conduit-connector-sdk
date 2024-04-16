@@ -23,12 +23,12 @@ import (
 	"io"
 	"time"
 
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
 	"github.com/conduitio/conduit-connector-sdk/internal/csync"
 	"github.com/jpillora/backoff"
-	"go.uber.org/multierr"
 	"gopkg.in/tomb.v2"
 )
 
@@ -151,15 +151,19 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.Sourc
 		StateAfter:           internal.StateConfigured,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
-		v := validator(a.impl.Parameters())
-		// init config and apply default values
-		updatedCfg, multiErr := v.InitConfig(req.Config)
-		// run builtin validations
-		multiErr = multierr.Append(multiErr, validator(a.impl.Parameters()).Validate(updatedCfg))
-		// run custom validations written by developer
-		multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, updatedCfg))
+		params := parameters(a.impl.Parameters()).toConfigParameters()
 
-		return multiErr
+		// sanitize config and apply default values
+		cfg := config.Config(req.Config).
+			Sanitize().
+			ApplyDefaults(params)
+
+		// run builtin validations
+		err1 := cfg.Validate(params)
+		// run custom validations written by developer
+		err2 := a.impl.Configure(ctx, cfg)
+
+		return errors.Join(err1, err2)
 	})
 
 	return cpluginv1.SourceConfigureResponse{}, err
