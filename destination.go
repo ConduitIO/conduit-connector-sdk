@@ -19,15 +19,16 @@ package sdk
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"time"
 
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/csync"
-	"go.uber.org/multierr"
 )
 
 // Destination receives records from Conduit and writes them to 3rd party
@@ -115,16 +116,22 @@ type destinationPluginAdapter struct {
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv1.DestinationConfigureRequest) (cpluginv1.DestinationConfigureResponse, error) {
 	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
 
-	v := validator(a.impl.Parameters())
-	// init config and apply default values
-	updatedCfg, multiErr := v.InitConfig(req.Config)
-	// run builtin validations
-	multiErr = multierr.Append(multiErr, v.Validate(updatedCfg))
-	// run custom validations written by developer
-	multiErr = multierr.Append(multiErr, a.impl.Configure(ctx, updatedCfg))
-	multiErr = multierr.Append(multiErr, a.configureWriteStrategy(ctx, updatedCfg))
+	params := parameters(a.impl.Parameters()).toConfigParameters()
 
-	return cpluginv1.DestinationConfigureResponse{}, multiErr
+	// sanitize config and apply default values
+	cfg := config.Config(req.Config).
+		Sanitize().
+		ApplyDefaults(params)
+
+	var errs []error
+	// run builtin validations
+	errs = append(errs, cfg.Validate(params))
+	// run custom validations written by developer
+	errs = append(errs, a.impl.Configure(ctx, cfg))
+	// configure write strategy
+	errs = append(errs, a.configureWriteStrategy(ctx, cfg))
+
+	return cpluginv1.DestinationConfigureResponse{}, errors.Join(errs...)
 }
 
 func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config map[string]string) error {

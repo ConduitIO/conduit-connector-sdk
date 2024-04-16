@@ -187,39 +187,3 @@ func TestParseConfig_All_Types(t *testing.T) {
 	is.NoErr(err)
 	is.Equal(want, result)
 }
-
-func TestBreakUpConfig(t *testing.T) {
-	is := is.New(t)
-
-	input := map[string]string{
-		"foo.bar.baz": "1",
-		"test":        "2",
-	}
-	want := map[string]interface{}{
-		"foo": map[string]interface{}{
-			"bar": map[string]interface{}{
-				"baz": "1",
-			},
-			"bar.baz": "1",
-		},
-		"foo.bar.baz": "1",
-		"test":        "2",
-	}
-	got := breakUpConfig(input)
-	is.Equal(want, got)
-}
-
-func TestBreakUpConfig_Conflict_Value(t *testing.T) {
-	is := is.New(t)
-
-	input := map[string]string{
-		"foo":         "1",
-		"foo.bar.baz": "1", // key foo is already taken, will not be broken up
-	}
-	want := map[string]interface{}{
-		"foo":         "1",
-		"foo.bar.baz": "1",
-	}
-	got := breakUpConfig(input)
-	is.Equal(want, got)
-}
