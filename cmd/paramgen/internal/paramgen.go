@@ -126,11 +126,9 @@ func parsePackage(path string) (*ast.Package, error) {
 	// Ignore files with go:build constraint set to "tools" (common pattern in
 	// Conduit connectors).
 	for pkgName, pkg := range pkgs {
-		for fileName, f := range pkg.Files {
-			if hasBuildConstraint(f, "tools") {
-				delete(pkg.Files, fileName)
-			}
-		}
+		maps.DeleteFunc(pkg.Files, func(_ string, f *ast.File) bool {
+			return hasBuildConstraint(f, "tools")
+		})
 		if len(pkg.Files) == 0 {
 			delete(pkgs, pkgName)
 		}
