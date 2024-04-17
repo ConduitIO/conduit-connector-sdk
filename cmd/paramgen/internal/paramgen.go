@@ -123,6 +123,16 @@ func parsePackage(path string) (*ast.Package, error) {
 	if len(pkgs) == 0 {
 		return nil, fmt.Errorf("no source-code package in directory %s", path)
 	}
+	// Ignore files with go:build constraint set to "tools" (common pattern in
+	// Conduit connectors).
+	for pkgName, pkg := range pkgs {
+		maps.DeleteFunc(pkg.Files, func(_ string, f *ast.File) bool {
+			return hasBuildConstraint(f, "tools")
+		})
+		if len(pkg.Files) == 0 {
+			delete(pkgs, pkgName)
+		}
+	}
 	if len(pkgs) > 1 {
 		return nil, fmt.Errorf("multiple packages %v in directory %s", maps.Keys(pkgs), path)
 	}
@@ -130,6 +140,20 @@ func parsePackage(path string) (*ast.Package, error) {
 		return v, nil // return first package
 	}
 	panic("unreachable")
+}
+
+// hasBuildConstraint is a very naive way to check if a file has a build
+// constraint. It is sufficient for our use case.
+func hasBuildConstraint(f *ast.File, constraint string) bool {
+	text := fmt.Sprintf("//go:build %s", constraint)
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			if c.Text == text {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func findStruct(pkg *ast.Package, name string) (*ast.StructType, *ast.File, error) {
