@@ -81,6 +81,44 @@ Find out more information on building a connector in the [Go doc reference](http
 
 ## FAQ
 
+**Q: How to identify the source from which a record originated?**
+
+A connector can use whatever means available to associate a record with the
+originating source. However, to promote compatibility between connectors, we 
+**highly recommend** that a record's metadata is used to indicate from which
+_collection_[^1] a record originated.
+
+The metadata key to be used is `opencdc.collection`, which can be accessed
+through the `sdk.MetadataCollection` constant.
+
+For example, if a record was read from a database table called `employees`, it
+should have the following in its metadata:
+```json5
+{
+  "opencdc.collection": "employees",
+  // other metadata
+}
+```
+
+Additionally, Conduit automatically adds the following metadata to each record:
+
+* `conduit.source.plugin.name`: the source plugin that created a record
+* `conduit.source.plugin.version`: version of the source plugin that created
+  this record
+
+More information about metadata in OpenCDC records can be found [here](https://conduit.io/docs/features/opencdc-record/#opencdc).
+
+**Q: If a destination connector is able to write to multiple tables (topics,
+collections, indexes, etc.), how should a record be routed to the correct
+destination?**
+
+Similarly to above, we recommend that the metadata key `"opencdc.collection"` is
+used.
+
+For example, if a record has the metadata field `"opencdc.collection"` set
+to `employees`, then the PostgreSQL destination connector will write it to
+the `employees` table.
+
 **Q: Is there a standard format for errors?**
 
 Conduit doesn't expect any specific error format. We still encourage developers to follow the conventional [error message
@@ -124,3 +162,8 @@ repeatedly and only in one goroutine, all you have to do is return one record at
 For examples of simple connectors you can look at existing connectors like
 [conduit-connector-generator](https://github.com/ConduitIO/conduit-connector-generator) or
 [conduit-connector-file](https://github.com/ConduitIO/conduit-connector-file).
+
+[^1]: Collection is a generic term used in Conduit to describe an entity in a
+3rd party system from which records are read from or to which records they are
+written to. Examples are: topics (in Kafka), tables (in a database), indexes (in
+a search engine), and collections (in NoSQL databases).
