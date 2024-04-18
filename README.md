@@ -106,6 +106,8 @@ Additionally, Conduit automatically adds the following metadata to each record:
 * `conduit.source.plugin.version`: version of the source plugin that created
   this record
 
+More information about metadata in OpenCDC records can be found [here](https://conduit.io/docs/features/opencdc-record/#opencdc).
+
 **Q: If a destination connector is able to write to multiple tables (topics,
 collections, indexes, etc.), how should a record be routed to the correct
 destination?**
