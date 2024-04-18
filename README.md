@@ -165,5 +165,5 @@ For examples of simple connectors you can look at existing connectors like
 
 [^1]: Collection is a generic term used in Conduit to describe an entity in a
 3rd party system from which records are read from or to which records they are
-written to. Examples are: tables (in a database), indexes (in a search engine),
-collections (in NoSQL databases), etc.
+written to. Examples are: topics (in Kafka), tables (in a database), indexes (in
+a search engine), collections (in NoSQL databases), etc.
