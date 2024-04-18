@@ -1,4 +1,4 @@
-{{ define "parameters" -}}
+{{ define "parameters.table" }}
 <table class="no-margin-table">
   <tr>
     <th>Name</th>
@@ -8,13 +8,27 @@
   </tr>
   {{- range $name, $param := .parameters }}
   <tr>
-    <td>`{{ $name }}`</td>
-    <td>{{ $param.Type }}</td>
-    <td>`{{ $param.Default }}`</td>
-    <td>
+<td>
+
+`{{ $name }}`
+
+</td>
+<td>
+
+{{ $param.Type.String }}
+
+</td>
+<td>
+
+`{{ $param.Default }}`
+
+</td>
+<td>
+
 {{ $param.Description }}
-    </td>
+
+</td>
   </tr>
   {{- end }}
 </table>
-{{- end }}
+{{ end }}

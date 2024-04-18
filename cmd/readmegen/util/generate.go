@@ -15,9 +15,12 @@
 package util
 
 import (
+	"embed"
 	_ "embed"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 	"strings"
 	"text/template"
 
@@ -26,37 +29,41 @@ import (
 )
 
 var (
-	//go:embed readme.tmpl
-	readmeTmpl string
-	//go:embed parameters.table.tmpl
-	parametersTableTmpl string
-	//go:embed parameters.yaml.tmpl
-	parametersYAMLTmpl string
+	//go:embed templates/*
+	templates embed.FS
 )
 
 type GenerateOptions struct {
-	YAMLParameters bool
-	Output         io.Writer
+	ReadmePath string
+	Output     io.Writer
 }
 
 func Generate(conn sdk.Connector, opts GenerateOptions) error {
-	templates := []string{readmeTmpl, parametersTableTmpl}
-	if opts.YAMLParameters {
-		// switch table template to YAML template
-		templates[1] = parametersYAMLTmpl
+	readme, err := os.ReadFile(opts.ReadmePath)
+	if err != nil {
+		return fmt.Errorf("could not read readme file %v: %w", opts.ReadmePath, err)
 	}
-	t := template.Must(
-		template.New("readme").
-			Funcs(funcMap).
-			Funcs(sprig.FuncMap()).
-			Parse(strings.Join(templates, "\n")),
-	)
-	err := t.Execute(opts.Output, map[string]any{
-		"specification":     conn.NewSpecification(),
-		"sourceParams":      conn.NewSource().Parameters(),
-		"destinationParams": conn.NewDestination().Parameters(),
-	})
-	return err
+	readmeTmpl, err := Preprocess(string(readme))
+	if err != nil {
+		return fmt.Errorf("could not preprocess readme file %v: %w", opts.ReadmePath, err)
+	}
+
+	t := template.New("readme").Funcs(funcMap).Funcs(sprig.FuncMap())
+	t = template.Must(t.ParseFS(templates, "templates/*.tmpl"))
+	t = template.Must(t.Parse(readmeTmpl))
+
+	data := map[string]any{}
+	if conn.NewSpecification != nil {
+		data["specification"] = conn.NewSpecification()
+	}
+	if conn.NewSource != nil {
+		data["sourceParams"] = conn.NewSource().Parameters()
+	}
+	if conn.NewDestination != nil {
+		data["destinationParams"] = conn.NewDestination().Parameters()
+	}
+
+	return t.Execute(opts.Output, data)
 }
 
 var funcMap = template.FuncMap{

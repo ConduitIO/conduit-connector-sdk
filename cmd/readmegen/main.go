@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,14 +25,14 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/conduitio/conduit-connector-sdk/cmd/readmegen/util"
 	"golang.org/x/mod/modfile"
 )
 
 var (
-	pkg               = flag.String("package", "", "The full package import path for the connector. By default, readmegen will try to detect the package import path based on the go.mod file it finds in the directory or any parent directory.")
+	pkg               = flag.String("pkg", "", "The full package import path for the connector. By default, readmegen will try to detect the package import path based on the go.mod file it finds in the directory or any parent directory.")
 	debugIntermediary = flag.Bool("debug-intermediary", false, "Print the intermediary generated program to stdout instead of writing it to a file")
-	yaml              = flag.Bool("yaml", false, "Generate parameters in YAML format (default is a HTML table)")
+	readmePath        = flag.String("f", "README.md", "The path to the readme file")
+	write             = flag.Bool("w", false, "Overwrite readme file instead of printing to stdout")
 )
 
 func main() {
@@ -112,6 +113,18 @@ func generate() (err error) {
 	cmd.Dir = tmpDir
 	cmd.Stdout = os.Stdout // pipe directly to stdout
 	cmd.Stderr = os.Stderr // pipe directly to stderr
+
+	if *write {
+		buf := new(bytes.Buffer)
+		cmd.Stdout = buf
+		defer func() {
+			if err != nil {
+				os.Stdout.Write(buf.Bytes())
+				return
+			}
+			err = os.WriteFile(*readmePath, buf.Bytes(), 0644)
+		}()
+	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("intermediary program failed: %w", err)
 	}
@@ -124,17 +137,19 @@ func executeTemplate(out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("could not parse template: %w", err)
 	}
+	p, err := filepath.Abs(*readmePath)
+	if err != nil {
+		return fmt.Errorf("could not get absolute path to readme: %w", err)
+	}
 	return t.Execute(out, data{
 		ImportPath: *pkg,
-		GenerateOptions: util.GenerateOptions{
-			YAMLParameters: *yaml,
-		},
+		ReadmePath: p,
 	})
 }
 
 type data struct {
-	ImportPath      string
-	GenerateOptions util.GenerateOptions
+	ImportPath string
+	ReadmePath string
 }
 
 const tmpl = `
@@ -152,8 +167,8 @@ func main() {
 	err := util.Generate(
 		conn.Connector,
 		util.GenerateOptions{
-			YAMLParameters: {{ printf "%#v" .GenerateOptions.YAMLParameters }},
-			Output:         os.Stdout,
+			ReadmePath: "{{ .ReadmePath }}",
+			Output:     os.Stdout,
 		},
 	)
 	if err != nil {

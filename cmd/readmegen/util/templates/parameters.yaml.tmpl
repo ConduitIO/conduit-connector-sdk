@@ -1,4 +1,4 @@
-{{ define "parameters" }}
+{{ define "parameters.yaml" }}
 ```yaml
 version: 2.2
 pipelines:
@@ -14,4 +14,4 @@ pipelines:
           {{ $name }}: "{{ $param.Default }}"
         {{- end }}
 ```
-{{- end }}
+{{ end }}
