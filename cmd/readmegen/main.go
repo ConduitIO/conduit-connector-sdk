@@ -29,25 +29,31 @@ import (
 )
 
 var (
-	pkg               = flag.String("pkg", "", "The full package import path for the connector. By default, readmegen will try to detect the package import path based on the go.mod file it finds in the directory or any parent directory.")
+	pkg        = flag.String("pkg", "", "The full package import path for the connector. By default, readmegen will try to detect the package import path based on the go.mod file it finds in the directory or any parent directory.")
+	readmePath = flag.String("f", "README.md", "The path to the readme file")
+	write      = flag.Bool("w", false, "Overwrite readme file instead of printing to stdout")
+
 	debugIntermediary = flag.Bool("debug-intermediary", false, "Print the intermediary generated program to stdout instead of writing it to a file")
-	readmePath        = flag.String("f", "README.md", "The path to the readme file")
-	write             = flag.Bool("w", false, "Overwrite readme file instead of printing to stdout")
 )
 
 func main() {
 	flag.Parse()
 
+	detectedPkg, err := detectPackage()
+	if err != nil && *pkg == "" {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	if *pkg == "" {
-		var err error
-		*pkg, err = detectPackage()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+		*pkg = detectedPkg
+	}
+	if *pkg != detectedPkg {
+		// detected package is different from provided package, we need to
+		// create a separate go module for the intermediary program
+		// TODO
 	}
 
-	err := generate()
+	err = generate()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -77,7 +83,7 @@ func detectPackage() (string, error) {
 		}
 		return modulePath, nil
 	}
-	return "", errors.New("could not detect package, make sure you are in the root of the connector directory or provide the -package flag manually")
+	return "", errors.New("could not detect package, make sure you are in the connector directory or provide the package manually using the -pkg flag")
 }
 
 func generate() (err error) {
