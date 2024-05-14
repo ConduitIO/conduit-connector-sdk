@@ -35,8 +35,8 @@ var Util = struct {
 	ParseConfig: parseConfig,
 }
 
-func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[string]Parameter {
-	params := make(map[string]Parameter, len(p1)+len(p2))
+func mergeParameters(p1 config.Parameters, p2 config.Parameters) config.Parameters {
+	params := make(config.Parameters, len(p1)+len(p2))
 	for k, v := range p1 {
 		params[k] = v
 	}

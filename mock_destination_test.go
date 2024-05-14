@@ -10,6 +10,8 @@ import (
 	context "context"
 	reflect "reflect"
 
+	config "github.com/conduitio/conduit-commons/config"
+	opencdc "github.com/conduitio/conduit-commons/opencdc"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -107,10 +109,10 @@ func (mr *MockDestinationMockRecorder) Open(arg0 any) *gomock.Call {
 }
 
 // Parameters mocks base method.
-func (m *MockDestination) Parameters() map[string]Parameter {
+func (m *MockDestination) Parameters() config.Parameters {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Parameters")
-	ret0, _ := ret[0].(map[string]Parameter)
+	ret0, _ := ret[0].(config.Parameters)
 	return ret0
 }
 
@@ -135,7 +137,7 @@ func (mr *MockDestinationMockRecorder) Teardown(arg0 any) *gomock.Call {
 }
 
 // Write mocks base method.
-func (m *MockDestination) Write(arg0 context.Context, arg1 []Record) (int, error) {
+func (m *MockDestination) Write(arg0 context.Context, arg1 []opencdc.Record) (int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Write", arg0, arg1)
 	ret0, _ := ret[0].(int)
