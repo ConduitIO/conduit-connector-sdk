@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/opencdc"
-
 	"github.com/conduitio/conduit-connector-protocol/cpluginv2"
 	cpluginv2mock "github.com/conduitio/conduit-connector-protocol/cpluginv2/mock"
 	"github.com/conduitio/conduit-connector-sdk/internal"

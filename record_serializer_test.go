@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/conduitio/conduit-commons/opencdc"
-
 	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 	"github.com/matryer/is"
 )

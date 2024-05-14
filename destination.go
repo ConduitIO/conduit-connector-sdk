@@ -25,9 +25,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/conduitio/conduit-commons/opencdc"
-
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-protocol/cpluginv2"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/csync"

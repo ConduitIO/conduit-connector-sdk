@@ -23,7 +23,6 @@ import (
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-
 	"golang.org/x/time/rate"
 )
 

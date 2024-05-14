@@ -20,9 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/conduitio/conduit-commons/opencdc"
-
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/matryer/is"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/time/rate"
