@@ -23,12 +23,13 @@ import (
 	"io"
 	"time"
 
+	"github.com/conduitio/conduit-commons/cchan"
+	"github.com/conduitio/conduit-commons/ccontext"
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/opencdc"
 	cplugin "github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/conduitio/conduit-connector-sdk/internal"
-	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
-	"github.com/conduitio/conduit-connector-sdk/internal/csync"
 	"github.com/jpillora/backoff"
 	"gopkg.in/tomb.v2"
 )
@@ -166,7 +167,7 @@ func (a *sourcePluginAdapter) Start(ctx context.Context, req cplugin.SourceStart
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
 		// detach context, so we can control when it's canceled
-		ctxOpen := internal.DetachContext(ctx)
+		ctxOpen := ccontext.Detach(ctx)
 		ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
 
 		startDone := make(chan struct{})
@@ -381,10 +382,11 @@ func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugi
 func (a *sourcePluginAdapter) waitForRun(ctx context.Context, timeout time.Duration) error {
 	// wait for all acks to be sent back to Conduit, stop waiting if context
 	// gets cancelled or timeout is reached
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	return csync.Run(
 		ctx,
 		func() { _ = a.t.Wait() }, // ignore tomb error, it will be returned in Run anyway
-		csync.WithTimeout(timeout),
 	)
 }
 

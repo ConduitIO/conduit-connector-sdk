@@ -25,11 +25,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/conduitio/conduit-commons/ccontext"
+
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/conduitio/conduit-connector-sdk/internal"
-	"github.com/conduitio/conduit-connector-sdk/internal/csync"
 )
 
 // Destination receives records from Conduit and writes them to 3rd party
@@ -174,7 +176,7 @@ func (a *destinationPluginAdapter) Start(ctx context.Context, _ cplugin.Destinat
 	a.lastPosition = new(csync.ValueWatcher[opencdc.Position])
 
 	// detach context, so we can control when it's canceled
-	ctxOpen := internal.DetachContext(ctx)
+	ctxOpen := ccontext.Detach(ctx)
 	ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
 
 	startDone := make(chan struct{})
@@ -250,12 +252,14 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cplugin.Destina
 
 	// wait for last record to be received, if it doesn't arrive in time we try
 	// to flush what we have so far
+	watchCtx, watchCancel := context.WithTimeout(ctx, stopTimeout)
+	defer watchCancel()
+
 	actualLastPosition, err := a.lastPosition.Watch(
-		ctx,
+		watchCtx,
 		func(val opencdc.Position) bool {
 			return bytes.Equal(val, req.LastPosition)
 		},
-		csync.WithTimeout(stopTimeout),
 	)
 	if err != nil {
 		err = fmt.Errorf("did not encounter expected last position %q, actual last position %q: %w", req.LastPosition, actualLastPosition, err)
@@ -263,8 +267,8 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cplugin.Destina
 	}
 
 	// flush cached records, allow it to take at most 1 minute
-	flushCtx, cancel := context.WithTimeout(ctx, stopTimeout)
-	defer cancel()
+	flushCtx, flushCancel := context.WithTimeout(ctx, stopTimeout)
+	defer flushCancel()
 
 	flushErr := a.writeStrategy.Flush(flushCtx)
 	if flushErr != nil && err == nil {
