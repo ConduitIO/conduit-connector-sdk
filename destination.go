@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/ccontext"
-
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/opencdc"
