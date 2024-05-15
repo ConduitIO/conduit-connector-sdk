@@ -117,21 +117,11 @@ type destinationPluginAdapter struct {
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cplugin.DestinationConfigureRequest) (cplugin.DestinationConfigureResponse, error) {
 	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
 
-	params := a.impl.Parameters()
-
-	// TODO should we stop doing this here? The Processor SDK does NOT do this.
-	// sanitize config and apply default values
-	cfg := config.Config(req.Config).
-		Sanitize().
-		ApplyDefaults(params)
-
 	var errs []error
-	// run builtin validations
-	errs = append(errs, cfg.Validate(params))
-	// run custom validations written by developer
-	errs = append(errs, a.impl.Configure(ctx, cfg))
-	// configure write strategy
-	errs = append(errs, a.configureWriteStrategy(ctx, cfg))
+	// Configure connector
+	errs = append(errs, a.impl.Configure(ctx, req.Config))
+	// Configure write strategy
+	errs = append(errs, a.configureWriteStrategy(ctx, req.Config))
 
 	return cplugin.DestinationConfigureResponse{}, errors.Join(errs...)
 }

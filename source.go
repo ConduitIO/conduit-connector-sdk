@@ -152,20 +152,7 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req cplugin.SourceC
 		StateAfter:           internal.StateConfigured,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
-		params := a.impl.Parameters()
-
-		// TODO should we stop doing this here? The Processor SDK does NOT do this.
-		// sanitize config and apply default values
-		cfg := config.Config(req.Config).
-			Sanitize().
-			ApplyDefaults(params)
-
-		// run builtin validations
-		err1 := cfg.Validate(params)
-		// run custom validations written by developer
-		err2 := a.impl.Configure(ctx, cfg)
-
-		return errors.Join(err1, err2)
+		return a.impl.Configure(ctx, req.Config)
 	})
 
 	return cplugin.SourceConfigureResponse{}, err

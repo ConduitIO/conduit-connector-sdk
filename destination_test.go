@@ -123,7 +123,6 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 		},
 	}
 
-	dst.EXPECT().Parameters()
 	dst.EXPECT().Configure(gomock.Any(), map[string]string{}).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), []opencdc.Record{want}).Return(1, nil).Times(10)
@@ -193,7 +192,6 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 		configDestinationBatchSize:  "5",
 	}
 
-	dst.EXPECT().Parameters()
 	dst.EXPECT().Configure(gomock.Any(), batchConfig).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), []opencdc.Record{want, want, want, want, want}).Return(5, nil)
@@ -266,7 +264,6 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 	}
 	wantErr := errors.New("write error")
 
-	dst.EXPECT().Parameters()
 	dst.EXPECT().Configure(gomock.Any(), batchConfig).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), []opencdc.Record{want, want, want, want, want}).Return(3, wantErr) // only 3 records are written
@@ -330,7 +327,6 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	lastRecord := opencdc.Record{Position: opencdc.Position("foo")}
 
 	// ackFunc stores the ackFunc so it can be called at a later time
-	dst.EXPECT().Parameters()
 	dst.EXPECT().Configure(gomock.Any(), map[string]string{}).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), gomock.Any()).Return(1, nil)
