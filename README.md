@@ -1,7 +1,7 @@
 # Conduit Connector SDK
 
 [![License](https://img.shields.io/badge/license-Apache%202-blue)](https://github.com/ConduitIO/conduit-connector-sdk/blob/main/LICENSE.md)
-[![Build](https://github.com/ConduitIO/conduit-connector-sdk/actions/workflows/build.yml/badge.svg)](https://github.com/ConduitIO/conduit-connector-sdk/actions/workflows/build.yml)
+[![Test](https://github.com/ConduitIO/conduit-connector-sdk/actions/workflows/test.yml/badge.svg)](https://github.com/ConduitIO/conduit-connector-sdk/actions/workflows/test.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/conduitio/conduit-connector-sdk)](https://goreportcard.com/report/github.com/conduitio/conduit-connector-sdk)
 [![Go Reference](https://pkg.go.dev/badge/github.com/conduitio/conduit-connector-sdk.svg)](https://pkg.go.dev/github.com/conduitio/conduit-connector-sdk)
 
