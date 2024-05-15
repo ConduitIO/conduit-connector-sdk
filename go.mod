@@ -9,12 +9,12 @@ require (
 	github.com/conduitio/conduit-commons v0.2.0
 	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240522160346-94685acd7300
 	github.com/goccy/go-json v0.10.3
-	github.com/google/uuid v1.6.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/matryer/is v1.4.1
 	github.com/rs/zerolog v1.33.0
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.4.0
+	golang.org/x/sync v0.7.0
 	golang.org/x/time v0.5.0
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
 )
@@ -25,6 +25,7 @@ require (
 	github.com/fatih/color v1.17.0 // indirect
 	github.com/frankban/quicktest v1.14.6 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-hclog v1.5.0 // indirect
 	github.com/hashicorp/go-plugin v1.6.1 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect

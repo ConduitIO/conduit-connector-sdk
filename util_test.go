@@ -22,7 +22,8 @@ import (
 	"github.com/conduitio/conduit-commons/config"
 )
 
-func ExampleParseConfig() {
+// ExampleUtil_ParseConfig shows the usage of Util.ParseConfig.
+func ExampleUtil_ParseConfig() {
 	cfg := map[string]string{
 		"foo": "bar   ", // will be sanitized
 		// "bar" is missing, will be set to the default value

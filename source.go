@@ -332,7 +332,7 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cplugin.SourceTear
 		ExpectedStates: nil, // Teardown can be called from any state
 		StateBefore:    internal.StateTearingDown,
 		StateAfter:     internal.StateTornDown,
-	}, func(state internal.ConnectorState) error {
+	}, func(internal.ConnectorState) error {
 		// cancel open and read context, in case Stop was not called (can happen in
 		// case the stop was triggered by an error)
 		// teardown can be called without "open" or "read" being called previously
