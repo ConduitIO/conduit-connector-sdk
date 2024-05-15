@@ -40,11 +40,12 @@ func SortFields(s *Schema) {
 	}
 }
 
-//nolint:gocyclo // reflection requires a huge switch, it's fine
+//nolint:gocognit // reflection requires a huge switch, it's fine
 func reflectInternal(v reflect.Value, t reflect.Type) *Schema {
 	if t == nil {
 		return nil // untyped nil
 	}
+	//nolint:exhaustive // We only support a subset of types.
 	switch t.Kind() {
 	case reflect.Bool:
 		return &Schema{Type: TypeBoolean}

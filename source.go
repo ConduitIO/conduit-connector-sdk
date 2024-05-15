@@ -247,8 +247,8 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cplugin.Source
 				// the plugin wants us to retry reading later
 				_, _, err := cchan.ChanOut[time.Time](time.After(b.Duration())).Recv(ctx)
 				if err != nil {
-					// the plugin is using the SDK for long polling and relying
-					// on the SDK to check for a cancelled context
+					//nolint:nilerr // The plugin is using the SDK for long-polling
+					// and relying on the SDK to check for a cancelled context.
 					return nil
 				}
 				continue
@@ -271,7 +271,7 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cplugin.SourceR
 	for {
 		batch, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil // stream is closed, not an error
 			}
 			return fmt.Errorf("ack stream error: %w", err)
@@ -369,9 +369,11 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cplugin.SourceTear
 func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req cplugin.SourceLifecycleOnCreatedRequest) (cplugin.SourceLifecycleOnCreatedResponse, error) {
 	return cplugin.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
+
 func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req cplugin.SourceLifecycleOnUpdatedRequest) (cplugin.SourceLifecycleOnUpdatedResponse, error) {
 	return cplugin.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
+
 func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugin.SourceLifecycleOnDeletedRequest) (cplugin.SourceLifecycleOnDeletedResponse, error) {
 	return cplugin.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }

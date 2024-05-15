@@ -49,11 +49,13 @@ func (p DebeziumPayload) ToEnvelope() Envelope {
 			{
 				Field: "op",
 				Type:  TypeString,
-			}, {
+			},
+			{
 				Field:    "ts_ms",
 				Type:     TypeInt64,
 				Optional: true,
-			}, {
+			},
+			{
 				Field:    "transaction",
 				Type:     TypeStruct,
 				Optional: true,
@@ -94,6 +96,7 @@ func (p DebeziumPayload) beforeSchema() Schema {
 	s.Optional = true // before is always optional
 	return *s
 }
+
 func (p DebeziumPayload) afterSchema() Schema {
 	var s *Schema
 	if p.After == nil {
@@ -112,6 +115,7 @@ func (p DebeziumPayload) afterSchema() Schema {
 	s.Optional = true // after is always optional
 	return *s
 }
+
 func (p DebeziumPayload) sourceSchema() Schema {
 	s := Reflect(p.Source)
 	if s == nil {

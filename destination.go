@@ -200,7 +200,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cplugin.Desti
 	for stream := stream.Server(); ; {
 		batch, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				// stream is closed
 				return nil
 			}
@@ -299,9 +299,11 @@ func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ cplugin.Desti
 func (a *destinationPluginAdapter) LifecycleOnCreated(ctx context.Context, req cplugin.DestinationLifecycleOnCreatedRequest) (cplugin.DestinationLifecycleOnCreatedResponse, error) {
 	return cplugin.DestinationLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
+
 func (a *destinationPluginAdapter) LifecycleOnUpdated(ctx context.Context, req cplugin.DestinationLifecycleOnUpdatedRequest) (cplugin.DestinationLifecycleOnUpdatedResponse, error) {
 	return cplugin.DestinationLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
+
 func (a *destinationPluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugin.DestinationLifecycleOnDeletedRequest) (cplugin.DestinationLifecycleOnDeletedResponse, error) {
 	return cplugin.DestinationLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
@@ -342,7 +344,7 @@ type writeStrategyBatch struct {
 }
 
 type writeBatchItem struct {
-	ctx    context.Context
+	ctx    context.Context //nolint:containedctx // We need the context to pass it to Write.
 	record opencdc.Record
 	ack    func(error) error
 }
@@ -443,6 +445,7 @@ func (w *writeStrategyBatch) Write(ctx context.Context, r opencdc.Record, ack fu
 		return fmt.Errorf("unknown batcher enqueue status: %v", status)
 	}
 }
+
 func (w *writeStrategyBatch) Flush(ctx context.Context) error {
 	w.batcher.Flush()
 	select {
