@@ -87,7 +87,9 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 	acks := make(chan Record, b.N) // huge buffer so we don't delay reads
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go bm.acker(b, acks, &wg)
+
+	errs := make(chan error, 1)
+	go bm.acker(errs, acks, &wg)
 
 	// measure first record read manually, it might be slower
 	bm.firstRead = bm.measure(func() {
@@ -115,6 +117,12 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 		wg.Wait()
 	})
 
+	select {
+	case err := <-errs:
+		b.Fatal("Ack: ", err)
+	default:
+	}
+
 	// teardown
 	bm.teardown = bm.measure(func() {
 		err := bm.source.Teardown(context.Background())
@@ -127,7 +135,7 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 	bm.reportMetrics(b)
 }
 
-func (bm *benchmarkSource) acker(b *testing.B, c <-chan Record, wg *sync.WaitGroup) {
+func (bm *benchmarkSource) acker(errs chan error, c <-chan Record, wg *sync.WaitGroup) {
 	defer wg.Done()
 	ctx := context.Background()
 
@@ -135,7 +143,7 @@ func (bm *benchmarkSource) acker(b *testing.B, c <-chan Record, wg *sync.WaitGro
 	bm.firstAck = bm.measure(func() {
 		err := bm.source.Ack(ctx, rec.Position)
 		if err != nil {
-			b.Fatal("Ack: ", err)
+			errs <- err
 		}
 	})
 
@@ -143,7 +151,7 @@ func (bm *benchmarkSource) acker(b *testing.B, c <-chan Record, wg *sync.WaitGro
 		for rec := range c {
 			err := bm.source.Ack(context.Background(), rec.Position)
 			if err != nil {
-				b.Fatal("Ack: ", err)
+				errs <- err
 			}
 		}
 	})
