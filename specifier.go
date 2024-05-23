@@ -18,7 +18,7 @@ import (
 	"context"
 
 	"github.com/conduitio/conduit-commons/config"
-	"github.com/conduitio/conduit-connector-protocol/cpluginv2"
+	"github.com/conduitio/conduit-connector-protocol/cplugin"
 )
 
 // Specification contains general information regarding the plugin like its name
@@ -40,8 +40,8 @@ type Specification struct {
 }
 
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that
-// converts it into a cpluginv2.SpecifierPlugin.
-func NewSpecifierPlugin(specs Specification, source Source, dest Destination) cpluginv2.SpecifierPlugin {
+// converts it into a cplugin.SpecifierPlugin.
+func NewSpecifierPlugin(specs Specification, source Source, dest Destination) cplugin.SpecifierPlugin {
 	if source == nil {
 		// prevent nil pointer
 		source = UnimplementedSource{}
@@ -64,8 +64,8 @@ type specifierPluginAdapter struct {
 	destinationParams config.Parameters
 }
 
-func (s *specifierPluginAdapter) Specify(context.Context, cpluginv2.SpecifierSpecifyRequest) (cpluginv2.SpecifierSpecifyResponse, error) {
-	return cpluginv2.SpecifierSpecifyResponse{
+func (s *specifierPluginAdapter) Specify(context.Context, cplugin.SpecifierSpecifyRequest) (cplugin.SpecifierSpecifyResponse, error) {
+	return cplugin.SpecifierSpecifyResponse{
 		Name:              s.specs.Name,
 		Summary:           s.specs.Summary,
 		Description:       s.specs.Description,

@@ -17,14 +17,12 @@ package sdk
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"testing"
 	"time"
 
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/cpluginv2"
-	cpluginv2mock "github.com/conduitio/conduit-connector-protocol/cpluginv2/mock"
+	"github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
 	"github.com/matryer/is"
@@ -48,7 +46,7 @@ func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := srcPlugin.Start(ctx, cpluginv2.SourceStartRequest{})
+	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{})
 	is.NoErr(err)
 	is.NoErr(gotCtx.Err()) // expected context to be open
 
@@ -80,7 +78,7 @@ func TestSourcePluginAdapter_Start_ClosedContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := srcPlugin.Start(ctx, cpluginv2.SourceStartRequest{})
+	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{})
 	is.True(err != nil)
 	is.Equal(err, ctx.Err())
 	is.Equal(gotCtx.Err(), context.Canceled)
@@ -105,7 +103,7 @@ func TestSourcePluginAdapter_Start_Logger(t *testing.T) {
 
 	ctx := wantLogger.WithContext(context.Background())
 
-	_, err := srcPlugin.Start(ctx, cpluginv2.SourceStartRequest{})
+	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{})
 	is.NoErr(err)
 }
 
@@ -142,10 +140,10 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	r2 := src.EXPECT().Read(gomock.Any()).Return(wantLast, nil).After(r1)
 	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r2)
 
-	stream, reqStream, respStream := newSourceRunStreamMock(ctrl)
-
 	ctx := context.Background()
-	_, err := srcPlugin.Start(ctx, cpluginv2.SourceStartRequest{Position: nil})
+	stream := NewInMemorySourceRunStream(ctx)
+
+	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{Position: nil})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -155,31 +153,34 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 		is.NoErr(err)
 	}()
 
+	clientStream := stream.Client()
 	for i := 0; i < recordCount-1; i++ {
-		resp := <-respStream
-		is.Equal(resp, cpluginv2.SourceRunResponse{Record: want})
+		resp, err := clientStream.Recv()
+		is.NoErr(err)
+		is.Equal(resp, cplugin.SourceRunResponse{Records: []opencdc.Record{want}})
 	}
 
 	// fetch last record
-	resp := <-respStream
-	is.Equal(resp, cpluginv2.SourceRunResponse{Record: wantLast})
+	resp, err := clientStream.Recv()
+	is.NoErr(err)
+	is.Equal(resp, cplugin.SourceRunResponse{Records: []opencdc.Record{wantLast}})
 
-	stopResp, err := srcPlugin.Stop(ctx, cpluginv2.SourceStopRequest{})
+	stopResp, err := srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
 	is.NoErr(err)
 
-	is.Equal([]byte(wantLast.Position), stopResp.LastPosition) // unexpected last position
+	is.Equal(wantLast.Position, stopResp.LastPosition) // unexpected last position
 
 	// after stop the source should stop producing new records, but it will
 	// wait for acks coming back, let's send back all acks but last one
 	src.EXPECT().Ack(gomock.Any(), want.Position).Times(recordCount - 1)
 
 	for i := 0; i < recordCount-1; i++ {
-		reqStream <- cpluginv2.SourceRunRequest{AckPosition: want.Position}
+		err = clientStream.Send(cplugin.SourceRunRequest{AckPositions: []opencdc.Position{want.Position}})
+		is.NoErr(err)
 	}
 
 	// close stream
-	close(reqStream)
-	close(respStream)
+	stream.Close(io.EOF)
 
 	// wait for Run to exit
 	<-runDone
@@ -212,10 +213,10 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 		<-make(chan struct{}) // block forever and ever
 	}).After(r1)
 
-	stream, _, respStream := newSourceRunStreamMock(ctrl)
-
 	ctx := context.Background()
-	_, err := srcPlugin.Start(ctx, cpluginv2.SourceStartRequest{Position: nil})
+	stream := NewInMemorySourceRunStream(ctx)
+
+	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{Position: nil})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -225,17 +226,19 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 		is.Equal("forceful teardown", err.Error())
 	}()
 
-	resp := <-respStream
-	is.Equal(resp, cpluginv2.SourceRunResponse{Record: want})
+	clientStream := stream.Client()
+	resp, err := clientStream.Recv()
+	is.NoErr(err)
+	is.Equal(resp, cplugin.SourceRunResponse{Records: []opencdc.Record{want}})
 
 	// after this the connector starts blocking, we try to trigger a stop
-	stopResp, err := srcPlugin.Stop(ctx, cpluginv2.SourceStopRequest{})
+	stopResp, err := srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
 	is.True(errors.Is(err, context.DeadlineExceeded))
 	is.Equal(nil, stopResp.LastPosition) // unexpected last position
 
 	// the connector is still blocking, teardown should detach the goroutine
 	src.EXPECT().Teardown(gomock.Any()).Return(nil)
-	_, err = srcPlugin.Teardown(ctx, cpluginv2.SourceTeardownRequest{})
+	_, err = srcPlugin.Teardown(ctx, cplugin.SourceTeardownRequest{})
 	is.True(errors.Is(err, context.DeadlineExceeded))
 
 	// wait for Run to exit, teardown killed it
@@ -265,15 +268,15 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 	r1 := src.EXPECT().Read(gomock.Any()).Return(want, nil)
 	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r1)
 
-	stream, reqStream, respStream := newSourceRunStreamMock(ctrl)
+	ctx := context.Background()
+	stream := NewInMemorySourceRunStream(ctx)
 
 	// Start connector now
-	ctx := context.Background()
-	_, err := srcPlugin.Start(ctx, cpluginv2.SourceStartRequest{Position: nil})
+	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{Position: nil})
 	is.NoErr(err)
 
 	// Run was not triggered yet, but we try to stop
-	stopResp, err := srcPlugin.Stop(ctx, cpluginv2.SourceStopRequest{})
+	stopResp, err := srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
 	is.True(errors.Is(err, context.DeadlineExceeded))
 	is.Equal(nil, stopResp.LastPosition) // unexpected last position
 
@@ -285,22 +288,23 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 	}()
 
 	// Stop should still be blocked because there is a pending record that was not read yet
-	stopResp, err = srcPlugin.Stop(ctx, cpluginv2.SourceStopRequest{})
+	stopResp, err = srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
 	is.True(errors.Is(err, context.DeadlineExceeded))
 	is.Equal(nil, stopResp.LastPosition) // unexpected last position
 
 	// fetch produced record
-	resp := <-respStream
-	is.Equal(resp, cpluginv2.SourceRunResponse{Record: want})
+	clientStream := stream.Client()
+	resp, err := clientStream.Recv()
+	is.NoErr(err)
+	is.Equal(resp, cplugin.SourceRunResponse{Records: []opencdc.Record{want}})
 
 	// after this the connector can be stopped
-	stopResp, err = srcPlugin.Stop(ctx, cpluginv2.SourceStopRequest{})
+	stopResp, err = srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
 	is.NoErr(err)
-	is.Equal([]byte(want.Position), stopResp.LastPosition) // unexpected last position
+	is.Equal(want.Position, stopResp.LastPosition) // unexpected last position
 
 	// close stream
-	close(reqStream)
-	close(respStream)
+	stream.Close(io.EOF)
 
 	// wait for Run to exit
 	_, _, err = cchan.ChanOut[struct{}](runDone).RecvTimeout(ctx, time.Second)
@@ -319,10 +323,10 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	r1 := src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, nil)
 	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r1)
 
-	stream, reqStream, respStream := newSourceRunStreamMock(ctrl)
-
 	ctx := context.Background()
-	_, err := srcPlugin.Start(ctx, cpluginv2.SourceStartRequest{Position: nil})
+	stream := NewInMemorySourceRunStream(ctx)
+
+	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{Position: nil})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -333,17 +337,19 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	}()
 
 	// fetch one record from stream to ensure Run started
-	<-respStream
+	clientStream := stream.Client()
+	_, err = clientStream.Recv()
+	is.NoErr(err)
 
 	// stop the record producing goroutine
-	_, err = srcPlugin.Stop(ctx, cpluginv2.SourceStopRequest{})
+	_, err = srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
 	is.NoErr(err)
 
 	// teardown should block until the stream is closed and all acks were received
 	teardownDone := make(chan struct{})
 	go func() {
 		defer close(teardownDone)
-		_, err := srcPlugin.Teardown(ctx, cpluginv2.SourceTeardownRequest{})
+		_, err := srcPlugin.Teardown(ctx, cplugin.SourceTeardownRequest{})
 		is.NoErr(err)
 	}()
 
@@ -356,8 +362,7 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 
 	// close stream and unblock teardown
 	src.EXPECT().Teardown(gomock.Any()).Return(nil)
-	close(reqStream)
-	close(respStream)
+	stream.Close(io.EOF)
 
 	// wait for Teardown and Run to exit
 	<-teardownDone
@@ -375,7 +380,7 @@ func TestSourcePluginAdapter_LifecycleOnCreated(t *testing.T) {
 	want := map[string]string{"foo": "bar"}
 	src.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
 
-	req := cpluginv2.SourceLifecycleOnCreatedRequest{Config: want}
+	req := cplugin.SourceLifecycleOnCreatedRequest{Config: want}
 	_, err := srcPlugin.LifecycleOnCreated(ctx, req)
 	is.NoErr(err)
 }
@@ -392,7 +397,7 @@ func TestSourcePluginAdapter_LifecycleOnUpdated(t *testing.T) {
 	wantAfter := map[string]string{"foo": "baz"}
 	src.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
 
-	req := cpluginv2.SourceLifecycleOnUpdatedRequest{
+	req := cplugin.SourceLifecycleOnUpdatedRequest{
 		ConfigBefore: wantBefore,
 		ConfigAfter:  wantAfter,
 	}
@@ -411,46 +416,7 @@ func TestSourcePluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	want := map[string]string{"foo": "bar"}
 	src.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
 
-	req := cpluginv2.SourceLifecycleOnDeletedRequest{Config: want}
+	req := cplugin.SourceLifecycleOnDeletedRequest{Config: want}
 	_, err := srcPlugin.LifecycleOnDeleted(ctx, req)
 	is.NoErr(err)
-}
-
-func newSourceRunStreamMock(
-	ctrl *gomock.Controller,
-) (
-	*cpluginv2mock.SourceRunStream,
-	chan cpluginv2.SourceRunRequest,
-	chan cpluginv2.SourceRunResponse,
-) {
-	stream := cpluginv2mock.NewSourceRunStream(ctrl)
-
-	reqStream := make(chan cpluginv2.SourceRunRequest)
-	respStream := make(chan cpluginv2.SourceRunResponse)
-
-	stream.EXPECT().Send(gomock.Any()).
-		DoAndReturn(func(resp cpluginv2.SourceRunResponse) (err error) {
-			defer func() {
-				if r := recover(); r != nil {
-					var ok bool
-					err, ok = r.(error)
-					if !ok {
-						err = fmt.Errorf("%+v", r)
-					}
-				}
-			}()
-			respStream <- resp
-			return nil
-		}).AnyTimes()
-
-	stream.EXPECT().Recv().
-		DoAndReturn(func() (cpluginv2.SourceRunRequest, error) {
-			req, ok := <-reqStream
-			if !ok {
-				return cpluginv2.SourceRunRequest{}, io.EOF
-			}
-			return req, nil
-		}).AnyTimes()
-
-	return stream, reqStream, respStream
 }

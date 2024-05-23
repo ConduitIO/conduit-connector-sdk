@@ -27,7 +27,7 @@ import (
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/cpluginv2"
+	"github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/csync"
 )
@@ -94,9 +94,9 @@ type Destination interface {
 }
 
 // NewDestinationPlugin takes a Destination and wraps it into an adapter that
-// converts it into a cpluginv2.DestinationPlugin. If the parameter is nil it
+// converts it into a cplugin.DestinationPlugin. If the parameter is nil it
 // will wrap UnimplementedDestination instead.
-func NewDestinationPlugin(impl Destination) cpluginv2.DestinationPlugin {
+func NewDestinationPlugin(impl Destination) cplugin.DestinationPlugin {
 	if impl == nil {
 		// prevent nil pointers
 		impl = UnimplementedDestination{}
@@ -114,7 +114,7 @@ type destinationPluginAdapter struct {
 	writeStrategy writeStrategy
 }
 
-func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv2.DestinationConfigureRequest) (cpluginv2.DestinationConfigureResponse, error) {
+func (a *destinationPluginAdapter) Configure(ctx context.Context, req cplugin.DestinationConfigureRequest) (cplugin.DestinationConfigureResponse, error) {
 	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
 
 	params := a.impl.Parameters()
@@ -133,7 +133,7 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req cpluginv2.
 	// configure write strategy
 	errs = append(errs, a.configureWriteStrategy(ctx, cfg))
 
-	return cpluginv2.DestinationConfigureResponse{}, errors.Join(errs...)
+	return cplugin.DestinationConfigureResponse{}, errors.Join(errs...)
 }
 
 func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config map[string]string) error {
@@ -180,7 +180,7 @@ func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, c
 	return nil
 }
 
-func (a *destinationPluginAdapter) Start(ctx context.Context, _ cpluginv2.DestinationStartRequest) (cpluginv2.DestinationStartResponse, error) {
+func (a *destinationPluginAdapter) Start(ctx context.Context, _ cplugin.DestinationStartRequest) (cplugin.DestinationStartResponse, error) {
 	a.lastPosition = new(csync.ValueWatcher[opencdc.Position])
 
 	// detach context, so we can control when it's canceled
@@ -202,12 +202,12 @@ func (a *destinationPluginAdapter) Start(ctx context.Context, _ cpluginv2.Destin
 	}()
 
 	err := a.impl.Open(ctxOpen)
-	return cpluginv2.DestinationStartResponse{}, err
+	return cplugin.DestinationStartResponse{}, err
 }
 
-func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv2.DestinationRunStream) error {
-	for {
-		req, err := stream.Recv()
+func (a *destinationPluginAdapter) Run(ctx context.Context, stream cplugin.DestinationRunStream) error {
+	for stream := stream.Server(); ; {
+		batch, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
 				// stream is closed
@@ -216,25 +216,29 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cpluginv2.Des
 			return fmt.Errorf("write stream error: %w", err)
 		}
 
-		err = a.writeStrategy.Write(ctx, req.Record, func(err error) error {
-			return a.ack(req.Record, err, stream)
-		})
-		a.lastPosition.Set(req.Record.Position)
-		if err != nil {
-			return err
+		for _, rec := range batch.Records {
+			err = a.writeStrategy.Write(ctx, rec, func(err error) error {
+				return a.ack(rec, err, stream)
+			})
+			a.lastPosition.Set(rec.Position)
+			if err != nil {
+				return err
+			}
 		}
 	}
 }
 
 // ack sends a message into the stream signaling that the record was processed.
-func (a *destinationPluginAdapter) ack(r opencdc.Record, writeErr error, stream cpluginv2.DestinationRunStream) error {
+func (a *destinationPluginAdapter) ack(r opencdc.Record, writeErr error, stream cplugin.DestinationRunStreamServer) error {
 	var ackErrStr string
 	if writeErr != nil {
 		ackErrStr = writeErr.Error()
 	}
-	err := stream.Send(cpluginv2.DestinationRunResponse{
-		AckPosition: r.Position,
-		Error:       ackErrStr,
+	err := stream.Send(cplugin.DestinationRunResponse{
+		Acks: []cplugin.DestinationRunResponseAck{{
+			Position: r.Position,
+			Error:    ackErrStr,
+		}},
 	})
 	if err != nil {
 		return fmt.Errorf("ack stream error: %w", err)
@@ -250,7 +254,7 @@ func (a *destinationPluginAdapter) ack(r opencdc.Record, writeErr error, stream 
 // flushing records received so far and return an error. Flushing of records
 // also has a timeout of 1 minute, after which the stop operation returns with
 // an error. In the worst case this operation can thus take 2 minutes.
-func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv2.DestinationStopRequest) (cpluginv2.DestinationStopResponse, error) {
+func (a *destinationPluginAdapter) Stop(ctx context.Context, req cplugin.DestinationStopRequest) (cplugin.DestinationStopResponse, error) {
 	// last thing we do is cancel context in Open
 	defer a.openCancel()
 
@@ -279,10 +283,10 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cpluginv2.Desti
 		Logger(ctx).Err(err).Msg("error flushing records")
 	}
 
-	return cpluginv2.DestinationStopResponse{}, err
+	return cplugin.DestinationStopResponse{}, err
 }
 
-func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ cpluginv2.DestinationTeardownRequest) (cpluginv2.DestinationTeardownResponse, error) {
+func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ cplugin.DestinationTeardownRequest) (cplugin.DestinationTeardownResponse, error) {
 	// cancel open context, in case Stop was not called (can happen in case the
 	// stop was triggered by an error)
 	// teardown can be called without "open" being called previously
@@ -294,19 +298,19 @@ func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ cpluginv2.Des
 
 	err := a.impl.Teardown(ctx)
 	if err != nil {
-		return cpluginv2.DestinationTeardownResponse{}, err
+		return cplugin.DestinationTeardownResponse{}, err
 	}
-	return cpluginv2.DestinationTeardownResponse{}, nil
+	return cplugin.DestinationTeardownResponse{}, nil
 }
 
-func (a *destinationPluginAdapter) LifecycleOnCreated(ctx context.Context, req cpluginv2.DestinationLifecycleOnCreatedRequest) (cpluginv2.DestinationLifecycleOnCreatedResponse, error) {
-	return cpluginv2.DestinationLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
+func (a *destinationPluginAdapter) LifecycleOnCreated(ctx context.Context, req cplugin.DestinationLifecycleOnCreatedRequest) (cplugin.DestinationLifecycleOnCreatedResponse, error) {
+	return cplugin.DestinationLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
-func (a *destinationPluginAdapter) LifecycleOnUpdated(ctx context.Context, req cpluginv2.DestinationLifecycleOnUpdatedRequest) (cpluginv2.DestinationLifecycleOnUpdatedResponse, error) {
-	return cpluginv2.DestinationLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
+func (a *destinationPluginAdapter) LifecycleOnUpdated(ctx context.Context, req cplugin.DestinationLifecycleOnUpdatedRequest) (cplugin.DestinationLifecycleOnUpdatedResponse, error) {
+	return cplugin.DestinationLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
-func (a *destinationPluginAdapter) LifecycleOnDeleted(ctx context.Context, req cpluginv2.DestinationLifecycleOnDeletedRequest) (cpluginv2.DestinationLifecycleOnDeletedResponse, error) {
-	return cpluginv2.DestinationLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
+func (a *destinationPluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugin.DestinationLifecycleOnDeletedRequest) (cplugin.DestinationLifecycleOnDeletedResponse, error) {
+	return cplugin.DestinationLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
 
 // writeStrategy is used to switch between writing single records and batching

@@ -18,7 +18,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/conduitio/conduit-connector-protocol/cpluginv2"
+	"github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/matryer/is"
 )
 
@@ -26,7 +26,7 @@ func TestSpecifier_NilSource(t *testing.T) {
 	is := is.New(t)
 	// ensure that having a connector without a source still works
 	p := NewSpecifierPlugin(Specification{}, nil, UnimplementedDestination{})
-	_, err := p.Specify(context.Background(), cpluginv2.SpecifierSpecifyRequest{})
+	_, err := p.Specify(context.Background(), cplugin.SpecifierSpecifyRequest{})
 	is.NoErr(err)
 }
 
@@ -34,6 +34,6 @@ func TestSpecifier_NilDestination(t *testing.T) {
 	is := is.New(t)
 	// ensure that having a connector without a destination still works
 	p := NewSpecifierPlugin(Specification{}, UnimplementedSource{}, nil)
-	_, err := p.Specify(context.Background(), cpluginv2.SpecifierSpecifyRequest{})
+	_, err := p.Specify(context.Background(), cplugin.SpecifierSpecifyRequest{})
 	is.NoErr(err)
 }

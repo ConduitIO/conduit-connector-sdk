@@ -17,14 +17,12 @@ package sdk
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"testing"
 	"time"
 
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/cpluginv2"
-	cpluginv2mock "github.com/conduitio/conduit-connector-protocol/cpluginv2/mock"
+	"github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
 	"go.uber.org/mock/gomock"
@@ -45,7 +43,7 @@ func TestDestinationPluginAdapter_Start_OpenContext(t *testing.T) {
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := dstPlugin.Start(ctx, cpluginv2.DestinationStartRequest{})
+	_, err := dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
 	is.NoErr(err)
 	is.NoErr(gotCtx.Err()) // expected context to be open
 
@@ -76,7 +74,7 @@ func TestDestinationPluginAdapter_Start_ClosedContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := dstPlugin.Start(ctx, cpluginv2.DestinationStartRequest{})
+	_, err := dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
 	is.True(err != nil)
 	is.Equal(err, ctx.Err())
 	is.Equal(gotCtx.Err(), context.Canceled)
@@ -100,7 +98,7 @@ func TestDestinationPluginAdapter_Start_Logger(t *testing.T) {
 
 	ctx := wantLogger.WithContext(context.Background())
 
-	_, err := dstPlugin.Start(ctx, cpluginv2.DestinationStartRequest{})
+	_, err := dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
 	is.NoErr(err)
 }
 
@@ -130,12 +128,12 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), []opencdc.Record{want}).Return(1, nil).Times(10)
 
-	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
-
 	ctx := context.Background()
-	_, err := dstPlugin.Configure(ctx, cpluginv2.DestinationConfigureRequest{Config: map[string]string{}})
+	stream := NewInMemoryDestinationRunStream(ctx)
+
+	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: map[string]string{}})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cpluginv2.DestinationStartRequest{})
+	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -146,18 +144,22 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 	}()
 
 	// write 10 records
+	clientStream := stream.Client()
 	for i := 0; i < 10; i++ {
-		reqStream <- cpluginv2.DestinationRunRequest{Record: want}
-		resp := <-respStream
-		is.Equal(resp, cpluginv2.DestinationRunResponse{
-			AckPosition: want.Position,
-			Error:       "",
+		err = clientStream.Send(cplugin.DestinationRunRequest{Records: []opencdc.Record{want}})
+		is.NoErr(err)
+		resp, err := clientStream.Recv()
+		is.NoErr(err)
+		is.Equal(resp, cplugin.DestinationRunResponse{
+			Acks: []cplugin.DestinationRunResponseAck{{
+				Position: want.Position,
+				Error:    "",
+			}},
 		})
 	}
 
 	// close stream
-	close(reqStream)
-	close(respStream)
+	stream.Close(io.EOF)
 
 	// wait for Run to exit
 	<-runDone
@@ -196,12 +198,12 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), []opencdc.Record{want, want, want, want, want}).Return(5, nil)
 
-	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
-
 	ctx := context.Background()
-	_, err := dstPlugin.Configure(ctx, cpluginv2.DestinationConfigureRequest{Config: batchConfig})
+	stream := NewInMemoryDestinationRunStream(ctx)
+
+	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: batchConfig})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cpluginv2.DestinationStartRequest{})
+	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -212,20 +214,24 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 	}()
 
 	// write 5 records
+	clientStream := stream.Client()
 	for i := 0; i < 5; i++ {
-		reqStream <- cpluginv2.DestinationRunRequest{Record: want}
+		err = clientStream.Send(cplugin.DestinationRunRequest{Records: []opencdc.Record{want}})
+		is.NoErr(err)
 	}
 	for i := 0; i < 5; i++ {
-		resp := <-respStream
-		is.Equal(resp, cpluginv2.DestinationRunResponse{
-			AckPosition: want.Position,
-			Error:       "",
+		resp, err := clientStream.Recv()
+		is.NoErr(err)
+		is.Equal(resp, cplugin.DestinationRunResponse{
+			Acks: []cplugin.DestinationRunResponseAck{{
+				Position: want.Position,
+				Error:    "",
+			}},
 		})
 	}
 
 	// close stream
-	close(reqStream)
-	close(respStream)
+	stream.Close(io.EOF)
 
 	// wait for Run to exit
 	<-runDone
@@ -265,12 +271,12 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), []opencdc.Record{want, want, want, want, want}).Return(3, wantErr) // only 3 records are written
 
-	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
-
 	ctx := context.Background()
-	_, err := dstPlugin.Configure(ctx, cpluginv2.DestinationConfigureRequest{Config: batchConfig})
+	stream := NewInMemoryDestinationRunStream(ctx)
+
+	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: batchConfig})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cpluginv2.DestinationStartRequest{})
+	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -281,27 +287,34 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 	}()
 
 	// write 5 records
+	clientStream := stream.Client()
 	for i := 0; i < 5; i++ {
-		reqStream <- cpluginv2.DestinationRunRequest{Record: want}
+		err = clientStream.Send(cplugin.DestinationRunRequest{Records: []opencdc.Record{want}})
+		is.NoErr(err)
 	}
 	for i := 0; i < 3; i++ {
-		resp := <-respStream
-		is.Equal(resp, cpluginv2.DestinationRunResponse{
-			AckPosition: want.Position,
-			Error:       "",
+		resp, err := clientStream.Recv()
+		is.NoErr(err)
+		is.Equal(resp, cplugin.DestinationRunResponse{
+			Acks: []cplugin.DestinationRunResponseAck{{
+				Position: want.Position,
+				Error:    "",
+			}},
 		})
 	}
 	for i := 0; i < 2; i++ {
-		resp := <-respStream
-		is.Equal(resp, cpluginv2.DestinationRunResponse{
-			AckPosition: want.Position,
-			Error:       wantErr.Error(),
+		resp, err := clientStream.Recv()
+		is.NoErr(err)
+		is.Equal(resp, cplugin.DestinationRunResponse{
+			Acks: []cplugin.DestinationRunResponseAck{{
+				Position: want.Position,
+				Error:    wantErr.Error(),
+			}},
 		})
 	}
 
 	// close stream
-	close(reqStream)
-	close(respStream)
+	stream.Close(io.EOF)
 
 	// wait for Run to exit
 	<-runDone
@@ -322,12 +335,12 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), gomock.Any()).Return(1, nil)
 
-	stream, reqStream, respStream := newDestinationRunStreamMock(ctrl)
-
 	ctx := context.Background()
-	_, err := dstPlugin.Configure(ctx, cpluginv2.DestinationConfigureRequest{Config: map[string]string{}})
+	stream := NewInMemoryDestinationRunStream(ctx)
+
+	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: map[string]string{}})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cpluginv2.DestinationStartRequest{})
+	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -345,7 +358,7 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 		defer close(stopDone)
 		_, err := dstPlugin.Stop(
 			context.Background(),
-			cpluginv2.DestinationStopRequest{LastPosition: lastRecord.Position},
+			cplugin.DestinationStopRequest{LastPosition: lastRecord.Position},
 		)
 		is.NoErr(err)
 	}()
@@ -358,7 +371,9 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	}
 
 	// send last record
-	reqStream <- cpluginv2.DestinationRunRequest{Record: lastRecord}
+	clientStream := stream.Client()
+	err = clientStream.Send(cplugin.DestinationRunRequest{Records: []opencdc.Record{lastRecord}})
+	is.NoErr(err)
 
 	// stop should still block since acknowledgment wasn't sent back yet
 	select {
@@ -369,7 +384,8 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	}
 
 	// let's receive the ack now
-	<-respStream
+	_, err = clientStream.Recv()
+	is.NoErr(err)
 
 	select {
 	case <-stopDone:
@@ -379,8 +395,7 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	}
 
 	// close stream at the end
-	close(reqStream)
-	close(respStream)
+	stream.Close(io.EOF)
 
 	// wait for Run to exit
 	<-runDone
@@ -397,7 +412,7 @@ func TestDestinationPluginAdapter_LifecycleOnCreated(t *testing.T) {
 	want := map[string]string{"foo": "bar"}
 	dst.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
 
-	req := cpluginv2.DestinationLifecycleOnCreatedRequest{Config: want}
+	req := cplugin.DestinationLifecycleOnCreatedRequest{Config: want}
 	_, err := dstPlugin.LifecycleOnCreated(ctx, req)
 	is.NoErr(err)
 }
@@ -414,7 +429,7 @@ func TestDestinationPluginAdapter_LifecycleOnUpdated(t *testing.T) {
 	wantAfter := map[string]string{"foo": "baz"}
 	dst.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
 
-	req := cpluginv2.DestinationLifecycleOnUpdatedRequest{
+	req := cplugin.DestinationLifecycleOnUpdatedRequest{
 		ConfigBefore: wantBefore,
 		ConfigAfter:  wantAfter,
 	}
@@ -433,46 +448,7 @@ func TestDestinationPluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	want := map[string]string{"foo": "bar"}
 	dst.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
 
-	req := cpluginv2.DestinationLifecycleOnDeletedRequest{Config: want}
+	req := cplugin.DestinationLifecycleOnDeletedRequest{Config: want}
 	_, err := dstPlugin.LifecycleOnDeleted(ctx, req)
 	is.NoErr(err)
-}
-
-func newDestinationRunStreamMock(
-	ctrl *gomock.Controller,
-) (
-	*cpluginv2mock.DestinationRunStream,
-	chan cpluginv2.DestinationRunRequest,
-	chan cpluginv2.DestinationRunResponse,
-) {
-	stream := cpluginv2mock.NewDestinationRunStream(ctrl)
-
-	reqStream := make(chan cpluginv2.DestinationRunRequest)
-	respStream := make(chan cpluginv2.DestinationRunResponse)
-
-	stream.EXPECT().Send(gomock.Any()).
-		DoAndReturn(func(resp cpluginv2.DestinationRunResponse) (err error) {
-			defer func() {
-				if r := recover(); r != nil {
-					var ok bool
-					err, ok = r.(error)
-					if !ok {
-						err = fmt.Errorf("%+v", r)
-					}
-				}
-			}()
-			respStream <- resp
-			return nil
-		}).AnyTimes()
-
-	stream.EXPECT().Recv().
-		DoAndReturn(func() (cpluginv2.DestinationRunRequest, error) {
-			req, ok := <-reqStream
-			if !ok {
-				return cpluginv2.DestinationRunRequest{}, io.EOF
-			}
-			return req, nil
-		}).AnyTimes()
-
-	return stream, reqStream, respStream
 }
