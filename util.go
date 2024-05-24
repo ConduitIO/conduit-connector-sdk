@@ -31,7 +31,10 @@ var Util = struct {
 	// so to rename a key, use the "json" tag and set a value directly. To embed structs, append ",squash" to your tag.
 	// for more details and docs, check https://pkg.go.dev/github.com/mitchellh/mapstructure
 	ParseConfig func(map[string]string, interface{}) error
+
+	Schemas SchemaUtil
 }{
+	Schemas:     NewSchemaUtil(),
 	ParseConfig: parseConfig,
 }
 
