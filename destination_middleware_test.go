@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/matryer/is"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/time/rate"
@@ -32,7 +34,7 @@ func TestDestinationWithBatch_Parameters(t *testing.T) {
 
 	d := DestinationWithBatch{}.Wrap(dst)
 
-	want := map[string]Parameter{
+	want := config.Parameters{
 		"foo": {
 			Default:     "bar",
 			Description: "baz",
@@ -114,7 +116,7 @@ func TestDestinationWithRateLimit_Parameters(t *testing.T) {
 
 	d := DestinationWithRateLimit{}.Wrap(dst)
 
-	want := map[string]Parameter{
+	want := config.Parameters{
 		"foo": {
 			Default:     "bar",
 			Description: "baz",
@@ -228,13 +230,13 @@ func TestDestinationWithRateLimit_Write(t *testing.T) {
 	})
 	is.NoErr(err)
 
-	recs := []Record{{}, {}}
+	recs := []opencdc.Record{{}, {}}
 
 	const tolerance = time.Millisecond * 10
 
 	expectWriteAfter := func(delay time.Duration) {
 		start := time.Now()
-		dst.EXPECT().Write(ctx, recs).Do(func(context.Context, []Record) {
+		dst.EXPECT().Write(ctx, recs).Do(func(context.Context, []opencdc.Record) {
 			dur := time.Since(start)
 			diff := dur - delay
 			if diff < 0 {
@@ -278,7 +280,7 @@ func TestDestinationWithRateLimit_Write_CancelledContext(t *testing.T) {
 	is.NoErr(err)
 
 	cancel()
-	_, err = d.Write(ctx, []Record{{}})
+	_, err = d.Write(ctx, []opencdc.Record{{}})
 	is.True(errors.Is(err, ctx.Err()))
 }
 
@@ -288,22 +290,22 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
-		name          string
-		middleware    DestinationWithRecordFormat
-		have          map[string]string
-		wantFormatter RecordFormatter
+		name           string
+		middleware     DestinationWithRecordFormat
+		have           map[string]string
+		wantSerializer RecordSerializer
 	}{{
-		name:          "empty config",
-		middleware:    DestinationWithRecordFormat{},
-		have:          map[string]string{},
-		wantFormatter: defaultFormatter,
+		name:           "empty config",
+		middleware:     DestinationWithRecordFormat{},
+		have:           map[string]string{},
+		wantSerializer: defaultSerializer,
 	}, {
 		name:       "valid config",
 		middleware: DestinationWithRecordFormat{},
 		have: map[string]string{
 			configDestinationRecordFormat: "debezium/json",
 		},
-		wantFormatter: GenericRecordFormatter{
+		wantSerializer: GenericRecordSerializer{
 			Converter: DebeziumConverter{
 				RawDataKey: debeziumDefaultRawDataKey,
 			},
@@ -321,7 +323,7 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 			err := d.Configure(ctx, tt.have)
 			is.NoErr(err)
 
-			is.Equal(d.formatter, tt.wantFormatter)
+			is.Equal(d.serializer, tt.wantSerializer)
 		})
 	}
 }

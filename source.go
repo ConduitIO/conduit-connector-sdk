@@ -24,7 +24,8 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
-	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
+	"github.com/conduitio/conduit-commons/opencdc"
+	cplugin "github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
 	"github.com/conduitio/conduit-connector-sdk/internal/csync"
@@ -43,7 +44,7 @@ var (
 type Source interface {
 	// Parameters is a map of named Parameters that describe how to configure
 	// the Source.
-	Parameters() map[string]Parameter
+	Parameters() config.Parameters
 
 	// Configure is the first function to be called in a connector. It provides the
 	// connector with the configuration that needs to be validated and stored.
@@ -63,7 +64,7 @@ type Source interface {
 	// last record that was successfully processed, Source should therefore
 	// start producing records after this position. The context passed to Open
 	// will be cancelled once the plugin receives a stop signal from Conduit.
-	Open(context.Context, Position) error
+	Open(context.Context, opencdc.Position) error
 
 	// Read returns a new Record and is supposed to block until there is either
 	// a new record or the context gets cancelled. It can also return the error
@@ -79,14 +80,14 @@ type Source interface {
 	// After Read returns an error the function won't be called again (except if
 	// the error is ErrBackoffRetry, as mentioned above).
 	// Read can be called concurrently with Ack.
-	Read(context.Context) (Record, error)
+	Read(context.Context) (opencdc.Record, error)
 	// Ack signals to the implementation that the record with the supplied
 	// position was successfully processed. This method might be called after
 	// the context of Read is already cancelled, since there might be
 	// outstanding acks that need to be delivered. When Teardown is called it is
 	// guaranteed there won't be any more calls to Ack.
 	// Ack can be called concurrently with Read.
-	Ack(context.Context, Position) error
+	Ack(context.Context, opencdc.Position) error
 
 	// Teardown signals to the plugin that there will be no more calls to any
 	// other function. After Teardown returns, the plugin should be ready for a
@@ -118,9 +119,9 @@ type Source interface {
 }
 
 // NewSourcePlugin takes a Source and wraps it into an adapter that converts it
-// into a cpluginv1.SourcePlugin. If the parameter is nil it will wrap
+// into a cplugin.SourcePlugin. If the parameter is nil it will wrap
 // UnimplementedSource instead.
-func NewSourcePlugin(impl Source) cpluginv1.SourcePlugin {
+func NewSourcePlugin(impl Source) cplugin.SourcePlugin {
 	if impl == nil {
 		// prevent nil pointers
 		impl = UnimplementedSource{}
@@ -137,22 +138,23 @@ type sourcePluginAdapter struct {
 	readDone chan struct{}
 
 	// lastPosition stores the position of the last record sent to Conduit.
-	lastPosition Position
+	lastPosition opencdc.Position
 
 	openCancel context.CancelFunc
 	readCancel context.CancelFunc
 	t          *tomb.Tomb
 }
 
-func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.SourceConfigureRequest) (cpluginv1.SourceConfigureResponse, error) {
+func (a *sourcePluginAdapter) Configure(ctx context.Context, req cplugin.SourceConfigureRequest) (cplugin.SourceConfigureResponse, error) {
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateInitial},
 		StateBefore:          internal.StateConfiguring,
 		StateAfter:           internal.StateConfigured,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
-		params := parameters(a.impl.Parameters()).toConfigParameters()
+		params := a.impl.Parameters()
 
+		// TODO should we stop doing this here? The Processor SDK does NOT do this.
 		// sanitize config and apply default values
 		cfg := config.Config(req.Config).
 			Sanitize().
@@ -166,10 +168,10 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req cpluginv1.Sourc
 		return errors.Join(err1, err2)
 	})
 
-	return cpluginv1.SourceConfigureResponse{}, err
+	return cplugin.SourceConfigureResponse{}, err
 }
 
-func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceStartRequest) (cpluginv1.SourceStartResponse, error) {
+func (a *sourcePluginAdapter) Start(ctx context.Context, req cplugin.SourceStartRequest) (cplugin.SourceStartResponse, error) {
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateConfigured},
 		StateBefore:          internal.StateStarting,
@@ -197,10 +199,10 @@ func (a *sourcePluginAdapter) Start(ctx context.Context, req cpluginv1.SourceSta
 		return a.impl.Open(ctxOpen, req.Position)
 	})
 
-	return cpluginv1.SourceStartResponse{}, err
+	return cplugin.SourceStartResponse{}, err
 }
 
-func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRunStream) (err error) {
+func (a *sourcePluginAdapter) Run(ctx context.Context, stream cplugin.SourceRunStream) (err error) {
 	err = a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateStarted},
 		StateBefore:          internal.StateInitiatingRun,
@@ -216,10 +218,10 @@ func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRu
 
 		t.Go(func() error {
 			defer close(a.readDone)
-			return a.runRead(readCtx, stream)
+			return a.runRead(readCtx, stream.Server())
 		})
 		t.Go(func() error {
-			return a.runAck(ctx, stream)
+			return a.runAck(ctx, stream.Server())
 		})
 		return nil
 	})
@@ -239,7 +241,7 @@ func (a *sourcePluginAdapter) Run(ctx context.Context, stream cpluginv1.SourceRu
 	return a.t.Err()
 }
 
-func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cpluginv1.SourceRunStream) error {
+func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cplugin.SourceRunStreamServer) error {
 	// TODO make backoff params configurable (https://github.com/ConduitIO/conduit/issues/184)
 	b := &backoff.Backoff{
 		Factor: 2,
@@ -266,7 +268,7 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cpluginv1.Sour
 			return fmt.Errorf("read plugin error: %w", err)
 		}
 
-		err = stream.Send(cpluginv1.SourceRunResponse{Record: a.convertRecord(r)})
+		err = stream.Send(cplugin.SourceRunResponse{Records: []opencdc.Record{r}})
 		if err != nil {
 			return fmt.Errorf("read stream error: %w", err)
 		}
@@ -277,24 +279,27 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cpluginv1.Sour
 	}
 }
 
-func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cpluginv1.SourceRunStream) error {
+func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cplugin.SourceRunStreamServer) error {
 	for {
-		req, err := stream.Recv()
+		batch, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
 				return nil // stream is closed, not an error
 			}
 			return fmt.Errorf("ack stream error: %w", err)
 		}
-		err = a.impl.Ack(ctx, req.AckPosition)
-		// implementing Ack is optional
-		if err != nil && !errors.Is(err, ErrUnimplemented) {
-			return fmt.Errorf("ack plugin error: %w", err)
+
+		for _, ack := range batch.AckPositions {
+			err = a.impl.Ack(ctx, ack)
+			// implementing Ack is optional
+			if err != nil && !errors.Is(err, ErrUnimplemented) {
+				return fmt.Errorf("ack plugin error: %w", err)
+			}
 		}
 	}
 }
 
-func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRequest) (cpluginv1.SourceStopResponse, error) {
+func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cplugin.SourceStopRequest) (cplugin.SourceStopResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
@@ -318,7 +323,7 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRe
 		return nil
 	})
 	if err != nil {
-		return cpluginv1.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
+		return cplugin.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
 	}
 
 	// wait for read to actually stop running with a timeout, in case the
@@ -326,15 +331,15 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cpluginv1.SourceStopRe
 	_, _, err = cchan.ChanOut[struct{}](a.readDone).Recv(ctx)
 	if err != nil {
 		Logger(ctx).Warn().Err(err).Msg("failed to wait for Read to stop running")
-		return cpluginv1.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
+		return cplugin.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
 	}
 
-	return cpluginv1.SourceStopResponse{
+	return cplugin.SourceStopResponse{
 		LastPosition: a.lastPosition,
 	}, nil
 }
 
-func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTeardownRequest) (cpluginv1.SourceTeardownResponse, error) {
+func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cplugin.SourceTeardownRequest) (cplugin.SourceTeardownResponse, error) {
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates: nil, // Teardown can be called from any state
 		StateBefore:    internal.StateTearingDown,
@@ -370,17 +375,17 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cpluginv1.SourceTe
 		return err
 	})
 
-	return cpluginv1.SourceTeardownResponse{}, err
+	return cplugin.SourceTeardownResponse{}, err
 }
 
-func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req cpluginv1.SourceLifecycleOnCreatedRequest) (cpluginv1.SourceLifecycleOnCreatedResponse, error) {
-	return cpluginv1.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
+func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req cplugin.SourceLifecycleOnCreatedRequest) (cplugin.SourceLifecycleOnCreatedResponse, error) {
+	return cplugin.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
-func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req cpluginv1.SourceLifecycleOnUpdatedRequest) (cpluginv1.SourceLifecycleOnUpdatedResponse, error) {
-	return cpluginv1.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
+func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req cplugin.SourceLifecycleOnUpdatedRequest) (cplugin.SourceLifecycleOnUpdatedResponse, error) {
+	return cplugin.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
-func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cpluginv1.SourceLifecycleOnDeletedRequest) (cpluginv1.SourceLifecycleOnDeletedResponse, error) {
-	return cpluginv1.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
+func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugin.SourceLifecycleOnDeletedRequest) (cplugin.SourceLifecycleOnDeletedResponse, error) {
+	return cplugin.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
 
 // waitForRun returns once the Run function returns or the context gets
@@ -396,59 +401,27 @@ func (a *sourcePluginAdapter) waitForRun(ctx context.Context, timeout time.Durat
 	)
 }
 
-func (a *sourcePluginAdapter) convertRecord(r Record) cpluginv1.Record {
-	return cpluginv1.Record{
-		Position:  r.Position,
-		Operation: cpluginv1.Operation(r.Operation),
-		Metadata:  r.Metadata,
-		Key:       a.convertData(r.Key),
-		Payload:   a.convertChange(r.Payload),
-	}
-}
-
-func (a *sourcePluginAdapter) convertChange(c Change) cpluginv1.Change {
-	return cpluginv1.Change{
-		Before: a.convertData(c.Before),
-		After:  a.convertData(c.After),
-	}
-}
-
-func (a *sourcePluginAdapter) convertData(d Data) cpluginv1.Data {
-	if d == nil {
-		return nil
-	}
-
-	switch v := d.(type) {
-	case RawData:
-		return cpluginv1.RawData(v)
-	case StructuredData:
-		return cpluginv1.StructuredData(v)
-	default:
-		panic("unknown data type")
-	}
-}
-
 // SourceUtil provides utility methods for implementing a source. Use it by
 // calling Util.Source.*.
 type SourceUtil struct{}
 
 // NewRecordCreate can be used to instantiate a record with OperationCreate.
 func (SourceUtil) NewRecordCreate(
-	position Position,
-	metadata Metadata,
-	key Data,
-	payload Data,
-) Record {
+	position opencdc.Position,
+	metadata opencdc.Metadata,
+	key opencdc.Data,
+	payload opencdc.Data,
+) opencdc.Record {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
 	metadata.SetReadAt(time.Now())
-	return Record{
+	return opencdc.Record{
 		Position:  position,
-		Operation: OperationCreate,
+		Operation: opencdc.OperationCreate,
 		Metadata:  metadata,
 		Key:       key,
-		Payload: Change{
+		Payload: opencdc.Change{
 			After: payload,
 		},
 	}
@@ -456,21 +429,21 @@ func (SourceUtil) NewRecordCreate(
 
 // NewRecordSnapshot can be used to instantiate a record with OperationSnapshot.
 func (SourceUtil) NewRecordSnapshot(
-	position Position,
-	metadata Metadata,
-	key Data,
-	payload Data,
-) Record {
+	position opencdc.Position,
+	metadata opencdc.Metadata,
+	key opencdc.Data,
+	payload opencdc.Data,
+) opencdc.Record {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
 	metadata.SetReadAt(time.Now())
-	return Record{
+	return opencdc.Record{
 		Position:  position,
-		Operation: OperationSnapshot,
+		Operation: opencdc.OperationSnapshot,
 		Metadata:  metadata,
 		Key:       key,
-		Payload: Change{
+		Payload: opencdc.Change{
 			After: payload,
 		},
 	}
@@ -478,22 +451,22 @@ func (SourceUtil) NewRecordSnapshot(
 
 // NewRecordUpdate can be used to instantiate a record with OperationUpdate.
 func (SourceUtil) NewRecordUpdate(
-	position Position,
-	metadata Metadata,
-	key Data,
-	payloadBefore Data,
-	payloadAfter Data,
-) Record {
+	position opencdc.Position,
+	metadata opencdc.Metadata,
+	key opencdc.Data,
+	payloadBefore opencdc.Data,
+	payloadAfter opencdc.Data,
+) opencdc.Record {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
 	metadata.SetReadAt(time.Now())
-	return Record{
+	return opencdc.Record{
 		Position:  position,
-		Operation: OperationUpdate,
+		Operation: opencdc.OperationUpdate,
 		Metadata:  metadata,
 		Key:       key,
-		Payload: Change{
+		Payload: opencdc.Change{
 			Before: payloadBefore,
 			After:  payloadAfter,
 		},
@@ -502,17 +475,17 @@ func (SourceUtil) NewRecordUpdate(
 
 // NewRecordDelete can be used to instantiate a record with OperationDelete.
 func (SourceUtil) NewRecordDelete(
-	position Position,
-	metadata Metadata,
-	key Data,
-) Record {
+	position opencdc.Position,
+	metadata opencdc.Metadata,
+	key opencdc.Data,
+) opencdc.Record {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
 	metadata.SetReadAt(time.Now())
-	return Record{
+	return opencdc.Record{
 		Position:  position,
-		Operation: OperationDelete,
+		Operation: opencdc.OperationDelete,
 		Metadata:  metadata,
 		Key:       key,
 	}

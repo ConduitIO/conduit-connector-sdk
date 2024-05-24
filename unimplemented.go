@@ -17,13 +17,16 @@ package sdk
 import (
 	"context"
 	"fmt"
+
+	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/opencdc"
 )
 
 // UnimplementedDestination should be embedded to have forward compatible implementations.
 type UnimplementedDestination struct{}
 
 // Parameters needs to be overridden in the actual implementation.
-func (UnimplementedDestination) Parameters() map[string]Parameter {
+func (UnimplementedDestination) Parameters() config.Parameters {
 	return nil
 }
 
@@ -38,7 +41,7 @@ func (UnimplementedDestination) Open(context.Context) error {
 }
 
 // Write needs to be overridden in the actual implementation.
-func (UnimplementedDestination) Write(context.Context, []Record) (int, error) {
+func (UnimplementedDestination) Write(context.Context, []opencdc.Record) (int, error) {
 	return 0, fmt.Errorf("action \"Write\": %w", ErrUnimplemented)
 }
 
@@ -68,7 +71,7 @@ func (UnimplementedDestination) mustEmbedUnimplementedDestination() {}
 type UnimplementedSource struct{}
 
 // Parameters needs to be overridden in the actual implementation.
-func (UnimplementedSource) Parameters() map[string]Parameter {
+func (UnimplementedSource) Parameters() config.Parameters {
 	return nil
 }
 
@@ -78,18 +81,18 @@ func (UnimplementedSource) Configure(context.Context, map[string]string) error {
 }
 
 // Open needs to be overridden in the actual implementation.
-func (UnimplementedSource) Open(context.Context, Position) error {
+func (UnimplementedSource) Open(context.Context, opencdc.Position) error {
 	return fmt.Errorf("action \"Open\": %w", ErrUnimplemented)
 }
 
 // Read needs to be overridden in the actual implementation.
-func (UnimplementedSource) Read(context.Context) (Record, error) {
-	return Record{}, fmt.Errorf("action \"Read\": %w", ErrUnimplemented)
+func (UnimplementedSource) Read(context.Context) (opencdc.Record, error) {
+	return opencdc.Record{}, fmt.Errorf("action \"Read\": %w", ErrUnimplemented)
 }
 
 // Ack should be overridden if acks need to be forwarded to the source,
 // otherwise it is optional.
-func (UnimplementedSource) Ack(context.Context, Position) error {
+func (UnimplementedSource) Ack(context.Context, opencdc.Position) error {
 	return fmt.Errorf("action \"Ack\": %w", ErrUnimplemented)
 }
 

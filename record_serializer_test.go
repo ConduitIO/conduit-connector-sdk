@@ -17,6 +17,7 @@ package sdk
 import (
 	"testing"
 
+	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 	"github.com/matryer/is"
 )
@@ -27,14 +28,14 @@ var (
 )
 
 func BenchmarkJSONEncoder(b *testing.B) {
-	rec := Record{
-		Position:  Position("foo"),
-		Operation: OperationCreate,
-		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
-		Key:       RawData("bar"),
-		Payload: Change{
+	rec := opencdc.Record{
+		Position:  opencdc.Position("foo"),
+		Operation: opencdc.OperationCreate,
+		Metadata:  opencdc.Metadata{opencdc.MetadataConduitSourcePluginName: "example"},
+		Key:       opencdc.RawData("bar"),
+		Payload: opencdc.Change{
 			Before: nil,
-			After: StructuredData{
+			After: opencdc.StructuredData{
 				"foo": "bar",
 				"baz": "qux",
 			},
@@ -51,14 +52,14 @@ func TestOpenCDCConverter(t *testing.T) {
 	is := is.New(t)
 	var converter OpenCDCConverter
 
-	want := Record{
-		Position:  Position("foo"),
-		Operation: OperationCreate,
-		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
-		Key:       RawData("bar"),
-		Payload: Change{
+	want := opencdc.Record{
+		Position:  opencdc.Position("foo"),
+		Operation: opencdc.OperationCreate,
+		Metadata:  opencdc.Metadata{opencdc.MetadataConduitSourcePluginName: "example"},
+		Key:       opencdc.RawData("bar"),
+		Payload: opencdc.Change{
 			Before: nil,
-			After: StructuredData{
+			After: opencdc.StructuredData{
 				"foo": "bar",
 				"baz": "qux",
 			},
@@ -77,16 +78,16 @@ func TestDebeziumConverter_Structured(t *testing.T) {
 	})
 	is.NoErr(err)
 
-	r := Record{
-		Position:  Position("foo"),
-		Operation: OperationUpdate,
-		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
-		Key:       RawData("bar"),
-		Payload: Change{
-			Before: StructuredData{
+	r := opencdc.Record{
+		Position:  opencdc.Position("foo"),
+		Operation: opencdc.OperationUpdate,
+		Metadata:  opencdc.Metadata{opencdc.MetadataConduitSourcePluginName: "example"},
+		Key:       opencdc.RawData("bar"),
+		Payload: opencdc.Change{
+			Before: opencdc.StructuredData{
 				"bar": 123,
 			},
-			After: StructuredData{
+			After: opencdc.StructuredData{
 				"foo": "bar",
 				"baz": "qux",
 			},
@@ -147,8 +148,8 @@ func TestDebeziumConverter_Structured(t *testing.T) {
 			}},
 		},
 		Payload: kafkaconnect.DebeziumPayload{
-			Before:          r.Payload.Before.(StructuredData),
-			After:           r.Payload.After.(StructuredData),
+			Before:          r.Payload.Before.(opencdc.StructuredData),
+			After:           r.Payload.After.(opencdc.StructuredData),
 			Source:          r.Metadata,
 			Op:              kafkaconnect.DebeziumOpUpdate,
 			TimestampMillis: 0,
@@ -173,13 +174,13 @@ func TestDebeziumConverter_RawData(t *testing.T) {
 	converter, err := DebeziumConverter{}.Configure(map[string]string{})
 	is.NoErr(err)
 
-	r := Record{
-		Position:  Position("foo"),
-		Operation: OperationCreate,
-		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
-		Key:       RawData("bar"),
-		Payload: Change{
-			Before: RawData("foo"),
+	r := opencdc.Record{
+		Position:  opencdc.Position("foo"),
+		Operation: opencdc.OperationCreate,
+		Metadata:  opencdc.Metadata{opencdc.MetadataConduitSourcePluginName: "example"},
+		Key:       opencdc.RawData("bar"),
+		Payload: opencdc.Change{
+			Before: opencdc.RawData("foo"),
 			After:  nil,
 		},
 	}
@@ -236,7 +237,7 @@ func TestDebeziumConverter_RawData(t *testing.T) {
 			}},
 		},
 		Payload: kafkaconnect.DebeziumPayload{
-			Before:          StructuredData{"opencdc.rawData": []byte("foo")},
+			Before:          opencdc.StructuredData{"opencdc.rawData": []byte("foo")},
 			After:           nil,
 			Source:          r.Metadata,
 			Op:              kafkaconnect.DebeziumOpCreate,
@@ -261,14 +262,14 @@ func TestJSONEncoder(t *testing.T) {
 	is := is.New(t)
 	var encoder JSONEncoder
 
-	r := Record{
-		Position:  Position("foo"),
-		Operation: OperationCreate,
-		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
-		Key:       RawData("bar"),
-		Payload: Change{
+	r := opencdc.Record{
+		Position:  opencdc.Position("foo"),
+		Operation: opencdc.OperationCreate,
+		Metadata:  opencdc.Metadata{opencdc.MetadataConduitSourcePluginName: "example"},
+		Key:       opencdc.RawData("bar"),
+		Payload: opencdc.Change{
 			Before: nil,
-			After: StructuredData{
+			After: opencdc.StructuredData{
 				"foo": "bar",
 				"baz": "qux",
 			},
@@ -281,15 +282,15 @@ func TestJSONEncoder(t *testing.T) {
 	is.Equal(string(got), want)
 }
 
-func TestTemplateRecordFormatter(t *testing.T) {
-	r := Record{
-		Position:  Position("foo"),
-		Operation: OperationCreate,
-		Metadata:  Metadata{MetadataConduitSourcePluginName: "example"},
-		Key:       RawData("bar"),
-		Payload: Change{
+func TestTemplateRecordSerializer(t *testing.T) {
+	r := opencdc.Record{
+		Position:  opencdc.Position("foo"),
+		Operation: opencdc.OperationCreate,
+		Metadata:  opencdc.Metadata{opencdc.MetadataConduitSourcePluginName: "example"},
+		Key:       opencdc.RawData("bar"),
+		Payload: opencdc.Change{
 			Before: nil,
-			After: StructuredData{
+			After: opencdc.StructuredData{
 				"foo": "bar",
 				"baz": "qux",
 			},
@@ -297,7 +298,7 @@ func TestTemplateRecordFormatter(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		have     Record
+		have     opencdc.Record
 		template string
 		want     string
 	}{
@@ -305,7 +306,7 @@ func TestTemplateRecordFormatter(t *testing.T) {
 			// output prints the Go record (not very useful, this test case is here to explain the behavior)
 			have:     r,
 			template: `{{ . }}`,
-			want:     `{[102 111 111] create map[conduit.source.plugin.name:example] [98 97 114] {<nil> map[baz:qux foo:bar]} <nil>}`,
+			want:     `{foo create map[conduit.source.plugin.name:example] [98 97 114] {<nil> map[baz:qux foo:bar]} <nil>}`,
 		},
 		"json record": {
 			// output should be the same as in format opencdc/json
@@ -315,25 +316,25 @@ func TestTemplateRecordFormatter(t *testing.T) {
 		},
 		"json structured payload": {
 			have:     r,
-			template: `{{ if typeIs "sdk.RawData" .Payload.After }}{{ printf "%s" .Payload.After }}{{ else }}{{ toJson .Payload.After }}{{ end }}`,
+			template: `{{ if typeIs "opencdc.RawData" .Payload.After }}{{ printf "%s" .Payload.After }}{{ else }}{{ toJson .Payload.After }}{{ end }}`,
 			want:     `{"baz":"qux","foo":"bar"}`,
 		},
 		"json raw payload": {
-			have: Record{
-				Payload: Change{
-					After: RawData("my raw data"),
+			have: opencdc.Record{
+				Payload: opencdc.Change{
+					After: opencdc.RawData("my raw data"),
 				},
 			},
-			template: `{{ if typeIs "sdk.RawData" .Payload.After }}{{ printf "%s" .Payload.After }}{{ else }}{{ toJson .Payload.After }}{{ end }}`,
+			template: `{{ if typeIs "opencdc.RawData" .Payload.After }}{{ printf "%s" .Payload.After }}{{ else }}{{ toJson .Payload.After }}{{ end }}`,
 			want:     `my raw data`,
 		},
 		"json nil payload": {
-			have: Record{
-				Payload: Change{
+			have: opencdc.Record{
+				Payload: opencdc.Change{
 					After: nil,
 				},
 			},
-			template: `{{ if typeIs "sdk.RawData" .Payload.After }}{{ printf "%s" .Payload.After }}{{ else }}{{ toJson .Payload.After }}{{ end }}`,
+			template: `{{ if typeIs "opencdc.RawData" .Payload.After }}{{ printf "%s" .Payload.After }}{{ else }}{{ toJson .Payload.After }}{{ end }}`,
 			want:     `null`,
 		},
 		"map metadata": {
@@ -346,12 +347,12 @@ func TestTemplateRecordFormatter(t *testing.T) {
 	for testName, tc := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			is := is.New(t)
-			var formatter RecordFormatter = TemplateRecordFormatter{}
+			var serializer RecordSerializer = TemplateRecordSerializer{}
 
-			formatter, err := formatter.Configure(tc.template)
+			serializer, err := serializer.Configure(tc.template)
 			is.NoErr(err)
 
-			got, err := formatter.Format(tc.have)
+			got, err := serializer.Serialize(tc.have)
 			is.NoErr(err)
 			is.Equal(string(got), tc.want)
 		})

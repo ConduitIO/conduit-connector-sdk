@@ -21,22 +21,23 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-sdk/kafkaconnect"
 	"github.com/goccy/go-json"
 )
 
-// RecordFormatter is a type that can format a record to bytes. It's used in
+// RecordSerializer is a type that can format a record to bytes. It's used in
 // destination connectors to change the output structure and format.
-type RecordFormatter interface {
+type RecordSerializer interface {
 	Name() string
-	Configure(string) (RecordFormatter, error)
-	Format(Record) ([]byte, error)
+	Configure(string) (RecordSerializer, error)
+	opencdc.RecordSerializer
 }
 
 var (
-	defaultConverter = OpenCDCConverter{}
-	defaultEncoder   = JSONEncoder{}
-	defaultFormatter = GenericRecordFormatter{
+	defaultConverter  = OpenCDCConverter{}
+	defaultEncoder    = JSONEncoder{}
+	defaultSerializer = GenericRecordSerializer{
 		Converter: defaultConverter,
 		Encoder:   defaultEncoder,
 	}
@@ -48,9 +49,9 @@ const (
 	recordFormatOptionsPairSeparator = "=" // e.g. opt1=val1
 )
 
-// GenericRecordFormatter is a formatter that uses a Converter and Encoder to
-// format a record.
-type GenericRecordFormatter struct {
+// GenericRecordSerializer is a serializer that uses a Converter and Encoder to
+// serialize a record.
+type GenericRecordSerializer struct {
 	Converter
 	Encoder
 }
@@ -61,7 +62,7 @@ type GenericRecordFormatter struct {
 type Converter interface {
 	Name() string
 	Configure(map[string]string) (Converter, error)
-	Convert(Record) (any, error)
+	Convert(opencdc.Record) (any, error)
 }
 
 // Encoder is a type that can encode a random struct into a byte slice. It's
@@ -73,13 +74,13 @@ type Encoder interface {
 	Encode(r any) ([]byte, error)
 }
 
-// Name returns the name of the record formatter combined from the converter
+// Name returns the name of the record serializer combined from the converter
 // name and encoder name.
-func (rf GenericRecordFormatter) Name() string {
+func (rf GenericRecordSerializer) Name() string {
 	return rf.Converter.Name() + genericRecordFormatSeparator + rf.Encoder.Name()
 }
 
-func (rf GenericRecordFormatter) Configure(optRaw string) (RecordFormatter, error) {
+func (rf GenericRecordSerializer) Configure(optRaw string) (RecordSerializer, error) {
 	opt := rf.parseFormatOptions(optRaw)
 
 	var err error
@@ -94,7 +95,7 @@ func (rf GenericRecordFormatter) Configure(optRaw string) (RecordFormatter, erro
 	return rf, nil
 }
 
-func (rf GenericRecordFormatter) parseFormatOptions(options string) map[string]string {
+func (rf GenericRecordSerializer) parseFormatOptions(options string) map[string]string {
 	options = strings.TrimSpace(options)
 	if len(options) == 0 {
 		return nil
@@ -114,8 +115,8 @@ func (rf GenericRecordFormatter) parseFormatOptions(options string) map[string]s
 	return optMap
 }
 
-// Format converts and encodes record into a byte array.
-func (rf GenericRecordFormatter) Format(r Record) ([]byte, error) {
+// Serialize converts and encodes record into a byte array.
+func (rf GenericRecordSerializer) Serialize(r opencdc.Record) ([]byte, error) {
 	converted, err := rf.Converter.Convert(r)
 	if err != nil {
 		return nil, fmt.Errorf("converter %s failed: %w", rf.Converter.Name(), err)
@@ -135,7 +136,7 @@ type OpenCDCConverter struct{}
 
 func (c OpenCDCConverter) Name() string                                   { return "opencdc" }
 func (c OpenCDCConverter) Configure(map[string]string) (Converter, error) { return c, nil }
-func (c OpenCDCConverter) Convert(r Record) (any, error) {
+func (c OpenCDCConverter) Convert(r opencdc.Record) (any, error) {
 	return r, nil
 }
 
@@ -158,7 +159,7 @@ func (c DebeziumConverter) Configure(opt map[string]string) (Converter, error) {
 	}
 	return c, nil
 }
-func (c DebeziumConverter) Convert(r Record) (any, error) {
+func (c DebeziumConverter) Convert(r opencdc.Record) (any, error) {
 	before, err := c.getStructuredData(r.Payload.Before)
 	if err != nil {
 		return nil, err
@@ -188,13 +189,13 @@ func (c DebeziumConverter) Convert(r Record) (any, error) {
 	return e, nil
 }
 
-func (c DebeziumConverter) getStructuredData(d Data) (StructuredData, error) {
+func (c DebeziumConverter) getStructuredData(d opencdc.Data) (opencdc.StructuredData, error) {
 	switch d := d.(type) {
 	case nil:
 		return nil, nil
-	case StructuredData:
+	case opencdc.StructuredData:
 		return d, nil
-	case RawData:
+	case opencdc.RawData:
 		if len(d) == 0 {
 			return nil, nil
 		}
@@ -202,32 +203,32 @@ func (c DebeziumConverter) getStructuredData(d Data) (StructuredData, error) {
 		if err != nil {
 			// we have actually raw data, fall back to artificial structured
 			// data by hoisting it into a field
-			sd = StructuredData{c.RawDataKey: d.Bytes()}
+			sd = opencdc.StructuredData{c.RawDataKey: d.Bytes()}
 		}
 		return sd, nil
 	default:
 		return nil, fmt.Errorf("unknown data type: %T", d)
 	}
 }
-func (c DebeziumConverter) parseRawDataAsJSON(d RawData) (StructuredData, error) {
+func (c DebeziumConverter) parseRawDataAsJSON(d opencdc.RawData) (opencdc.StructuredData, error) {
 	// We have raw data, we need structured data.
 	// We can do our best and try to convert it if RawData is carrying raw JSON.
-	var sd StructuredData
+	var sd opencdc.StructuredData
 	err := json.Unmarshal(d, &sd)
 	if err != nil {
 		return nil, fmt.Errorf("could not convert RawData to StructuredData: %w", err)
 	}
 	return sd, nil
 }
-func (c DebeziumConverter) getDebeziumOp(o Operation) kafkaconnect.DebeziumOp {
+func (c DebeziumConverter) getDebeziumOp(o opencdc.Operation) kafkaconnect.DebeziumOp {
 	switch o {
-	case OperationCreate:
+	case opencdc.OperationCreate:
 		return kafkaconnect.DebeziumOpCreate
-	case OperationUpdate:
+	case opencdc.OperationUpdate:
 		return kafkaconnect.DebeziumOpUpdate
-	case OperationDelete:
+	case opencdc.OperationDelete:
 		return kafkaconnect.DebeziumOpDelete
-	case OperationSnapshot:
+	case opencdc.OperationSnapshot:
 		return kafkaconnect.DebeziumOpRead
 	}
 	return "" // invalid operation
@@ -242,14 +243,14 @@ func (e JSONEncoder) Encode(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
 
-// TemplateRecordFormatter is a RecordFormatter that formats a record using a Go
-// template.
-type TemplateRecordFormatter struct {
+// TemplateRecordSerializer is a RecordSerializer that serializes a record using
+// a Go template.
+type TemplateRecordSerializer struct {
 	template *template.Template
 }
 
-func (e TemplateRecordFormatter) Name() string { return "template" }
-func (e TemplateRecordFormatter) Configure(tmpl string) (RecordFormatter, error) {
+func (e TemplateRecordSerializer) Name() string { return "template" }
+func (e TemplateRecordSerializer) Configure(tmpl string) (RecordSerializer, error) {
 	t := template.New("")
 	t = t.Funcs(sprig.TxtFuncMap()) // inject sprig functions
 	t, err := t.Parse(tmpl)
@@ -260,7 +261,7 @@ func (e TemplateRecordFormatter) Configure(tmpl string) (RecordFormatter, error)
 	e.template = t
 	return e, nil
 }
-func (e TemplateRecordFormatter) Format(r Record) ([]byte, error) {
+func (e TemplateRecordSerializer) Serialize(r opencdc.Record) ([]byte, error) {
 	var b bytes.Buffer
 	err := e.template.Execute(&b, r)
 	if err != nil {

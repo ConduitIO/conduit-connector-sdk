@@ -19,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/conduitio/conduit-commons/opencdc"
 )
 
 // BenchmarkSource is a benchmark that any source implementation can run to figure
@@ -84,7 +86,7 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 		}
 	})
 
-	acks := make(chan Record, b.N) // huge buffer so we don't delay reads
+	acks := make(chan opencdc.Record, b.N) // huge buffer so we don't delay reads
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go bm.acker(b, acks, &wg)
@@ -127,7 +129,7 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 	bm.reportMetrics(b)
 }
 
-func (bm *benchmarkSource) acker(b *testing.B, c <-chan Record, wg *sync.WaitGroup) {
+func (bm *benchmarkSource) acker(b *testing.B, c <-chan opencdc.Record, wg *sync.WaitGroup) {
 	defer wg.Done()
 	ctx := context.Background()
 
