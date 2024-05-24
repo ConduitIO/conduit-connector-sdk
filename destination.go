@@ -25,11 +25,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/conduitio/conduit-commons/ccontext"
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/conduitio/conduit-connector-sdk/internal"
-	"github.com/conduitio/conduit-connector-sdk/internal/csync"
 )
 
 // Destination receives records from Conduit and writes them to 3rd party
@@ -117,21 +118,11 @@ type destinationPluginAdapter struct {
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req cplugin.DestinationConfigureRequest) (cplugin.DestinationConfigureResponse, error) {
 	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
 
-	params := a.impl.Parameters()
-
-	// TODO should we stop doing this here? The Processor SDK does NOT do this.
-	// sanitize config and apply default values
-	cfg := config.Config(req.Config).
-		Sanitize().
-		ApplyDefaults(params)
-
 	var errs []error
-	// run builtin validations
-	errs = append(errs, cfg.Validate(params))
-	// run custom validations written by developer
-	errs = append(errs, a.impl.Configure(ctx, cfg))
-	// configure write strategy
-	errs = append(errs, a.configureWriteStrategy(ctx, cfg))
+	// Configure connector
+	errs = append(errs, a.impl.Configure(ctx, req.Config))
+	// Configure write strategy
+	errs = append(errs, a.configureWriteStrategy(ctx, req.Config))
 
 	return cplugin.DestinationConfigureResponse{}, errors.Join(errs...)
 }
@@ -184,7 +175,7 @@ func (a *destinationPluginAdapter) Start(ctx context.Context, _ cplugin.Destinat
 	a.lastPosition = new(csync.ValueWatcher[opencdc.Position])
 
 	// detach context, so we can control when it's canceled
-	ctxOpen := internal.DetachContext(ctx)
+	ctxOpen := ccontext.Detach(ctx)
 	ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
 
 	startDone := make(chan struct{})
@@ -209,7 +200,7 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream cplugin.Desti
 	for stream := stream.Server(); ; {
 		batch, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				// stream is closed
 				return nil
 			}
@@ -260,12 +251,14 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cplugin.Destina
 
 	// wait for last record to be received, if it doesn't arrive in time we try
 	// to flush what we have so far
+	watchCtx, watchCancel := context.WithTimeout(ctx, stopTimeout)
+	defer watchCancel()
+
 	actualLastPosition, err := a.lastPosition.Watch(
-		ctx,
+		watchCtx,
 		func(val opencdc.Position) bool {
 			return bytes.Equal(val, req.LastPosition)
 		},
-		csync.WithTimeout(stopTimeout),
 	)
 	if err != nil {
 		err = fmt.Errorf("did not encounter expected last position %q, actual last position %q: %w", req.LastPosition, actualLastPosition, err)
@@ -273,8 +266,8 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req cplugin.Destina
 	}
 
 	// flush cached records, allow it to take at most 1 minute
-	flushCtx, cancel := context.WithTimeout(ctx, stopTimeout)
-	defer cancel()
+	flushCtx, flushCancel := context.WithTimeout(ctx, stopTimeout)
+	defer flushCancel()
 
 	flushErr := a.writeStrategy.Flush(flushCtx)
 	if flushErr != nil && err == nil {
@@ -306,9 +299,11 @@ func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ cplugin.Desti
 func (a *destinationPluginAdapter) LifecycleOnCreated(ctx context.Context, req cplugin.DestinationLifecycleOnCreatedRequest) (cplugin.DestinationLifecycleOnCreatedResponse, error) {
 	return cplugin.DestinationLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
+
 func (a *destinationPluginAdapter) LifecycleOnUpdated(ctx context.Context, req cplugin.DestinationLifecycleOnUpdatedRequest) (cplugin.DestinationLifecycleOnUpdatedResponse, error) {
 	return cplugin.DestinationLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
+
 func (a *destinationPluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugin.DestinationLifecycleOnDeletedRequest) (cplugin.DestinationLifecycleOnDeletedResponse, error) {
 	return cplugin.DestinationLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
@@ -349,7 +344,7 @@ type writeStrategyBatch struct {
 }
 
 type writeBatchItem struct {
-	ctx    context.Context
+	ctx    context.Context //nolint:containedctx // We need the context to pass it to Write.
 	record opencdc.Record
 	ack    func(error) error
 }
@@ -450,6 +445,7 @@ func (w *writeStrategyBatch) Write(ctx context.Context, r opencdc.Record, ack fu
 		return fmt.Errorf("unknown batcher enqueue status: %v", status)
 	}
 }
+
 func (w *writeStrategyBatch) Flush(ctx context.Context) error {
 	w.batcher.Flush()
 	select {

@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conduitio/conduit-commons/cchan"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/conduitio/conduit-connector-sdk/internal"
-	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
 	"go.uber.org/mock/gomock"

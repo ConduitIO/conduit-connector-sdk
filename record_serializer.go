@@ -159,6 +159,7 @@ func (c DebeziumConverter) Configure(opt map[string]string) (Converter, error) {
 	}
 	return c, nil
 }
+
 func (c DebeziumConverter) Convert(r opencdc.Record) (any, error) {
 	before, err := c.getStructuredData(r.Payload.Before)
 	if err != nil {
@@ -192,12 +193,12 @@ func (c DebeziumConverter) Convert(r opencdc.Record) (any, error) {
 func (c DebeziumConverter) getStructuredData(d opencdc.Data) (opencdc.StructuredData, error) {
 	switch d := d.(type) {
 	case nil:
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil is a valid value for structured data
 	case opencdc.StructuredData:
 		return d, nil
 	case opencdc.RawData:
 		if len(d) == 0 {
-			return nil, nil
+			return nil, nil //nolint:nilnil // nil is a valid value for structured data
 		}
 		sd, err := c.parseRawDataAsJSON(d)
 		if err != nil {
@@ -210,6 +211,7 @@ func (c DebeziumConverter) getStructuredData(d opencdc.Data) (opencdc.Structured
 		return nil, fmt.Errorf("unknown data type: %T", d)
 	}
 }
+
 func (c DebeziumConverter) parseRawDataAsJSON(d opencdc.RawData) (opencdc.StructuredData, error) {
 	// We have raw data, we need structured data.
 	// We can do our best and try to convert it if RawData is carrying raw JSON.
@@ -220,6 +222,7 @@ func (c DebeziumConverter) parseRawDataAsJSON(d opencdc.RawData) (opencdc.Struct
 	}
 	return sd, nil
 }
+
 func (c DebeziumConverter) getDebeziumOp(o opencdc.Operation) kafkaconnect.DebeziumOp {
 	switch o {
 	case opencdc.OperationCreate:
@@ -261,6 +264,7 @@ func (e TemplateRecordSerializer) Configure(tmpl string) (RecordSerializer, erro
 	e.template = t
 	return e, nil
 }
+
 func (e TemplateRecordSerializer) Serialize(r opencdc.Record) ([]byte, error) {
 	var b bytes.Buffer
 	err := e.template.Execute(&b, r)

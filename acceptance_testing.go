@@ -62,6 +62,8 @@ func AcceptanceTest(t *testing.T, driver AcceptanceTestDriver) {
 // ConfigurableAcceptanceTestDriver that should fit most use cases. In case more
 // flexibility is needed you can create your own driver, include the default
 // driver in the struct and override methods as needed.
+//
+//nolint:interfacebloat // We need a comprehensive interface for acceptance tests.
 type AcceptanceTestDriver interface {
 	// Context returns the context to use in tests.
 	Context() context.Context
@@ -130,6 +132,7 @@ type ConfigurableAcceptanceTestDriver struct {
 type ConfigurableAcceptanceTestDriverConfig struct {
 	// Context is the context to use in tests. The default is a context with a
 	// logger that writes to the test output.
+	//nolint:containedctx // We are using this as a configuration option.
 	Context context.Context
 	// Connector is the connector to be tested.
 	Connector Connector
@@ -215,15 +218,10 @@ func (d ConfigurableAcceptanceTestDriver) AfterTest(t *testing.T) {
 }
 
 func (d ConfigurableAcceptanceTestDriver) Skip(t *testing.T) {
-	var skipRegexs []*regexp.Regexp
 	for _, skipRegex := range d.Config.Skip {
 		r := regexp.MustCompile(skipRegex)
-		skipRegexs = append(skipRegexs, r)
-	}
-
-	for _, skipRegex := range skipRegexs {
-		if skipRegex.MatchString(t.Name()) {
-			t.Skipf("caller requested to skip tests that match the regex %q", skipRegex.String())
+		if r.MatchString(t.Name()) {
+			t.Skipf("caller requested to skip tests that match the regex %q", skipRegex)
 		}
 	}
 }
@@ -263,6 +261,7 @@ func (d ConfigurableAcceptanceTestDriver) GenerateData(t *testing.T) opencdc.Dat
 		gen = GenerateDataType(1 + (rand.Int63() % 2))
 	}
 
+	//nolint:exhaustive // The missing case is GenerateMixedData, which is handled above.
 	switch gen {
 	case GenerateRawData:
 		return opencdc.RawData(d.randString(rand.Intn(1024) + 32))

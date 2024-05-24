@@ -36,9 +36,11 @@ func NewInMemoryDestinationRunStream(ctx context.Context) *InMemoryDestinationRu
 func (s *InMemoryDestinationRunStream) Client() cplugin.DestinationRunStreamClient {
 	return (*inMemoryStreamClient[cplugin.DestinationRunRequest, cplugin.DestinationRunResponse])(s)
 }
+
 func (s *InMemoryDestinationRunStream) Server() cplugin.DestinationRunStreamServer {
 	return (*inMemoryStreamServer[cplugin.DestinationRunRequest, cplugin.DestinationRunResponse])(s)
 }
+
 func (s *InMemoryDestinationRunStream) Close(reason error) bool {
 	return ((*inMemoryStream[cplugin.DestinationRunRequest, cplugin.DestinationRunResponse])(s)).Close(reason)
 }
@@ -57,15 +59,17 @@ func NewInMemorySourceRunStream(ctx context.Context) *InMemorySourceRunStream {
 func (s *InMemorySourceRunStream) Client() cplugin.SourceRunStreamClient {
 	return (*inMemoryStreamClient[cplugin.SourceRunRequest, cplugin.SourceRunResponse])(s)
 }
+
 func (s *InMemorySourceRunStream) Server() cplugin.SourceRunStreamServer {
 	return (*inMemoryStreamServer[cplugin.SourceRunRequest, cplugin.SourceRunResponse])(s)
 }
+
 func (s *InMemorySourceRunStream) Close(reason error) bool {
 	return ((*inMemoryStream[cplugin.SourceRunRequest, cplugin.SourceRunResponse])(s)).Close(reason)
 }
 
 type inMemoryStream[REQ any, RES any] struct {
-	ctx      context.Context
+	ctx      context.Context //nolint:containedctx // We need to mimic the behavior of a gRPC stream
 	reqChan  chan REQ
 	respChan chan RES
 	stopChan chan struct{}
@@ -114,6 +118,7 @@ func (s *inMemoryStreamClient[REQ, RES]) Recv() (RES, error) {
 		return resp, nil
 	}
 }
+
 func (s *inMemoryStreamClient[REQ, RES]) emptyRes() RES {
 	var r RES
 	return r

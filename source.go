@@ -23,12 +23,13 @@ import (
 	"io"
 	"time"
 
+	"github.com/conduitio/conduit-commons/cchan"
+	"github.com/conduitio/conduit-commons/ccontext"
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/opencdc"
 	cplugin "github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/conduitio/conduit-connector-sdk/internal"
-	"github.com/conduitio/conduit-connector-sdk/internal/cchan"
-	"github.com/conduitio/conduit-connector-sdk/internal/csync"
 	"github.com/jpillora/backoff"
 	"gopkg.in/tomb.v2"
 )
@@ -152,20 +153,7 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req cplugin.SourceC
 		StateAfter:           internal.StateConfigured,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
-		params := a.impl.Parameters()
-
-		// TODO should we stop doing this here? The Processor SDK does NOT do this.
-		// sanitize config and apply default values
-		cfg := config.Config(req.Config).
-			Sanitize().
-			ApplyDefaults(params)
-
-		// run builtin validations
-		err1 := cfg.Validate(params)
-		// run custom validations written by developer
-		err2 := a.impl.Configure(ctx, cfg)
-
-		return errors.Join(err1, err2)
+		return a.impl.Configure(ctx, req.Config)
 	})
 
 	return cplugin.SourceConfigureResponse{}, err
@@ -179,7 +167,7 @@ func (a *sourcePluginAdapter) Start(ctx context.Context, req cplugin.SourceStart
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
 		// detach context, so we can control when it's canceled
-		ctxOpen := internal.DetachContext(ctx)
+		ctxOpen := ccontext.Detach(ctx)
 		ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
 
 		startDone := make(chan struct{})
@@ -259,8 +247,8 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cplugin.Source
 				// the plugin wants us to retry reading later
 				_, _, err := cchan.ChanOut[time.Time](time.After(b.Duration())).Recv(ctx)
 				if err != nil {
-					// the plugin is using the SDK for long polling and relying
-					// on the SDK to check for a cancelled context
+					//nolint:nilerr // The plugin is using the SDK for long-polling
+					// and relying on the SDK to check for a cancelled context.
 					return nil
 				}
 				continue
@@ -283,7 +271,7 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cplugin.SourceR
 	for {
 		batch, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil // stream is closed, not an error
 			}
 			return fmt.Errorf("ack stream error: %w", err)
@@ -344,7 +332,7 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cplugin.SourceTear
 		ExpectedStates: nil, // Teardown can be called from any state
 		StateBefore:    internal.StateTearingDown,
 		StateAfter:     internal.StateTornDown,
-	}, func(state internal.ConnectorState) error {
+	}, func(internal.ConnectorState) error {
 		// cancel open and read context, in case Stop was not called (can happen in
 		// case the stop was triggered by an error)
 		// teardown can be called without "open" or "read" being called previously
@@ -381,9 +369,11 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cplugin.SourceTear
 func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req cplugin.SourceLifecycleOnCreatedRequest) (cplugin.SourceLifecycleOnCreatedResponse, error) {
 	return cplugin.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
+
 func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req cplugin.SourceLifecycleOnUpdatedRequest) (cplugin.SourceLifecycleOnUpdatedResponse, error) {
 	return cplugin.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
+
 func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugin.SourceLifecycleOnDeletedRequest) (cplugin.SourceLifecycleOnDeletedResponse, error) {
 	return cplugin.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
@@ -394,10 +384,11 @@ func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugi
 func (a *sourcePluginAdapter) waitForRun(ctx context.Context, timeout time.Duration) error {
 	// wait for all acks to be sent back to Conduit, stop waiting if context
 	// gets cancelled or timeout is reached
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	return csync.Run(
 		ctx,
 		func() { _ = a.t.Wait() }, // ignore tomb error, it will be returned in Run anyway
-		csync.WithTimeout(timeout),
 	)
 }
 

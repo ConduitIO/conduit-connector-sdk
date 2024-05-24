@@ -16,11 +16,12 @@ package sdk
 
 import (
 	"context"
-	"sync"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/conduitio/conduit-commons/opencdc"
+	"golang.org/x/sync/errgroup"
 )
 
 // BenchmarkSource is a benchmark that any source implementation can run to figure
@@ -87,15 +88,16 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 	})
 
 	acks := make(chan opencdc.Record, b.N) // huge buffer so we don't delay reads
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go bm.acker(b, acks, &wg)
+	var g errgroup.Group
+	g.Go(func() error {
+		return bm.acker(acks)
+	})
 
 	// measure first record read manually, it might be slower
 	bm.firstRead = bm.measure(func() {
 		rec, err := bm.source.Read(ctx)
 		if err != nil {
-			b.Fatal("Read: ", err)
+			b.Fatal("Read:", err)
 		}
 		acks <- rec
 	})
@@ -104,18 +106,22 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 		for i := 0; i < b.N-1; i++ {
 			rec, err := bm.source.Read(ctx)
 			if err != nil {
-				b.Fatal("Read: ", err)
+				b.Fatal("Read:", err)
 			}
 			acks <- rec
 		}
 	})
 
 	// stop
+	var err error
 	bm.stop = bm.measure(func() {
 		close(acks)
 		cancel()
-		wg.Wait()
+		err = g.Wait()
 	})
+	if err != nil {
+		b.Fatal("errgroup:", err)
+	}
 
 	// teardown
 	bm.teardown = bm.measure(func() {
@@ -129,26 +135,32 @@ func (bm *benchmarkSource) Run(b *testing.B) {
 	bm.reportMetrics(b)
 }
 
-func (bm *benchmarkSource) acker(b *testing.B, c <-chan opencdc.Record, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (bm *benchmarkSource) acker(c <-chan opencdc.Record) error {
 	ctx := context.Background()
 
 	rec := <-c // read first ack manually
+
+	var err error
 	bm.firstAck = bm.measure(func() {
-		err := bm.source.Ack(ctx, rec.Position)
-		if err != nil {
-			b.Fatal("Ack: ", err)
-		}
+		err = bm.source.Ack(ctx, rec.Position)
 	})
+	if err != nil {
+		return fmt.Errorf("ack fail: %w", err)
+	}
 
 	bm.allAcks = bm.measure(func() {
 		for rec := range c {
-			err := bm.source.Ack(context.Background(), rec.Position)
+			err = bm.source.Ack(context.Background(), rec.Position)
 			if err != nil {
-				b.Fatal("Ack: ", err)
+				return
 			}
 		}
 	})
+	if err != nil {
+		return fmt.Errorf("ack fail: %w", err)
+	}
+
+	return nil
 }
 
 func (*benchmarkSource) measure(f func()) time.Duration {

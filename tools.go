@@ -1,4 +1,4 @@
-// Copyright © 2022 Meroxa, Inc.
+// Copyright © 2024 Meroxa, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,30 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package csync
+//go:build tools
+
+package main
 
 import (
-	"context"
-	"testing"
+	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
+	_ "go.uber.org/mock/mockgen"
+	_ "golang.org/x/tools/cmd/stringer"
 )
-
-var valSink int
-var errSink error
-
-func BenchmarkValueWatcher_Watch(b *testing.B) {
-	var w ValueWatcher[int]
-	ctx := context.Background()
-
-	for i := 0; i < b.N; i++ {
-		valSink, errSink = w.Watch(ctx, func(val int) bool { return val == 0 })
-	}
-}
-
-func BenchmarkValueWatcher_WatchValues(b *testing.B) {
-	var w ValueWatcher[int]
-	ctx := context.Background()
-
-	for i := 0; i < b.N; i++ {
-		valSink, errSink = w.Watch(ctx, WatchValues(0))
-	}
-}

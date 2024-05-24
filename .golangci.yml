@@ -1,14 +1,11 @@
+run:
+  timeout: 5m
+
 linters-settings:
-  gofmt:
-    simplify: false
-  govet:
-    check-shadowing: false
   nolintlint:
     allow-unused: false # report any unused nolint directives
     require-explanation: true # require an explanation for nolint directives
     require-specific: true # require nolint directives to mention the specific linter being suppressed
-  gocyclo:
-    min-complexity: 20
   goconst:
     ignore-tests: true
   goheader:
@@ -22,6 +19,18 @@ linters-settings:
       # Default is 0600, we use 0644 since it's macOS default, and we are not
       # dealing with critical data.
       G306: "0644"
+  wrapcheck:
+    ignoreSigs:
+      - .Errorf(
+      - errors.New(
+      - errors.Unwrap(
+      - errors.Join(
+      - .Wrap(
+      - .Wrapf(
+      - .WithMessage(
+      - .WithMessagef(
+      - .WithStack(
+      - (context.Context).Err()
 
 issues:
   exclude-rules:
@@ -37,83 +46,89 @@ issues:
         - stylecheck
         - gosec
         - errname
+        - forcetypeassert
+        - dupl
 
 linters:
   # please, do not use `enable-all`: it's deprecated and will be removed soon.
   # inverted configuration with `enable-all` and `disable` is not scalable during updates of golangci-lint
   disable-all: true
   enable:
+    - asasalint
+    - asciicheck
+    - bidichk
     - bodyclose
+    - containedctx
+    - contextcheck
+    - decorder
     # - depguard
     - dogsled
+    - dupl
+    - dupword
     - durationcheck
     - errcheck
+    - errchkjson
     - errname
-    # - errorlint
-    # - exhaustive
-    # - exhaustivestruct
+    - errorlint
+    - exhaustive
     - exportloopref
     # - forbidigo
-    # - forcetypeassert
+    - forcetypeassert
     # - funlen
-    # - gochecknoinits
+    - gci
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gocognit
     - goconst
     - gocritic
-    - gocyclo
-    # - cyclop # not interested in package complexities at the moment
-    # - godot
+    - godot
+    # - err113
     - gofmt
-    # - gofumpt
+    - gofumpt
     - goheader
     - goimports
-    - revive
-    # - gomnd
     - gomoddirectives
-    - gomodguard
     - goprintffuncname
     - gosec
     - gosimple
+    - gosmopolitan
     - govet
-    # - ifshort
+    - grouper
+    - importas
     - ineffassign
-    # - importas
-    # - lll
-    # - misspell
+    - interfacebloat
+    # - ireturn # Doesn't have correct support for generic types https://github.com/butuzov/ireturn/issues/37
+    - loggercheck
+    - maintidx
     - makezero
-    # - nakedret
-    # - nilerr
-    # - nilnil
-    # - nlreturn
+    - mirror
+    - misspell
+    - musttag
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnil
     - noctx
     - nolintlint
-    # - paralleltest
+    - nosprintfhostport
+    - prealloc
     - predeclared
+    - promlinter
+    - reassign
+    - revive
     - rowserrcheck
+    - sqlclosecheck
     - staticcheck
     - stylecheck
-    - sqlclosecheck
-    # - tagliatelle
-    # - tenv
+    - tenv
+    - testableexamples
     # - thelper
-    # - tparallel
-    - typecheck
     - unconvert
-    # - unparam
+    - unparam
     - unused
+    - usestdlibvars
     - wastedassign
     - whitespace
-  # - wrapcheck
-  # - wsl
-
-  # don't enable:
-  # - asciicheck
-  # - dupl
-  # - gochecknoglobals
-  # - gocognit
-  # - godox
-  # - goerr113
-  # - maligned
-  # - nestif
-  # - prealloc
-  # - testpackage
-  # - wsl
+    # - wrapcheck
+    - zerologlint
