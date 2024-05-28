@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/cchan"
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/conduitio/conduit-connector-sdk/internal"
@@ -377,7 +378,7 @@ func TestSourcePluginAdapter_LifecycleOnCreated(t *testing.T) {
 
 	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
 
-	want := map[string]string{"foo": "bar"}
+	want := config.Config{"foo": "bar"}
 	src.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
 
 	req := cplugin.SourceLifecycleOnCreatedRequest{Config: want}
@@ -393,8 +394,8 @@ func TestSourcePluginAdapter_LifecycleOnUpdated(t *testing.T) {
 
 	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
 
-	wantBefore := map[string]string{"foo": "bar"}
-	wantAfter := map[string]string{"foo": "baz"}
+	wantBefore := config.Config{"foo": "bar"}
+	wantAfter := config.Config{"foo": "baz"}
 	src.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
 
 	req := cplugin.SourceLifecycleOnUpdatedRequest{
@@ -413,7 +414,7 @@ func TestSourcePluginAdapter_LifecycleOnDeleted(t *testing.T) {
 
 	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
 
-	want := map[string]string{"foo": "bar"}
+	want := config.Config{"foo": "bar"}
 	src.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
 
 	req := cplugin.SourceLifecycleOnDeletedRequest{Config: want}

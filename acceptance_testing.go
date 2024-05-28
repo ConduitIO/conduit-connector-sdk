@@ -46,8 +46,8 @@ import (
 //	    sdk.AcceptanceTest(t, sdk.ConfigurableAcceptanceTestDriver{
 //	        Config: sdk.ConfigurableAcceptanceTestDriverConfig{
 //	            Connector: myConnector,
-//	            SourceConfig: map[string]string{...},      // valid source config
-//	            DestinationConfig: map[string]string{...}, // valid destination config
+//	            SourceConfig: config.Config{...},      // valid source config
+//	            DestinationConfig: config.Config{...}, // valid destination config
 //	        },
 //	    })
 //	}
@@ -72,10 +72,10 @@ type AcceptanceTestDriver interface {
 
 	// SourceConfig should be a valid config for a source connector, reading
 	// from the same location as the destination will write to.
-	SourceConfig(*testing.T) map[string]string
+	SourceConfig(*testing.T) config.Config
 	// DestinationConfig should be a valid config for a destination connector,
 	// writing to the same location as the source will read from.
-	DestinationConfig(*testing.T) map[string]string
+	DestinationConfig(*testing.T) config.Config
 
 	// BeforeTest is executed before each acceptance test.
 	BeforeTest(*testing.T)
@@ -139,10 +139,10 @@ type ConfigurableAcceptanceTestDriverConfig struct {
 
 	// SourceConfig should be a valid config for a source connector, reading
 	// from the same location as the destination will write to.
-	SourceConfig map[string]string
+	SourceConfig config.Config
 	// DestinationConfig should be a valid config for a destination connector,
 	// writing to the same location as the source will read from.
-	DestinationConfig map[string]string
+	DestinationConfig config.Config
 
 	// BeforeTest is executed before each acceptance test.
 	BeforeTest func(t *testing.T)
@@ -194,11 +194,11 @@ func (d ConfigurableAcceptanceTestDriver) Connector() Connector {
 	return d.Config.Connector
 }
 
-func (d ConfigurableAcceptanceTestDriver) SourceConfig(*testing.T) map[string]string {
+func (d ConfigurableAcceptanceTestDriver) SourceConfig(*testing.T) config.Config {
 	return maps.Clone(d.Config.SourceConfig)
 }
 
-func (d ConfigurableAcceptanceTestDriver) DestinationConfig(*testing.T) map[string]string {
+func (d ConfigurableAcceptanceTestDriver) DestinationConfig(*testing.T) config.Config {
 	return maps.Clone(d.Config.DestinationConfig)
 }
 
@@ -886,8 +886,8 @@ func (a acceptanceTest) skipIfNoDestination(t *testing.T) {
 	}
 }
 
-func (a acceptanceTest) cloneConfig(orig map[string]string) map[string]string {
-	cloned := make(map[string]string, len(orig))
+func (a acceptanceTest) cloneConfig(orig config.Config) config.Config {
+	cloned := make(config.Config, len(orig))
 	for k, v := range orig {
 		cloned[k] = v
 	}

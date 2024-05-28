@@ -43,7 +43,7 @@ var Util = struct {
 	//     validations, and value validations.
 	//   - Copies configuration values into the target object. The target object must
 	//     be a pointer to a struct.
-	ParseConfig func(ctx context.Context, cfg map[string]string, target any, params config.Parameters) error
+	ParseConfig func(ctx context.Context, cfg config.Config, target any, params config.Parameters) error
 }{
 	ParseConfig: parseConfig,
 }
@@ -65,14 +65,14 @@ func mergeParameters(p1 config.Parameters, p2 config.Parameters) config.Paramete
 
 func parseConfig(
 	ctx context.Context,
-	cfg map[string]string,
+	cfg config.Config,
 	target any,
 	params config.Parameters,
 ) error {
 	logger := Logger(ctx)
 
 	logger.Debug().Msg("sanitizing configuration and applying defaults")
-	c := config.Config(cfg).Sanitize().ApplyDefaults(params)
+	c := cfg.Sanitize().ApplyDefaults(params)
 
 	logger.Debug().Msg("validating configuration according to the specifications")
 	err := c.Validate(params)

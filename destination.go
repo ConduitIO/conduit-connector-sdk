@@ -52,7 +52,7 @@ type Destination interface {
 	// configuration will always contain all keys defined in Parameters
 	// (unprovided keys will have their default values) and all non-empty
 	// values will be of the correct type.
-	Configure(context.Context, map[string]string) error
+	Configure(context.Context, config.Config) error
 
 	// Open is called after Configure to signal the plugin it can prepare to
 	// start writing records. If needed, the plugin should open connections in
@@ -79,17 +79,17 @@ type Destination interface {
 	// connector (e.g. create a bucket). Anything that the connector creates in
 	// this method is considered to be owned by this connector and should be
 	// cleaned up in LifecycleOnDeleted.
-	LifecycleOnCreated(ctx context.Context, config map[string]string) error
+	LifecycleOnCreated(ctx context.Context, config config.Config) error
 	// LifecycleOnUpdated is called after Configure and before Open when the
 	// connector configuration has changed since the last run. This call will be
 	// skipped if the connector configuration did not change. It can be used to
 	// update anything that was initialized in LifecycleOnCreated, in case the
 	// configuration change affects it.
-	LifecycleOnUpdated(ctx context.Context, configBefore, configAfter map[string]string) error
+	LifecycleOnUpdated(ctx context.Context, configBefore, configAfter config.Config) error
 	// LifecycleOnDeleted is called when the connector was deleted. It will be
 	// the only method that is called in that case. This method can be used to
 	// clean up anything that was initialized in LifecycleOnCreated.
-	LifecycleOnDeleted(ctx context.Context, config map[string]string) error
+	LifecycleOnDeleted(ctx context.Context, config config.Config) error
 
 	mustEmbedUnimplementedDestination()
 }
@@ -127,7 +127,7 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req cplugin.De
 	return cplugin.DestinationConfigureResponse{}, errors.Join(errs...)
 }
 
-func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config map[string]string) error {
+func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config config.Config) error {
 	a.writeStrategy = &writeStrategySingle{impl: a.impl} // by default we write single records
 
 	batchEnabled := DestinationWithBatch{}.getBatchEnabled(ctx)

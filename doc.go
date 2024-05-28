@@ -178,10 +178,10 @@ Here is an example how to do that:
 	type CustomAcceptanceTestDriver struct {
 	  sdk.ConfigurableAcceptanceTestDriver
 	}
-	func (d *CustomAcceptanceTestDriver) ReadFromDestination(t *testing.T, records []sdk.Record) []sdk.Record {
+	func (d *CustomAcceptanceTestDriver) ReadFromDestination(t *testing.T, records []opencdc.Record) []opencdc.Record {
 	  // implement read
 	}
-	func (d *CustomAcceptanceTestDriver) WriteToSource(t *testing.T, records []sdk.Record) []sdk.Record {
+	func (d *CustomAcceptanceTestDriver) WriteToSource(t *testing.T, records []opencdc.Record) []opencdc.Record {
 	  // implement write
 	}
 
