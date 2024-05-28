@@ -159,7 +159,7 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req cplugin.SourceC
 	return cplugin.SourceConfigureResponse{}, err
 }
 
-func (a *sourcePluginAdapter) Start(ctx context.Context, req cplugin.SourceStartRequest) (cplugin.SourceStartResponse, error) {
+func (a *sourcePluginAdapter) Open(ctx context.Context, req cplugin.SourceOpenRequest) (cplugin.SourceOpenResponse, error) {
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateConfigured},
 		StateBefore:          internal.StateStarting,
@@ -187,7 +187,7 @@ func (a *sourcePluginAdapter) Start(ctx context.Context, req cplugin.SourceStart
 		return a.impl.Open(ctxOpen, req.Position)
 	})
 
-	return cplugin.SourceStartResponse{}, err
+	return cplugin.SourceOpenResponse{}, err
 }
 
 func (a *sourcePluginAdapter) Run(ctx context.Context, stream cplugin.SourceRunStream) (err error) {

@@ -7,7 +7,7 @@ toolchain go1.22.0
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/conduitio/conduit-commons v0.2.0
-	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240522160346-94685acd7300
+	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240528122612-9f3a6736e27a
 	github.com/goccy/go-json v0.10.3
 	github.com/golangci/golangci-lint v1.59.0
 	github.com/jpillora/backoff v1.0.0
@@ -94,7 +94,7 @@ require (
 	github.com/gostaticanalysis/comment v1.4.2 // indirect
 	github.com/gostaticanalysis/forcetypeassert v0.1.0 // indirect
 	github.com/gostaticanalysis/nilerr v0.1.1 // indirect
-	github.com/hashicorp/go-hclog v1.5.0 // indirect
+	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-plugin v1.6.1 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -210,6 +210,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240515191416-fc5f0ca64291 // indirect
 	google.golang.org/grpc v1.64.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

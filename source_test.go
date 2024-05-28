@@ -46,7 +46,7 @@ func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{})
+	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{})
 	is.NoErr(err)
 	is.NoErr(gotCtx.Err()) // expected context to be open
 
@@ -55,7 +55,7 @@ func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {
 	is.NoErr(gotCtx.Err()) // expected context to be open
 }
 
-func TestSourcePluginAdapter_Start_ClosedContext(t *testing.T) {
+func TestSourcePluginAdapter_Open_ClosedContext(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
@@ -78,13 +78,13 @@ func TestSourcePluginAdapter_Start_ClosedContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{})
+	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{})
 	is.True(err != nil)
 	is.Equal(err, ctx.Err())
 	is.Equal(gotCtx.Err(), context.Canceled)
 }
 
-func TestSourcePluginAdapter_Start_Logger(t *testing.T) {
+func TestSourcePluginAdapter_Open_Logger(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
@@ -103,7 +103,7 @@ func TestSourcePluginAdapter_Start_Logger(t *testing.T) {
 
 	ctx := wantLogger.WithContext(context.Background())
 
-	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{})
+	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{})
 	is.NoErr(err)
 }
 
@@ -143,7 +143,7 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)
 
-	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{Position: nil})
+	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{Position: nil})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -216,7 +216,7 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)
 
-	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{Position: nil})
+	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{Position: nil})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -271,8 +271,8 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)
 
-	// Start connector now
-	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{Position: nil})
+	// Open connector now
+	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{Position: nil})
 	is.NoErr(err)
 
 	// Run was not triggered yet, but we try to stop
@@ -326,7 +326,7 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)
 
-	_, err := srcPlugin.Start(ctx, cplugin.SourceStartRequest{Position: nil})
+	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{Position: nil})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})

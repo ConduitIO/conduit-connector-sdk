@@ -171,29 +171,29 @@ func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, c
 	return nil
 }
 
-func (a *destinationPluginAdapter) Start(ctx context.Context, _ cplugin.DestinationStartRequest) (cplugin.DestinationStartResponse, error) {
+func (a *destinationPluginAdapter) Open(ctx context.Context, _ cplugin.DestinationOpenRequest) (cplugin.DestinationOpenResponse, error) {
 	a.lastPosition = new(csync.ValueWatcher[opencdc.Position])
 
 	// detach context, so we can control when it's canceled
 	ctxOpen := ccontext.Detach(ctx)
 	ctxOpen, a.openCancel = context.WithCancel(ctxOpen)
 
-	startDone := make(chan struct{})
-	defer close(startDone)
+	openDone := make(chan struct{})
+	defer close(openDone)
 	go func() {
-		// for duration of the Start call we propagate the cancellation of ctx to
-		// ctxOpen, after Start returns we decouple the context and let it live
+		// for duration of the Open call we propagate the cancellation of ctx to
+		// ctxOpen, after Open returns we decouple the context and let it live
 		// until the plugin should stop running
 		select {
 		case <-ctx.Done():
 			a.openCancel()
-		case <-startDone:
+		case <-openDone:
 			// start finished before ctx was canceled, leave context open
 		}
 	}()
 
 	err := a.impl.Open(ctxOpen)
-	return cplugin.DestinationStartResponse{}, err
+	return cplugin.DestinationOpenResponse{}, err
 }
 
 func (a *destinationPluginAdapter) Run(ctx context.Context, stream cplugin.DestinationRunStream) error {

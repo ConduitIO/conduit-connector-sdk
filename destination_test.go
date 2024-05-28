@@ -43,7 +43,7 @@ func TestDestinationPluginAdapter_Start_OpenContext(t *testing.T) {
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err := dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 	is.NoErr(gotCtx.Err()) // expected context to be open
 
@@ -52,7 +52,7 @@ func TestDestinationPluginAdapter_Start_OpenContext(t *testing.T) {
 	is.NoErr(gotCtx.Err()) // expected context to be open
 }
 
-func TestDestinationPluginAdapter_Start_ClosedContext(t *testing.T) {
+func TestDestinationPluginAdapter_Open_ClosedContext(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
@@ -74,13 +74,13 @@ func TestDestinationPluginAdapter_Start_ClosedContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err := dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.True(err != nil)
 	is.Equal(err, ctx.Err())
 	is.Equal(gotCtx.Err(), context.Canceled)
 }
 
-func TestDestinationPluginAdapter_Start_Logger(t *testing.T) {
+func TestDestinationPluginAdapter_Open_Logger(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
@@ -98,7 +98,7 @@ func TestDestinationPluginAdapter_Start_Logger(t *testing.T) {
 
 	ctx := wantLogger.WithContext(context.Background())
 
-	_, err := dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err := dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 }
 
@@ -132,7 +132,7 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 
 	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: map[string]string{}})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -201,7 +201,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 
 	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: batchConfig})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -273,7 +273,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 
 	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: batchConfig})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -336,7 +336,7 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 
 	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: map[string]string{}})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
