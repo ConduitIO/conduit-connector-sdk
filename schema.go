@@ -18,48 +18,23 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/conduitio/conduit-commons/schema"
-	"github.com/conduitio/conduit-connector-protocol/conduit/v1/fromproto"
-	conduitv1 "github.com/conduitio/conduit-connector-protocol/proto/conduit/v1"
+	"github.com/conduitio/conduit-connector-protocol/conduit/schema"
+	schemav1 "github.com/conduitio/conduit-connector-protocol/conduit/schema/v1"
 	"google.golang.org/grpc"
 )
 
-type SchemaUtil struct {
-	client conduitv1.SchemaServiceClient
-}
+type schemaServiceKey struct{}
 
-func NewSchemaUtil() SchemaUtil {
+func NewSchemaService(ctx context.Context) (schema.SchemaService, error) {
+	service := ctx.Value(schemaServiceKey{})
+	if service != nil {
+		return service.(schema.SchemaService), nil
+	}
+
 	conn, err := grpc.NewClient("localhost:8085")
 	if err != nil {
-		panic(fmt.Errorf("failed connecting to schema service: %w", err))
+		return nil, fmt.Errorf("failed creating gRPC client: %w", err)
 	}
 
-	return SchemaUtil{
-		client: conduitv1.NewSchemaServiceClient(conn),
-	}
-}
-
-func (u SchemaUtil) Create(ctx context.Context, name string, bytes []byte) (schema.Instance, error) {
-	resp, err := u.client.Create(
-		ctx,
-		&conduitv1.CreateSchemaRequest{
-			Name:  name,
-			Type:  conduitv1.Schema_TYPE_AVRO,
-			Bytes: bytes,
-		},
-	)
-	if err != nil {
-		return schema.Instance{}, err
-	}
-
-	return fromproto.SchemaInstance(resp.Schema), nil
-}
-
-func (u SchemaUtil) Get(ctx context.Context, id string) (schema.Instance, error) {
-	resp, err := u.client.Get(ctx, &conduitv1.GetSchemaRequest{Id: id})
-	if err != nil {
-		return schema.Instance{}, err
-	}
-
-	return fromproto.SchemaInstance(resp.Schema), nil
+	return schemav1.NewClient(conn)
 }

@@ -7,7 +7,7 @@ toolchain go1.22.0
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/conduitio/conduit-commons v0.2.1-0.20240524093723-f8f4c14990d0
-	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240524191819-34a957a19154
+	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240528144240-1e682f2eafb6
 	github.com/goccy/go-json v0.10.3
 	github.com/google/uuid v1.6.0
 	github.com/jpillora/backoff v1.0.0
@@ -15,7 +15,7 @@ require (
 	github.com/rs/zerolog v1.32.0
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.4.0
-	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
+	golang.org/x/exp v0.0.0-20240525044651-4c93da0ed11d
 	golang.org/x/time v0.5.0
 	google.golang.org/grpc v1.64.0
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
@@ -47,6 +47,10 @@ require (
 	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240515191416-fc5f0ca64291 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240521202816-d264139d666e // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 )
+
+replace github.com/conduitio/conduit-commons => ../conduit-commons
+
+replace github.com/conduitio/conduit-connector-protocol => ../conduit-connector-protocol
