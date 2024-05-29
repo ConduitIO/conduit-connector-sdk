@@ -16,25 +16,11 @@ package sdk
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/conduitio/conduit-connector-protocol/conduit/schema"
-	schemav1 "github.com/conduitio/conduit-connector-protocol/conduit/schema/v1"
-	"google.golang.org/grpc"
+	"github.com/conduitio/conduit-connector-protocol/conduit/schema/client"
 )
 
-type schemaServiceKey struct{}
-
-func NewSchemaService(ctx context.Context) (schema.SchemaService, error) {
-	service := ctx.Value(schemaServiceKey{})
-	if service != nil {
-		return service.(schema.SchemaService), nil
-	}
-
-	conn, err := grpc.NewClient("localhost:8085")
-	if err != nil {
-		return nil, fmt.Errorf("failed creating gRPC client: %w", err)
-	}
-
-	return schemav1.NewClient(conn)
+func NewSchemaService(ctx context.Context) (schema.Service, error) {
+	return client.New(ctx)
 }
