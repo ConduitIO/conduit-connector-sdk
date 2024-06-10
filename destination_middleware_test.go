@@ -55,13 +55,13 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 	testCases := []struct {
 		name       string
 		middleware DestinationWithBatch
-		have       map[string]string
-		want       map[string]string
+		have       config.Config
+		want       config.Config
 	}{{
 		name:       "empty config",
 		middleware: DestinationWithBatch{},
-		have:       map[string]string{},
-		want: map[string]string{
+		have:       config.Config{},
+		want: config.Config{
 			configDestinationBatchSize:  "0",
 			configDestinationBatchDelay: "0s",
 		},
@@ -71,8 +71,8 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 			DefaultBatchSize:  5,
 			DefaultBatchDelay: time.Second,
 		},
-		have: map[string]string{},
-		want: map[string]string{
+		have: config.Config{},
+		want: config.Config{
 			configDestinationBatchSize:  "5",
 			configDestinationBatchDelay: "1s",
 		},
@@ -82,11 +82,11 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 			DefaultBatchSize:  5,
 			DefaultBatchDelay: time.Second,
 		},
-		have: map[string]string{
+		have: config.Config{
 			configDestinationBatchSize:  "12",
 			configDestinationBatchDelay: "2s",
 		},
-		want: map[string]string{
+		want: config.Config{
 			configDestinationBatchSize:  "12",
 			configDestinationBatchDelay: "2s",
 		},
@@ -98,7 +98,7 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 			d := tt.middleware.Wrap(dst)
 
 			ctx := DestinationWithBatch{}.setBatchEnabled(context.Background(), false)
-			dst.EXPECT().Configure(ctx, gomock.AssignableToTypeOf(map[string]string{})).Return(nil)
+			dst.EXPECT().Configure(ctx, gomock.AssignableToTypeOf(config.Config{})).Return(nil)
 
 			err := d.Configure(ctx, tt.have)
 
@@ -138,14 +138,14 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 	testCases := []struct {
 		name        string
 		middleware  DestinationWithRateLimit
-		have        map[string]string
+		have        config.Config
 		wantLimiter bool
 		wantLimit   rate.Limit
 		wantBurst   int
 	}{{
 		name:        "empty config",
 		middleware:  DestinationWithRateLimit{},
-		have:        map[string]string{},
+		have:        config.Config{},
 		wantLimiter: false,
 	}, {
 		name: "empty config, custom defaults",
@@ -153,7 +153,7 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 			DefaultRatePerSecond: 1.23,
 			DefaultBurst:         4,
 		},
-		have:        map[string]string{},
+		have:        config.Config{},
 		wantLimiter: true,
 		wantLimit:   rate.Limit(1.23),
 		wantBurst:   4,
@@ -163,7 +163,7 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 			DefaultRatePerSecond: 1.23,
 			DefaultBurst:         -2,
 		},
-		have:        map[string]string{},
+		have:        config.Config{},
 		wantLimiter: true,
 		wantLimit:   rate.Limit(1.23),
 		wantBurst:   1, // burst will be at minimum 1
@@ -173,7 +173,7 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 			DefaultRatePerSecond: 1.23,
 			DefaultBurst:         4,
 		},
-		have: map[string]string{
+		have: config.Config{
 			configDestinationRatePerSecond: "12.34",
 			configDestinationRateBurst:     "5",
 		},
@@ -186,7 +186,7 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 			DefaultRatePerSecond: 1.23,
 			DefaultBurst:         4,
 		},
-		have: map[string]string{
+		have: config.Config{
 			configDestinationRateBurst: "0",
 		},
 		wantLimiter: true,
@@ -224,7 +224,7 @@ func TestDestinationWithRateLimit_Write(t *testing.T) {
 
 	dst.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
 
-	err := d.Configure(ctx, map[string]string{
+	err := d.Configure(ctx, config.Config{
 		configDestinationRatePerSecond: "10",
 		configDestinationRateBurst:     "2",
 	})
@@ -274,7 +274,7 @@ func TestDestinationWithRateLimit_Write_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	dst.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
-	err := d.Configure(ctx, map[string]string{
+	err := d.Configure(ctx, config.Config{
 		configDestinationRatePerSecond: "10",
 	})
 	is.NoErr(err)
@@ -292,17 +292,17 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 	testCases := []struct {
 		name           string
 		middleware     DestinationWithRecordFormat
-		have           map[string]string
+		have           config.Config
 		wantSerializer RecordSerializer
 	}{{
 		name:           "empty config",
 		middleware:     DestinationWithRecordFormat{},
-		have:           map[string]string{},
+		have:           config.Config{},
 		wantSerializer: defaultSerializer,
 	}, {
 		name:       "valid config",
 		middleware: DestinationWithRecordFormat{},
-		have: map[string]string{
+		have: config.Config{
 			configDestinationRecordFormat: "debezium/json",
 		},
 		wantSerializer: GenericRecordSerializer{

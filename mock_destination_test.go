@@ -39,7 +39,7 @@ func (m *MockDestination) EXPECT() *MockDestinationMockRecorder {
 }
 
 // Configure mocks base method.
-func (m *MockDestination) Configure(arg0 context.Context, arg1 map[string]string) error {
+func (m *MockDestination) Configure(arg0 context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Configure", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -53,7 +53,7 @@ func (mr *MockDestinationMockRecorder) Configure(arg0, arg1 any) *gomock.Call {
 }
 
 // LifecycleOnCreated mocks base method.
-func (m *MockDestination) LifecycleOnCreated(arg0 context.Context, arg1 map[string]string) error {
+func (m *MockDestination) LifecycleOnCreated(arg0 context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LifecycleOnCreated", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -67,7 +67,7 @@ func (mr *MockDestinationMockRecorder) LifecycleOnCreated(arg0, arg1 any) *gomoc
 }
 
 // LifecycleOnDeleted mocks base method.
-func (m *MockDestination) LifecycleOnDeleted(arg0 context.Context, arg1 map[string]string) error {
+func (m *MockDestination) LifecycleOnDeleted(arg0 context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LifecycleOnDeleted", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -81,7 +81,7 @@ func (mr *MockDestinationMockRecorder) LifecycleOnDeleted(arg0, arg1 any) *gomoc
 }
 
 // LifecycleOnUpdated mocks base method.
-func (m *MockDestination) LifecycleOnUpdated(arg0 context.Context, arg1, arg2 map[string]string) error {
+func (m *MockDestination) LifecycleOnUpdated(arg0 context.Context, arg1, arg2 config.Config) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LifecycleOnUpdated", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)

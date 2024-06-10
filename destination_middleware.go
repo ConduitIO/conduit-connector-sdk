@@ -132,7 +132,7 @@ func (d *destinationWithBatch) Parameters() config.Parameters {
 	})
 }
 
-func (d *destinationWithBatch) Configure(ctx context.Context, config map[string]string) error {
+func (d *destinationWithBatch) Configure(ctx context.Context, config config.Config) error {
 	// Batching is actually implemented in the plugin adapter because it is the
 	// only place we have access to acknowledgments.
 	// We need to signal back to the adapter that batching is enabled. We do
@@ -212,7 +212,7 @@ func (d *destinationWithRateLimit) Parameters() config.Parameters {
 	})
 }
 
-func (d *destinationWithRateLimit) Configure(ctx context.Context, config map[string]string) error {
+func (d *destinationWithRateLimit) Configure(ctx context.Context, config config.Config) error {
 	err := d.Destination.Configure(ctx, config)
 	if err != nil {
 		return err
@@ -366,7 +366,7 @@ func (d *destinationWithRecordFormat) Parameters() config.Parameters {
 	})
 }
 
-func (d *destinationWithRecordFormat) Configure(ctx context.Context, config map[string]string) error {
+func (d *destinationWithRecordFormat) Configure(ctx context.Context, config config.Config) error {
 	err := d.Destination.Configure(ctx, config)
 	if err != nil {
 		return err

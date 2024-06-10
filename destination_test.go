@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-protocol/cplugin"
 	"github.com/matryer/is"
@@ -43,7 +44,7 @@ func TestDestinationPluginAdapter_Start_OpenContext(t *testing.T) {
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err := dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 	is.NoErr(gotCtx.Err()) // expected context to be open
 
@@ -52,7 +53,7 @@ func TestDestinationPluginAdapter_Start_OpenContext(t *testing.T) {
 	is.NoErr(gotCtx.Err()) // expected context to be open
 }
 
-func TestDestinationPluginAdapter_Start_ClosedContext(t *testing.T) {
+func TestDestinationPluginAdapter_Open_ClosedContext(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
@@ -74,13 +75,13 @@ func TestDestinationPluginAdapter_Start_ClosedContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err := dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.True(err != nil)
 	is.Equal(err, ctx.Err())
 	is.Equal(gotCtx.Err(), context.Canceled)
 }
 
-func TestDestinationPluginAdapter_Start_Logger(t *testing.T) {
+func TestDestinationPluginAdapter_Open_Logger(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
@@ -98,7 +99,7 @@ func TestDestinationPluginAdapter_Start_Logger(t *testing.T) {
 
 	ctx := wantLogger.WithContext(context.Background())
 
-	_, err := dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err := dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 }
 
@@ -123,16 +124,16 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 		},
 	}
 
-	dst.EXPECT().Configure(gomock.Any(), map[string]string{}).Return(nil)
+	dst.EXPECT().Configure(gomock.Any(), config.Config{}).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), []opencdc.Record{want}).Return(1, nil).Times(10)
 
 	ctx := context.Background()
 	stream := NewInMemoryDestinationRunStream(ctx)
 
-	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: map[string]string{}})
+	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: config.Config{}})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -187,7 +188,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 		},
 	}
 
-	batchConfig := map[string]string{
+	batchConfig := config.Config{
 		configDestinationBatchDelay: "0s",
 		configDestinationBatchSize:  "5",
 	}
@@ -201,7 +202,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 
 	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: batchConfig})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -258,7 +259,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 		},
 	}
 
-	batchConfig := map[string]string{
+	batchConfig := config.Config{
 		configDestinationBatchDelay: "0s",
 		configDestinationBatchSize:  "5",
 	}
@@ -273,7 +274,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 
 	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: batchConfig})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -327,16 +328,16 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	lastRecord := opencdc.Record{Position: opencdc.Position("foo")}
 
 	// ackFunc stores the ackFunc so it can be called at a later time
-	dst.EXPECT().Configure(gomock.Any(), map[string]string{}).Return(nil)
+	dst.EXPECT().Configure(gomock.Any(), config.Config{}).Return(nil)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Write(gomock.Any(), gomock.Any()).Return(1, nil)
 
 	ctx := context.Background()
 	stream := NewInMemoryDestinationRunStream(ctx)
 
-	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: map[string]string{}})
+	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: config.Config{}})
 	is.NoErr(err)
-	_, err = dstPlugin.Start(ctx, cplugin.DestinationStartRequest{})
+	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -405,7 +406,7 @@ func TestDestinationPluginAdapter_LifecycleOnCreated(t *testing.T) {
 
 	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
 
-	want := map[string]string{"foo": "bar"}
+	want := config.Config{"foo": "bar"}
 	dst.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
 
 	req := cplugin.DestinationLifecycleOnCreatedRequest{Config: want}
@@ -421,8 +422,8 @@ func TestDestinationPluginAdapter_LifecycleOnUpdated(t *testing.T) {
 
 	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
 
-	wantBefore := map[string]string{"foo": "bar"}
-	wantAfter := map[string]string{"foo": "baz"}
+	wantBefore := config.Config{"foo": "bar"}
+	wantAfter := config.Config{"foo": "baz"}
 	dst.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
 
 	req := cplugin.DestinationLifecycleOnUpdatedRequest{
@@ -441,7 +442,7 @@ func TestDestinationPluginAdapter_LifecycleOnDeleted(t *testing.T) {
 
 	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
 
-	want := map[string]string{"foo": "bar"}
+	want := config.Config{"foo": "bar"}
 	dst.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
 
 	req := cplugin.DestinationLifecycleOnDeletedRequest{Config: want}

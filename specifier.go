@@ -23,21 +23,7 @@ import (
 
 // Specification contains general information regarding the plugin like its name
 // and what it does.
-type Specification struct {
-	// Name is the name of the plugin.
-	Name string
-	// Summary is a brief description of the plugin and what it does. Try not to
-	// exceed 200 characters.
-	Summary string
-	// Description is a more long form area appropriate for README-like text
-	// that the author can provide for explaining the behavior of the connector
-	// or specific parameters.
-	Description string
-	// Version string. Should be prepended with `v` like Go, e.g. `v1.54.3`.
-	Version string
-	// Author declares the entity that created or maintains this plugin.
-	Author string
-}
+type Specification cplugin.Specification
 
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that
 // converts it into a cplugin.SpecifierPlugin.
@@ -66,12 +52,6 @@ type specifierPluginAdapter struct {
 
 func (s *specifierPluginAdapter) Specify(context.Context, cplugin.SpecifierSpecifyRequest) (cplugin.SpecifierSpecifyResponse, error) {
 	return cplugin.SpecifierSpecifyResponse{
-		Name:              s.specs.Name,
-		Summary:           s.specs.Summary,
-		Description:       s.specs.Description,
-		Version:           s.specs.Version,
-		Author:            s.specs.Author,
-		SourceParams:      s.sourceParams,
-		DestinationParams: s.destinationParams,
+		Specification: cplugin.Specification(s.specs),
 	}, nil
 }

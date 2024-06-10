@@ -31,7 +31,7 @@ func (UnimplementedDestination) Parameters() config.Parameters {
 }
 
 // Configure needs to be overridden in the actual implementation.
-func (UnimplementedDestination) Configure(context.Context, map[string]string) error {
+func (UnimplementedDestination) Configure(context.Context, config.Config) error {
 	return fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
 }
 
@@ -51,17 +51,17 @@ func (UnimplementedDestination) Teardown(context.Context) error {
 }
 
 // LifecycleOnCreated won't do anything by default.
-func (UnimplementedDestination) LifecycleOnCreated(context.Context, map[string]string) error {
+func (UnimplementedDestination) LifecycleOnCreated(context.Context, config.Config) error {
 	return nil
 }
 
 // LifecycleOnUpdated won't do anything by default.
-func (UnimplementedDestination) LifecycleOnUpdated(context.Context, map[string]string, map[string]string) error {
+func (UnimplementedDestination) LifecycleOnUpdated(context.Context, config.Config, config.Config) error {
 	return nil
 }
 
 // LifecycleOnDeleted won't do anything by default.
-func (UnimplementedDestination) LifecycleOnDeleted(context.Context, map[string]string) error {
+func (UnimplementedDestination) LifecycleOnDeleted(context.Context, config.Config) error {
 	return nil
 }
 
@@ -76,7 +76,7 @@ func (UnimplementedSource) Parameters() config.Parameters {
 }
 
 // Configure needs to be overridden in the actual implementation.
-func (UnimplementedSource) Configure(context.Context, map[string]string) error {
+func (UnimplementedSource) Configure(context.Context, config.Config) error {
 	return fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
 }
 
@@ -102,17 +102,17 @@ func (UnimplementedSource) Teardown(context.Context) error {
 }
 
 // LifecycleOnCreated won't do anything by default.
-func (UnimplementedSource) LifecycleOnCreated(context.Context, map[string]string) error {
+func (UnimplementedSource) LifecycleOnCreated(context.Context, config.Config) error {
 	return nil
 }
 
 // LifecycleOnUpdated won't do anything by default.
-func (UnimplementedSource) LifecycleOnUpdated(context.Context, map[string]string, map[string]string) error {
+func (UnimplementedSource) LifecycleOnUpdated(context.Context, config.Config, config.Config) error {
 	return nil
 }
 
 // LifecycleOnDeleted won't do anything by default.
-func (UnimplementedSource) LifecycleOnDeleted(context.Context, map[string]string) error {
+func (UnimplementedSource) LifecycleOnDeleted(context.Context, config.Config) error {
 	return nil
 }
 
