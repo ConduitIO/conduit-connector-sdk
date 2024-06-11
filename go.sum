@@ -9,8 +9,8 @@ github.com/bufbuild/protocompile v0.13.1-0.20240510201809-752249dfc37f h1:cQLFPZ
 github.com/bufbuild/protocompile v0.13.1-0.20240510201809-752249dfc37f/go.mod h1:QJcgsTVPSBEMt+/3i2M/RpwjZc+DAXyPPDg0slmMk4c=
 github.com/conduitio/conduit-commons v0.2.1-0.20240529171657-31b922714201 h1:Lp/HHKEaPLMYmQxNtVyvXPJVG/i0p+/XKeKp2faNQyc=
 github.com/conduitio/conduit-commons v0.2.1-0.20240529171657-31b922714201/go.mod h1:5MutXku5ivmVmLAwyFRr/Dea5lfiQp/BARl01CQKK9Q=
-github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240610162644-221949a4def6 h1:imxPCeoRPDTWVA7A0s0K0JNZtkbtyqRYfmmIl7Gt024=
-github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240610162644-221949a4def6/go.mod h1:NBaqMfTbpv9Wttd8X7fQ8CjhFrgmu2TUcARo8lglyUI=
+github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240611142543-c0b5b4de073b h1:tqRrvR+iJlsb9ntuTGdwgZK5ZP/6zt0gQjHumS06pdM=
+github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240611142543-c0b5b4de073b/go.mod h1:NBaqMfTbpv9Wttd8X7fQ8CjhFrgmu2TUcARo8lglyUI=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

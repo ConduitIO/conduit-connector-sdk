@@ -7,7 +7,7 @@ toolchain go1.22.0
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/conduitio/conduit-commons v0.2.1-0.20240529171657-31b922714201
-	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240610162644-221949a4def6
+	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240611142543-c0b5b4de073b
 	github.com/goccy/go-json v0.10.3
 	github.com/google/uuid v1.6.0
 	github.com/jpillora/backoff v1.0.0
