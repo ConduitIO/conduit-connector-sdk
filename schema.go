@@ -16,6 +16,7 @@ package sdk
 
 import (
 	"context"
+
 	cschema "github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/conduit/schema"
 	"github.com/conduitio/conduit-connector-protocol/conduit/schema/client"
