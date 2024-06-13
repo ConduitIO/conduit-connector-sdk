@@ -16,7 +16,6 @@ package sdk
 
 import (
 	"context"
-
 	cschema "github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/conduit/schema"
 	"github.com/conduitio/conduit-connector-protocol/conduit/schema/client"
@@ -24,7 +23,16 @@ import (
 
 type SchemaService interface {
 	Create(ctx context.Context, name string, bytes []byte) (cschema.Instance, error)
-	Get(ctx context.Context, id string) (cschema.Instance, error)
+	Get(ctx context.Context, name string, version int) (cschema.Instance, error)
+}
+
+func NewSchemaService(ctx context.Context) (SchemaService, error) {
+	target, err := client.New(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return newSchemaServiceAdapter(target), nil
 }
 
 type schemaServiceAdapter struct {
@@ -47,20 +55,14 @@ func (s *schemaServiceAdapter) Create(ctx context.Context, name string, bytes []
 	return resp.Instance, nil
 }
 
-func (s *schemaServiceAdapter) Get(ctx context.Context, id string) (cschema.Instance, error) {
-	resp, err := s.target.Get(ctx, schema.GetRequest{ID: id})
+func (s *schemaServiceAdapter) Get(ctx context.Context, name string, version int) (cschema.Instance, error) {
+	resp, err := s.target.Get(ctx, schema.GetRequest{
+		Name:    name,
+		Version: version,
+	})
 	if err != nil {
 		return cschema.Instance{}, err
 	}
 
 	return resp.Instance, nil
-}
-
-func NewSchemaService(ctx context.Context) (SchemaService, error) {
-	target, err := client.New(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return newSchemaServiceAdapter(target), nil
 }
