@@ -18,7 +18,7 @@ import (
 	"context"
 
 	cschema "github.com/conduitio/conduit-commons/schema"
-	"github.com/conduitio/conduit-connector-protocol/conduit/schema"
+	pschema "github.com/conduitio/conduit-connector-protocol/conduit/schema"
 	"github.com/conduitio/conduit-connector-protocol/conduit/schema/client"
 )
 
@@ -27,6 +27,11 @@ type SchemaService interface {
 	Get(ctx context.Context, name string, version int) (cschema.Instance, error)
 }
 
+// NewSchemaService creates a new SchemaService.
+// If the connector is running in standalone mode, the SchemaService
+// communicates with Conduit via gRPC.
+// If the connector is running in built-in mode, then the SchemaService
+// communicates with Conduit via method calls.
 func NewSchemaService(ctx context.Context) (SchemaService, error) {
 	target, err := client.New(ctx)
 	if err != nil {
@@ -36,16 +41,18 @@ func NewSchemaService(ctx context.Context) (SchemaService, error) {
 	return newSchemaServiceAdapter(target), nil
 }
 
+// schemaServiceAdapter adapts Conduit/connector protocol's schema.Service
+// to the SDK SchemaService interface.
 type schemaServiceAdapter struct {
-	target schema.Service
+	target pschema.Service
 }
 
-func newSchemaServiceAdapter(target schema.Service) *schemaServiceAdapter {
+func newSchemaServiceAdapter(target pschema.Service) *schemaServiceAdapter {
 	return &schemaServiceAdapter{target: target}
 }
 
 func (s *schemaServiceAdapter) Create(ctx context.Context, name string, bytes []byte) (cschema.Instance, error) {
-	resp, err := s.target.Create(ctx, schema.CreateRequest{
+	resp, err := s.target.Create(ctx, pschema.CreateRequest{
 		Name:  name,
 		Bytes: bytes,
 	})
@@ -57,7 +64,7 @@ func (s *schemaServiceAdapter) Create(ctx context.Context, name string, bytes []
 }
 
 func (s *schemaServiceAdapter) Get(ctx context.Context, name string, version int) (cschema.Instance, error) {
-	resp, err := s.target.Get(ctx, schema.GetRequest{
+	resp, err := s.target.Get(ctx, pschema.GetRequest{
 		Name:    name,
 		Version: version,
 	})

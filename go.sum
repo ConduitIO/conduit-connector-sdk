@@ -7,10 +7,10 @@ github.com/Masterminds/sprig/v3 v3.2.3 h1:eL2fZNezLomi0uOLqjQoN6BfsDD+fyLtgbJMAj
 github.com/Masterminds/sprig/v3 v3.2.3/go.mod h1:rXcFaZ2zZbLRJv/xSysmlgIM1u11eBaRMhvYXJNkGuM=
 github.com/bufbuild/protocompile v0.13.1-0.20240510201809-752249dfc37f h1:cQLFPZXf32tbTLzUTg0n69Vi5kddhUiZMzpMzKRW0XU=
 github.com/bufbuild/protocompile v0.13.1-0.20240510201809-752249dfc37f/go.mod h1:QJcgsTVPSBEMt+/3i2M/RpwjZc+DAXyPPDg0slmMk4c=
-github.com/conduitio/conduit-commons v0.2.1-0.20240612170747-b6e7093d3b24 h1:YmszpLGScsjslqeP3QSf5sXDqWguiwFsE38u1xt06FA=
-github.com/conduitio/conduit-commons v0.2.1-0.20240612170747-b6e7093d3b24/go.mod h1:5MutXku5ivmVmLAwyFRr/Dea5lfiQp/BARl01CQKK9Q=
-github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240613083501-acf859a1e17f h1:FsyqTgwAFB/d3L+ZifHRdcqZk6b56UruQ66MBeRxmg4=
-github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240613083501-acf859a1e17f/go.mod h1:mlq3kQS5Hgay+a30y+lWZYItR5uu0Z7YwFWdr09TsX4=
+github.com/conduitio/conduit-commons v0.2.1-0.20240613095004-061edf8e3a04 h1:UShHaAaZBjLT9YsFig5jcbbkquUb0HIF9HZTjCovsKE=
+github.com/conduitio/conduit-commons v0.2.1-0.20240613095004-061edf8e3a04/go.mod h1:5MutXku5ivmVmLAwyFRr/Dea5lfiQp/BARl01CQKK9Q=
+github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240613095101-ab9dc4597f00 h1:38FsxwcmJmwmaGuYs+Doad9Hibc3pzXpmn02MBJlIFk=
+github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240613095101-ab9dc4597f00/go.mod h1:pEZNntSwxXwF9W9iJvPglA++UyfrxvWDNGyxCtg+Sbs=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
