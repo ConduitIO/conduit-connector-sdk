@@ -17,13 +17,13 @@ package sdk
 import (
 	"context"
 	"errors"
-	"github.com/conduitio/conduit-commons/schema"
-	pschema "github.com/conduitio/conduit-connector-protocol/conduit/schema"
-	"github.com/google/go-cmp/cmp"
 	"testing"
 
+	"github.com/conduitio/conduit-commons/schema"
+	pschema "github.com/conduitio/conduit-connector-protocol/conduit/schema"
 	"github.com/conduitio/conduit-connector-protocol/conduit/schema/client"
 	"github.com/conduitio/conduit-connector-protocol/conduit/schema/mock"
+	"github.com/google/go-cmp/cmp"
 	"github.com/matryer/is"
 	"go.uber.org/mock/gomock"
 )
