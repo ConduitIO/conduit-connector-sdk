@@ -16,6 +16,7 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 
 	cschema "github.com/conduitio/conduit-commons/schema"
 	pschema "github.com/conduitio/conduit-connector-protocol/conduit/schema"
@@ -23,7 +24,7 @@ import (
 )
 
 type SchemaService interface {
-	Create(ctx context.Context, name string, bytes []byte) (cschema.Instance, error)
+	Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (cschema.Instance, error)
 	Get(ctx context.Context, name string, version int) (cschema.Instance, error)
 }
 
@@ -51,10 +52,14 @@ func newSchemaServiceAdapter(target pschema.Service) *schemaServiceAdapter {
 	return &schemaServiceAdapter{target: target}
 }
 
-func (s *schemaServiceAdapter) Create(ctx context.Context, name string, bytes []byte) (cschema.Instance, error) {
+func (s *schemaServiceAdapter) Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (cschema.Instance, error) {
+	if typ != cschema.TypeAvro {
+		return cschema.Instance{}, fmt.Errorf("type %v is not supported (only Avro is supported)", typ)
+	}
+
 	resp, err := s.target.Create(ctx, pschema.CreateRequest{
 		Name:  name,
-		Type:  pschema.TypeAvro,
+		Type:  pschema.Type(typ),
 		Bytes: bytes,
 	})
 	if err != nil {

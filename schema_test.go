@@ -66,7 +66,7 @@ func TestSchemaService_Create_OK(t *testing.T) {
 	underTest, err := NewSchemaService(client.WithSchemaService(ctx, service))
 	is.NoErr(err)
 
-	got, err := underTest.Create(ctx, "schema-name", schemaBytes)
+	got, err := underTest.Create(ctx, schema.TypeAvro, "schema-name", schemaBytes)
 	is.NoErr(err)
 	is.Equal("", cmp.Diff(want, got))
 }
@@ -83,7 +83,7 @@ func TestSchemaService_Create_Err(t *testing.T) {
 	underTest, err := NewSchemaService(client.WithSchemaService(ctx, service))
 	is.NoErr(err)
 
-	_, err = underTest.Create(ctx, "schema-name", schemaBytes)
+	_, err = underTest.Create(ctx, schema.TypeAvro, "schema-name", schemaBytes)
 	is.True(errors.Is(err, servieErr))
 }
 
