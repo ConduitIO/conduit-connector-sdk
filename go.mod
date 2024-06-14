@@ -9,6 +9,7 @@ require (
 	github.com/conduitio/conduit-commons v0.2.1-0.20240613095004-061edf8e3a04
 	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240613095847-0a29f5c38797
 	github.com/goccy/go-json v0.10.3
+	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/matryer/is v1.4.1

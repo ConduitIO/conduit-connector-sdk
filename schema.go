@@ -54,6 +54,7 @@ func newSchemaServiceAdapter(target pschema.Service) *schemaServiceAdapter {
 func (s *schemaServiceAdapter) Create(ctx context.Context, name string, bytes []byte) (cschema.Instance, error) {
 	resp, err := s.target.Create(ctx, pschema.CreateRequest{
 		Name:  name,
+		Type:  pschema.TypeAvro,
 		Bytes: bytes,
 	})
 	if err != nil {
