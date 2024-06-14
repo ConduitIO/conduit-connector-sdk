@@ -76,15 +76,15 @@ func TestSchemaService_Create_Err(t *testing.T) {
 	ctx := context.Background()
 	schemaBytes := []byte{1, 2, 3}
 	service := mock.NewService(gomock.NewController(t))
-	servieErr := errors.New("boom")
+	serviceErr := errors.New("boom")
 	service.EXPECT().
 		Create(gomock.Any(), gomock.Any()).
-		Return(pschema.CreateResponse{}, servieErr)
+		Return(pschema.CreateResponse{}, serviceErr)
 	underTest, err := NewSchemaService(client.WithSchemaService(ctx, service))
 	is.NoErr(err)
 
 	_, err = underTest.Create(ctx, schema.TypeAvro, "schema-name", schemaBytes)
-	is.True(errors.Is(err, servieErr))
+	is.True(errors.Is(err, serviceErr))
 }
 
 func TestSchemaService_Get_OK(t *testing.T) {
