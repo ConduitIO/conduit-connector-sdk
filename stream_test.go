@@ -19,53 +19,53 @@ import (
 	"io"
 	"sync"
 
-	"github.com/conduitio/conduit-connector-protocol/cplugin"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
 )
 
-type InMemoryDestinationRunStream inMemoryStream[cplugin.DestinationRunRequest, cplugin.DestinationRunResponse]
+type InMemoryDestinationRunStream inMemoryStream[pconnector.DestinationRunRequest, pconnector.DestinationRunResponse]
 
 func NewInMemoryDestinationRunStream(ctx context.Context) *InMemoryDestinationRunStream {
 	return &InMemoryDestinationRunStream{
 		ctx:      ctx,
-		reqChan:  make(chan cplugin.DestinationRunRequest),
-		respChan: make(chan cplugin.DestinationRunResponse),
+		reqChan:  make(chan pconnector.DestinationRunRequest),
+		respChan: make(chan pconnector.DestinationRunResponse),
 		stopChan: make(chan struct{}),
 	}
 }
 
-func (s *InMemoryDestinationRunStream) Client() cplugin.DestinationRunStreamClient {
-	return (*inMemoryStreamClient[cplugin.DestinationRunRequest, cplugin.DestinationRunResponse])(s)
+func (s *InMemoryDestinationRunStream) Client() pconnector.DestinationRunStreamClient {
+	return (*inMemoryStreamClient[pconnector.DestinationRunRequest, pconnector.DestinationRunResponse])(s)
 }
 
-func (s *InMemoryDestinationRunStream) Server() cplugin.DestinationRunStreamServer {
-	return (*inMemoryStreamServer[cplugin.DestinationRunRequest, cplugin.DestinationRunResponse])(s)
+func (s *InMemoryDestinationRunStream) Server() pconnector.DestinationRunStreamServer {
+	return (*inMemoryStreamServer[pconnector.DestinationRunRequest, pconnector.DestinationRunResponse])(s)
 }
 
 func (s *InMemoryDestinationRunStream) Close(reason error) bool {
-	return ((*inMemoryStream[cplugin.DestinationRunRequest, cplugin.DestinationRunResponse])(s)).Close(reason)
+	return ((*inMemoryStream[pconnector.DestinationRunRequest, pconnector.DestinationRunResponse])(s)).Close(reason)
 }
 
-type InMemorySourceRunStream inMemoryStream[cplugin.SourceRunRequest, cplugin.SourceRunResponse]
+type InMemorySourceRunStream inMemoryStream[pconnector.SourceRunRequest, pconnector.SourceRunResponse]
 
 func NewInMemorySourceRunStream(ctx context.Context) *InMemorySourceRunStream {
 	return &InMemorySourceRunStream{
 		ctx:      ctx,
-		reqChan:  make(chan cplugin.SourceRunRequest),
-		respChan: make(chan cplugin.SourceRunResponse),
+		reqChan:  make(chan pconnector.SourceRunRequest),
+		respChan: make(chan pconnector.SourceRunResponse),
 		stopChan: make(chan struct{}),
 	}
 }
 
-func (s *InMemorySourceRunStream) Client() cplugin.SourceRunStreamClient {
-	return (*inMemoryStreamClient[cplugin.SourceRunRequest, cplugin.SourceRunResponse])(s)
+func (s *InMemorySourceRunStream) Client() pconnector.SourceRunStreamClient {
+	return (*inMemoryStreamClient[pconnector.SourceRunRequest, pconnector.SourceRunResponse])(s)
 }
 
-func (s *InMemorySourceRunStream) Server() cplugin.SourceRunStreamServer {
-	return (*inMemoryStreamServer[cplugin.SourceRunRequest, cplugin.SourceRunResponse])(s)
+func (s *InMemorySourceRunStream) Server() pconnector.SourceRunStreamServer {
+	return (*inMemoryStreamServer[pconnector.SourceRunRequest, pconnector.SourceRunResponse])(s)
 }
 
 func (s *InMemorySourceRunStream) Close(reason error) bool {
-	return ((*inMemoryStream[cplugin.SourceRunRequest, cplugin.SourceRunResponse])(s)).Close(reason)
+	return ((*inMemoryStream[pconnector.SourceRunRequest, pconnector.SourceRunResponse])(s)).Close(reason)
 }
 
 type inMemoryStream[REQ any, RES any] struct {

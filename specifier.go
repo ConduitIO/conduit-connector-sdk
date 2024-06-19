@@ -18,16 +18,16 @@ import (
 	"context"
 
 	"github.com/conduitio/conduit-commons/config"
-	"github.com/conduitio/conduit-connector-protocol/cplugin"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
 )
 
 // Specification contains general information regarding the plugin like its name
 // and what it does.
-type Specification cplugin.Specification
+type Specification pconnector.Specification
 
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that
-// converts it into a cplugin.SpecifierPlugin.
-func NewSpecifierPlugin(specs Specification, source Source, dest Destination) cplugin.SpecifierPlugin {
+// converts it into a pconnector.SpecifierPlugin.
+func NewSpecifierPlugin(specs Specification, source Source, dest Destination) pconnector.SpecifierPlugin {
 	if source == nil {
 		// prevent nil pointer
 		source = UnimplementedSource{}
@@ -50,8 +50,8 @@ type specifierPluginAdapter struct {
 	destinationParams config.Parameters
 }
 
-func (s *specifierPluginAdapter) Specify(context.Context, cplugin.SpecifierSpecifyRequest) (cplugin.SpecifierSpecifyResponse, error) {
-	return cplugin.SpecifierSpecifyResponse{
-		Specification: cplugin.Specification(s.specs),
+func (s *specifierPluginAdapter) Specify(context.Context, pconnector.SpecifierSpecifyRequest) (pconnector.SpecifierSpecifyResponse, error) {
+	return pconnector.SpecifierSpecifyResponse{
+		Specification: pconnector.Specification(s.specs),
 	}, nil
 }
