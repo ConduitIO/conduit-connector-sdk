@@ -28,7 +28,7 @@ import (
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/opencdc"
-	cplugin "github.com/conduitio/conduit-connector-protocol/cplugin"
+	pconnector "github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/jpillora/backoff"
 	"gopkg.in/tomb.v2"
@@ -120,9 +120,9 @@ type Source interface {
 }
 
 // NewSourcePlugin takes a Source and wraps it into an adapter that converts it
-// into a cplugin.SourcePlugin. If the parameter is nil it will wrap
+// into a pconnector.SourcePlugin. If the parameter is nil it will wrap
 // UnimplementedSource instead.
-func NewSourcePlugin(impl Source) cplugin.SourcePlugin {
+func NewSourcePlugin(impl Source) pconnector.SourcePlugin {
 	if impl == nil {
 		// prevent nil pointers
 		impl = UnimplementedSource{}
@@ -146,7 +146,7 @@ type sourcePluginAdapter struct {
 	t          *tomb.Tomb
 }
 
-func (a *sourcePluginAdapter) Configure(ctx context.Context, req cplugin.SourceConfigureRequest) (cplugin.SourceConfigureResponse, error) {
+func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.SourceConfigureRequest) (pconnector.SourceConfigureResponse, error) {
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateInitial},
 		StateBefore:          internal.StateConfiguring,
@@ -156,10 +156,10 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req cplugin.SourceC
 		return a.impl.Configure(ctx, req.Config)
 	})
 
-	return cplugin.SourceConfigureResponse{}, err
+	return pconnector.SourceConfigureResponse{}, err
 }
 
-func (a *sourcePluginAdapter) Open(ctx context.Context, req cplugin.SourceOpenRequest) (cplugin.SourceOpenResponse, error) {
+func (a *sourcePluginAdapter) Open(ctx context.Context, req pconnector.SourceOpenRequest) (pconnector.SourceOpenResponse, error) {
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateConfigured},
 		StateBefore:          internal.StateStarting,
@@ -187,10 +187,10 @@ func (a *sourcePluginAdapter) Open(ctx context.Context, req cplugin.SourceOpenRe
 		return a.impl.Open(ctxOpen, req.Position)
 	})
 
-	return cplugin.SourceOpenResponse{}, err
+	return pconnector.SourceOpenResponse{}, err
 }
 
-func (a *sourcePluginAdapter) Run(ctx context.Context, stream cplugin.SourceRunStream) (err error) {
+func (a *sourcePluginAdapter) Run(ctx context.Context, stream pconnector.SourceRunStream) (err error) {
 	err = a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateStarted},
 		StateBefore:          internal.StateInitiatingRun,
@@ -229,7 +229,7 @@ func (a *sourcePluginAdapter) Run(ctx context.Context, stream cplugin.SourceRunS
 	return a.t.Err()
 }
 
-func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cplugin.SourceRunStreamServer) error {
+func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.SourceRunStreamServer) error {
 	// TODO make backoff params configurable (https://github.com/ConduitIO/conduit/issues/184)
 	b := &backoff.Backoff{
 		Factor: 2,
@@ -256,7 +256,7 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cplugin.Source
 			return fmt.Errorf("read plugin error: %w", err)
 		}
 
-		err = stream.Send(cplugin.SourceRunResponse{Records: []opencdc.Record{r}})
+		err = stream.Send(pconnector.SourceRunResponse{Records: []opencdc.Record{r}})
 		if err != nil {
 			return fmt.Errorf("read stream error: %w", err)
 		}
@@ -267,7 +267,7 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream cplugin.Source
 	}
 }
 
-func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cplugin.SourceRunStreamServer) error {
+func (a *sourcePluginAdapter) runAck(ctx context.Context, stream pconnector.SourceRunStreamServer) error {
 	for {
 		batch, err := stream.Recv()
 		if err != nil {
@@ -287,7 +287,7 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream cplugin.SourceR
 	}
 }
 
-func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cplugin.SourceStopRequest) (cplugin.SourceStopResponse, error) {
+func (a *sourcePluginAdapter) Stop(ctx context.Context, _ pconnector.SourceStopRequest) (pconnector.SourceStopResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
@@ -311,7 +311,7 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cplugin.SourceStopRequ
 		return nil
 	})
 	if err != nil {
-		return cplugin.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
+		return pconnector.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
 	}
 
 	// wait for read to actually stop running with a timeout, in case the
@@ -319,15 +319,15 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ cplugin.SourceStopRequ
 	_, _, err = cchan.ChanOut[struct{}](a.readDone).Recv(ctx)
 	if err != nil {
 		Logger(ctx).Warn().Err(err).Msg("failed to wait for Read to stop running")
-		return cplugin.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
+		return pconnector.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
 	}
 
-	return cplugin.SourceStopResponse{
+	return pconnector.SourceStopResponse{
 		LastPosition: a.lastPosition,
 	}, nil
 }
 
-func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cplugin.SourceTeardownRequest) (cplugin.SourceTeardownResponse, error) {
+func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ pconnector.SourceTeardownRequest) (pconnector.SourceTeardownResponse, error) {
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates: nil, // Teardown can be called from any state
 		StateBefore:    internal.StateTearingDown,
@@ -363,19 +363,19 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ cplugin.SourceTear
 		return err
 	})
 
-	return cplugin.SourceTeardownResponse{}, err
+	return pconnector.SourceTeardownResponse{}, err
 }
 
-func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req cplugin.SourceLifecycleOnCreatedRequest) (cplugin.SourceLifecycleOnCreatedResponse, error) {
-	return cplugin.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
+func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req pconnector.SourceLifecycleOnCreatedRequest) (pconnector.SourceLifecycleOnCreatedResponse, error) {
+	return pconnector.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
 
-func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req cplugin.SourceLifecycleOnUpdatedRequest) (cplugin.SourceLifecycleOnUpdatedResponse, error) {
-	return cplugin.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
+func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req pconnector.SourceLifecycleOnUpdatedRequest) (pconnector.SourceLifecycleOnUpdatedResponse, error) {
+	return pconnector.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
 
-func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req cplugin.SourceLifecycleOnDeletedRequest) (cplugin.SourceLifecycleOnDeletedResponse, error) {
-	return cplugin.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
+func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req pconnector.SourceLifecycleOnDeletedRequest) (pconnector.SourceLifecycleOnDeletedResponse, error) {
+	return pconnector.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
 
 // waitForRun returns once the Run function returns or the context gets

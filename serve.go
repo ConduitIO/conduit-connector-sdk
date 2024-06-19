@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/conduitio/conduit-connector-protocol/cplugin"
-	"github.com/conduitio/conduit-connector-protocol/cplugin/server"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
+	"github.com/conduitio/conduit-connector-protocol/pconnector/server"
 )
 
 // Serve starts the plugin and takes care of its whole lifecycle by blocking
@@ -58,10 +58,10 @@ func serve(c Connector) error {
 	}
 
 	return server.Serve(
-		func() cplugin.SpecifierPlugin {
+		func() pconnector.SpecifierPlugin {
 			return NewSpecifierPlugin(c.NewSpecification(), c.NewSource(), c.NewDestination())
 		},
-		func() cplugin.SourcePlugin { return NewSourcePlugin(c.NewSource()) },
-		func() cplugin.DestinationPlugin { return NewDestinationPlugin(c.NewDestination()) },
+		func() pconnector.SourcePlugin { return NewSourcePlugin(c.NewSource()) },
+		func() pconnector.DestinationPlugin { return NewDestinationPlugin(c.NewDestination()) },
 	)
 }

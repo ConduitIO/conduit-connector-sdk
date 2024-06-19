@@ -23,7 +23,7 @@ import (
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/cplugin"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
 	"go.uber.org/mock/gomock"
@@ -44,7 +44,7 @@ func TestDestinationPluginAdapter_Start_OpenContext(t *testing.T) {
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
+	_, err := dstPlugin.Open(ctx, pconnector.DestinationOpenRequest{})
 	is.NoErr(err)
 	is.NoErr(gotCtx.Err()) // expected context to be open
 
@@ -75,7 +75,7 @@ func TestDestinationPluginAdapter_Open_ClosedContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
+	_, err := dstPlugin.Open(ctx, pconnector.DestinationOpenRequest{})
 	is.True(err != nil)
 	is.Equal(err, ctx.Err())
 	is.Equal(gotCtx.Err(), context.Canceled)
@@ -99,7 +99,7 @@ func TestDestinationPluginAdapter_Open_Logger(t *testing.T) {
 
 	ctx := wantLogger.WithContext(context.Background())
 
-	_, err := dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
+	_, err := dstPlugin.Open(ctx, pconnector.DestinationOpenRequest{})
 	is.NoErr(err)
 }
 
@@ -131,9 +131,9 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemoryDestinationRunStream(ctx)
 
-	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: config.Config{}})
+	_, err := dstPlugin.Configure(ctx, pconnector.DestinationConfigureRequest{Config: config.Config{}})
 	is.NoErr(err)
-	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
+	_, err = dstPlugin.Open(ctx, pconnector.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -146,12 +146,12 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 	// write 10 records
 	clientStream := stream.Client()
 	for i := 0; i < 10; i++ {
-		err = clientStream.Send(cplugin.DestinationRunRequest{Records: []opencdc.Record{want}})
+		err = clientStream.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{want}})
 		is.NoErr(err)
 		resp, err := clientStream.Recv()
 		is.NoErr(err)
-		is.Equal(resp, cplugin.DestinationRunResponse{
-			Acks: []cplugin.DestinationRunResponseAck{{
+		is.Equal(resp, pconnector.DestinationRunResponse{
+			Acks: []pconnector.DestinationRunResponseAck{{
 				Position: want.Position,
 				Error:    "",
 			}},
@@ -200,9 +200,9 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemoryDestinationRunStream(ctx)
 
-	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: batchConfig})
+	_, err := dstPlugin.Configure(ctx, pconnector.DestinationConfigureRequest{Config: batchConfig})
 	is.NoErr(err)
-	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
+	_, err = dstPlugin.Open(ctx, pconnector.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -215,14 +215,14 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 	// write 5 records
 	clientStream := stream.Client()
 	for i := 0; i < 5; i++ {
-		err = clientStream.Send(cplugin.DestinationRunRequest{Records: []opencdc.Record{want}})
+		err = clientStream.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{want}})
 		is.NoErr(err)
 	}
 	for i := 0; i < 5; i++ {
 		resp, err := clientStream.Recv()
 		is.NoErr(err)
-		is.Equal(resp, cplugin.DestinationRunResponse{
-			Acks: []cplugin.DestinationRunResponseAck{{
+		is.Equal(resp, pconnector.DestinationRunResponse{
+			Acks: []pconnector.DestinationRunResponseAck{{
 				Position: want.Position,
 				Error:    "",
 			}},
@@ -272,9 +272,9 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemoryDestinationRunStream(ctx)
 
-	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: batchConfig})
+	_, err := dstPlugin.Configure(ctx, pconnector.DestinationConfigureRequest{Config: batchConfig})
 	is.NoErr(err)
-	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
+	_, err = dstPlugin.Open(ctx, pconnector.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -287,14 +287,14 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 	// write 5 records
 	clientStream := stream.Client()
 	for i := 0; i < 5; i++ {
-		err = clientStream.Send(cplugin.DestinationRunRequest{Records: []opencdc.Record{want}})
+		err = clientStream.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{want}})
 		is.NoErr(err)
 	}
 	for i := 0; i < 3; i++ {
 		resp, err := clientStream.Recv()
 		is.NoErr(err)
-		is.Equal(resp, cplugin.DestinationRunResponse{
-			Acks: []cplugin.DestinationRunResponseAck{{
+		is.Equal(resp, pconnector.DestinationRunResponse{
+			Acks: []pconnector.DestinationRunResponseAck{{
 				Position: want.Position,
 				Error:    "",
 			}},
@@ -303,8 +303,8 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		resp, err := clientStream.Recv()
 		is.NoErr(err)
-		is.Equal(resp, cplugin.DestinationRunResponse{
-			Acks: []cplugin.DestinationRunResponseAck{{
+		is.Equal(resp, pconnector.DestinationRunResponse{
+			Acks: []pconnector.DestinationRunResponseAck{{
 				Position: want.Position,
 				Error:    wantErr.Error(),
 			}},
@@ -335,9 +335,9 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemoryDestinationRunStream(ctx)
 
-	_, err := dstPlugin.Configure(ctx, cplugin.DestinationConfigureRequest{Config: config.Config{}})
+	_, err := dstPlugin.Configure(ctx, pconnector.DestinationConfigureRequest{Config: config.Config{}})
 	is.NoErr(err)
-	_, err = dstPlugin.Open(ctx, cplugin.DestinationOpenRequest{})
+	_, err = dstPlugin.Open(ctx, pconnector.DestinationOpenRequest{})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -355,7 +355,7 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 		defer close(stopDone)
 		_, err := dstPlugin.Stop(
 			context.Background(),
-			cplugin.DestinationStopRequest{LastPosition: lastRecord.Position},
+			pconnector.DestinationStopRequest{LastPosition: lastRecord.Position},
 		)
 		is.NoErr(err)
 	}()
@@ -369,7 +369,7 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 
 	// send last record
 	clientStream := stream.Client()
-	err = clientStream.Send(cplugin.DestinationRunRequest{Records: []opencdc.Record{lastRecord}})
+	err = clientStream.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{lastRecord}})
 	is.NoErr(err)
 
 	// stop should still block since acknowledgment wasn't sent back yet
@@ -409,7 +409,7 @@ func TestDestinationPluginAdapter_LifecycleOnCreated(t *testing.T) {
 	want := config.Config{"foo": "bar"}
 	dst.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
 
-	req := cplugin.DestinationLifecycleOnCreatedRequest{Config: want}
+	req := pconnector.DestinationLifecycleOnCreatedRequest{Config: want}
 	_, err := dstPlugin.LifecycleOnCreated(ctx, req)
 	is.NoErr(err)
 }
@@ -426,7 +426,7 @@ func TestDestinationPluginAdapter_LifecycleOnUpdated(t *testing.T) {
 	wantAfter := config.Config{"foo": "baz"}
 	dst.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
 
-	req := cplugin.DestinationLifecycleOnUpdatedRequest{
+	req := pconnector.DestinationLifecycleOnUpdatedRequest{
 		ConfigBefore: wantBefore,
 		ConfigAfter:  wantAfter,
 	}
@@ -445,7 +445,7 @@ func TestDestinationPluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	want := config.Config{"foo": "bar"}
 	dst.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
 
-	req := cplugin.DestinationLifecycleOnDeletedRequest{Config: want}
+	req := pconnector.DestinationLifecycleOnDeletedRequest{Config: want}
 	_, err := dstPlugin.LifecycleOnDeleted(ctx, req)
 	is.NoErr(err)
 }

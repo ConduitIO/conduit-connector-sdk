@@ -24,7 +24,7 @@ import (
 	"github.com/conduitio/conduit-commons/cchan"
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/cplugin"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
@@ -47,7 +47,7 @@ func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{})
+	_, err := srcPlugin.Open(ctx, pconnector.SourceOpenRequest{})
 	is.NoErr(err)
 	is.NoErr(gotCtx.Err()) // expected context to be open
 
@@ -79,7 +79,7 @@ func TestSourcePluginAdapter_Open_ClosedContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{})
+	_, err := srcPlugin.Open(ctx, pconnector.SourceOpenRequest{})
 	is.True(err != nil)
 	is.Equal(err, ctx.Err())
 	is.Equal(gotCtx.Err(), context.Canceled)
@@ -104,7 +104,7 @@ func TestSourcePluginAdapter_Open_Logger(t *testing.T) {
 
 	ctx := wantLogger.WithContext(context.Background())
 
-	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{})
+	_, err := srcPlugin.Open(ctx, pconnector.SourceOpenRequest{})
 	is.NoErr(err)
 }
 
@@ -144,7 +144,7 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)
 
-	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{Position: nil})
+	_, err := srcPlugin.Open(ctx, pconnector.SourceOpenRequest{Position: nil})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -158,15 +158,15 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	for i := 0; i < recordCount-1; i++ {
 		resp, err := clientStream.Recv()
 		is.NoErr(err)
-		is.Equal(resp, cplugin.SourceRunResponse{Records: []opencdc.Record{want}})
+		is.Equal(resp, pconnector.SourceRunResponse{Records: []opencdc.Record{want}})
 	}
 
 	// fetch last record
 	resp, err := clientStream.Recv()
 	is.NoErr(err)
-	is.Equal(resp, cplugin.SourceRunResponse{Records: []opencdc.Record{wantLast}})
+	is.Equal(resp, pconnector.SourceRunResponse{Records: []opencdc.Record{wantLast}})
 
-	stopResp, err := srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
+	stopResp, err := srcPlugin.Stop(ctx, pconnector.SourceStopRequest{})
 	is.NoErr(err)
 
 	is.Equal(wantLast.Position, stopResp.LastPosition) // unexpected last position
@@ -176,7 +176,7 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	src.EXPECT().Ack(gomock.Any(), want.Position).Times(recordCount - 1)
 
 	for i := 0; i < recordCount-1; i++ {
-		err = clientStream.Send(cplugin.SourceRunRequest{AckPositions: []opencdc.Position{want.Position}})
+		err = clientStream.Send(pconnector.SourceRunRequest{AckPositions: []opencdc.Position{want.Position}})
 		is.NoErr(err)
 	}
 
@@ -217,7 +217,7 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)
 
-	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{Position: nil})
+	_, err := srcPlugin.Open(ctx, pconnector.SourceOpenRequest{Position: nil})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -230,16 +230,16 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 	clientStream := stream.Client()
 	resp, err := clientStream.Recv()
 	is.NoErr(err)
-	is.Equal(resp, cplugin.SourceRunResponse{Records: []opencdc.Record{want}})
+	is.Equal(resp, pconnector.SourceRunResponse{Records: []opencdc.Record{want}})
 
 	// after this the connector starts blocking, we try to trigger a stop
-	stopResp, err := srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
+	stopResp, err := srcPlugin.Stop(ctx, pconnector.SourceStopRequest{})
 	is.True(errors.Is(err, context.DeadlineExceeded))
 	is.Equal(nil, stopResp.LastPosition) // unexpected last position
 
 	// the connector is still blocking, teardown should detach the goroutine
 	src.EXPECT().Teardown(gomock.Any()).Return(nil)
-	_, err = srcPlugin.Teardown(ctx, cplugin.SourceTeardownRequest{})
+	_, err = srcPlugin.Teardown(ctx, pconnector.SourceTeardownRequest{})
 	is.True(errors.Is(err, context.DeadlineExceeded))
 
 	// wait for Run to exit, teardown killed it
@@ -273,11 +273,11 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 	stream := NewInMemorySourceRunStream(ctx)
 
 	// Open connector now
-	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{Position: nil})
+	_, err := srcPlugin.Open(ctx, pconnector.SourceOpenRequest{Position: nil})
 	is.NoErr(err)
 
 	// Run was not triggered yet, but we try to stop
-	stopResp, err := srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
+	stopResp, err := srcPlugin.Stop(ctx, pconnector.SourceStopRequest{})
 	is.True(errors.Is(err, context.DeadlineExceeded))
 	is.Equal(nil, stopResp.LastPosition) // unexpected last position
 
@@ -289,7 +289,7 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 	}()
 
 	// Stop should still be blocked because there is a pending record that was not read yet
-	stopResp, err = srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
+	stopResp, err = srcPlugin.Stop(ctx, pconnector.SourceStopRequest{})
 	is.True(errors.Is(err, context.DeadlineExceeded))
 	is.Equal(nil, stopResp.LastPosition) // unexpected last position
 
@@ -297,10 +297,10 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 	clientStream := stream.Client()
 	resp, err := clientStream.Recv()
 	is.NoErr(err)
-	is.Equal(resp, cplugin.SourceRunResponse{Records: []opencdc.Record{want}})
+	is.Equal(resp, pconnector.SourceRunResponse{Records: []opencdc.Record{want}})
 
 	// after this the connector can be stopped
-	stopResp, err = srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
+	stopResp, err = srcPlugin.Stop(ctx, pconnector.SourceStopRequest{})
 	is.NoErr(err)
 	is.Equal(want.Position, stopResp.LastPosition) // unexpected last position
 
@@ -327,7 +327,7 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)
 
-	_, err := srcPlugin.Open(ctx, cplugin.SourceOpenRequest{Position: nil})
+	_, err := srcPlugin.Open(ctx, pconnector.SourceOpenRequest{Position: nil})
 	is.NoErr(err)
 
 	runDone := make(chan struct{})
@@ -343,14 +343,14 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	is.NoErr(err)
 
 	// stop the record producing goroutine
-	_, err = srcPlugin.Stop(ctx, cplugin.SourceStopRequest{})
+	_, err = srcPlugin.Stop(ctx, pconnector.SourceStopRequest{})
 	is.NoErr(err)
 
 	// teardown should block until the stream is closed and all acks were received
 	teardownDone := make(chan struct{})
 	go func() {
 		defer close(teardownDone)
-		_, err := srcPlugin.Teardown(ctx, cplugin.SourceTeardownRequest{})
+		_, err := srcPlugin.Teardown(ctx, pconnector.SourceTeardownRequest{})
 		is.NoErr(err)
 	}()
 
@@ -381,7 +381,7 @@ func TestSourcePluginAdapter_LifecycleOnCreated(t *testing.T) {
 	want := config.Config{"foo": "bar"}
 	src.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
 
-	req := cplugin.SourceLifecycleOnCreatedRequest{Config: want}
+	req := pconnector.SourceLifecycleOnCreatedRequest{Config: want}
 	_, err := srcPlugin.LifecycleOnCreated(ctx, req)
 	is.NoErr(err)
 }
@@ -398,7 +398,7 @@ func TestSourcePluginAdapter_LifecycleOnUpdated(t *testing.T) {
 	wantAfter := config.Config{"foo": "baz"}
 	src.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
 
-	req := cplugin.SourceLifecycleOnUpdatedRequest{
+	req := pconnector.SourceLifecycleOnUpdatedRequest{
 		ConfigBefore: wantBefore,
 		ConfigAfter:  wantAfter,
 	}
@@ -417,7 +417,7 @@ func TestSourcePluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	want := config.Config{"foo": "bar"}
 	src.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
 
-	req := cplugin.SourceLifecycleOnDeletedRequest{Config: want}
+	req := pconnector.SourceLifecycleOnDeletedRequest{Config: want}
 	_, err := srcPlugin.LifecycleOnDeleted(ctx, req)
 	is.NoErr(err)
 }
