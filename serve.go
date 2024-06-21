@@ -47,11 +47,6 @@ func serve(c Connector) error {
 		return err
 	}
 
-	err = initSchemaServiceClient()
-	if err != nil {
-		return err
-	}
-
 	if c.NewSpecification == nil {
 		return errors.New("Connector.NewSpecification is a required field")
 	}

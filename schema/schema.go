@@ -33,7 +33,7 @@ type Interface interface {
 // communicates with Conduit via gRPC.
 // If the connector is running in built-in mode, then the Service
 // communicates with Conduit via method calls.
-func NewService(ctx context.Context) (Service, error) {
+func NewService(ctx context.Context) (Interface, error) {
 	target, err := client.New(ctx)
 	if err != nil {
 		return nil, err
@@ -58,9 +58,9 @@ func (s *schemaServiceAdapter) Create(ctx context.Context, typ cschema.Type, nam
 	}
 
 	resp, err := s.target.Create(ctx, pschema.CreateRequest{
-		Name:  name,
-		Type:  pschema.Type(typ),
-		Bytes: bytes,
+		Subject: name,
+		Type:    pschema.Type(typ),
+		Bytes:   bytes,
 	})
 	if err != nil {
 		return cschema.Instance{}, err
@@ -71,7 +71,7 @@ func (s *schemaServiceAdapter) Create(ctx context.Context, typ cschema.Type, nam
 
 func (s *schemaServiceAdapter) Get(ctx context.Context, name string, version int) (cschema.Instance, error) {
 	resp, err := s.target.Get(ctx, pschema.GetRequest{
-		Name:    name,
+		Subject: name,
 		Version: version,
 	})
 	if err != nil {

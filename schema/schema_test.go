@@ -45,7 +45,7 @@ func TestSchemaService_Create_OK(t *testing.T) {
 `)
 	want := schema.Instance{
 		ID:      "12345",
-		Name:    "schema-name",
+		Subject: "schema-name",
 		Version: 12,
 		Type:    schema.TypeAvro,
 		Bytes:   schemaBytes,
@@ -53,9 +53,9 @@ func TestSchemaService_Create_OK(t *testing.T) {
 	service := mock.NewService(gomock.NewController(t))
 	service.EXPECT().
 		Create(gomock.Any(), pschema.CreateRequest{
-			Name:  "schema-name",
-			Type:  pschema.TypeAvro,
-			Bytes: schemaBytes,
+			Subject: "schema-name",
+			Type:    pschema.TypeAvro,
+			Bytes:   schemaBytes,
 		}).
 		Return(
 			pschema.CreateResponse{
@@ -63,7 +63,7 @@ func TestSchemaService_Create_OK(t *testing.T) {
 			},
 			nil,
 		)
-	underTest, err := NewSchemaService(client.WithSchemaService(ctx, service))
+	underTest, err := NewService(client.WithSchemaService(ctx, service))
 	is.NoErr(err)
 
 	got, err := underTest.Create(ctx, schema.TypeAvro, "schema-name", schemaBytes)
@@ -80,7 +80,7 @@ func TestSchemaService_Create_Err(t *testing.T) {
 	service.EXPECT().
 		Create(gomock.Any(), gomock.Any()).
 		Return(pschema.CreateResponse{}, serviceErr)
-	underTest, err := NewSchemaService(client.WithSchemaService(ctx, service))
+	underTest, err := NewService(client.WithSchemaService(ctx, service))
 	is.NoErr(err)
 
 	_, err = underTest.Create(ctx, schema.TypeAvro, "schema-name", schemaBytes)
@@ -104,7 +104,7 @@ func TestSchemaService_Get_OK(t *testing.T) {
 `)
 	want := schema.Instance{
 		ID:      "12345",
-		Name:    "schema-name",
+		Subject: "schema-name",
 		Version: 12,
 		Type:    schema.TypeAvro,
 		Bytes:   schemaBytes,
@@ -112,7 +112,7 @@ func TestSchemaService_Get_OK(t *testing.T) {
 	service := mock.NewService(gomock.NewController(t))
 	service.EXPECT().
 		Get(gomock.Any(), pschema.GetRequest{
-			Name:    "schema-name",
+			Subject: "schema-name",
 			Version: 12,
 		}).
 		Return(
@@ -122,7 +122,7 @@ func TestSchemaService_Get_OK(t *testing.T) {
 			nil,
 		)
 
-	underTest, err := NewSchemaService(client.WithSchemaService(ctx, service))
+	underTest, err := NewService(client.WithSchemaService(ctx, service))
 	is.NoErr(err)
 
 	got, err := underTest.Get(ctx, "schema-name", 12)
@@ -139,7 +139,7 @@ func TestSchemaService_Get_Err(t *testing.T) {
 		Get(gomock.Any(), gomock.Any()).
 		Return(pschema.GetResponse{}, serviceErr)
 
-	underTest, err := NewSchemaService(client.WithSchemaService(ctx, service))
+	underTest, err := NewService(client.WithSchemaService(ctx, service))
 	is.NoErr(err)
 
 	_, err = underTest.Get(ctx, "schema-name", 12)
