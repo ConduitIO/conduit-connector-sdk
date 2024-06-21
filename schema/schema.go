@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sdk
+package schema
 
 import (
 	"context"
@@ -23,17 +23,17 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/conduit/schema/client"
 )
 
-type SchemaService interface {
+type Interface interface {
 	Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (cschema.Instance, error)
 	Get(ctx context.Context, name string, version int) (cschema.Instance, error)
 }
 
-// NewSchemaService creates a new SchemaService.
-// If the connector is running in standalone mode, the SchemaService
+// NewService creates a new Service.
+// If the connector is running in standalone mode, the Service
 // communicates with Conduit via gRPC.
-// If the connector is running in built-in mode, then the SchemaService
+// If the connector is running in built-in mode, then the Service
 // communicates with Conduit via method calls.
-func NewSchemaService(ctx context.Context) (SchemaService, error) {
+func NewService(ctx context.Context) (Service, error) {
 	target, err := client.New(ctx)
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func NewSchemaService(ctx context.Context) (SchemaService, error) {
 }
 
 // schemaServiceAdapter adapts Conduit/connector protocol's schema.Service
-// to the SDK SchemaService interface.
+// to the SDK Service interface.
 type schemaServiceAdapter struct {
 	target pschema.Service
 }
