@@ -44,7 +44,12 @@ func Serve(c Connector) {
 func serve(c Connector) error {
 	err := initStandaloneModeLogger()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
+
+	err = initConnectorUtils()
+	if err != nil {
+		return fmt.Errorf("failed to initialize connector utils: %w", err)
 	}
 
 	if c.NewSpecification == nil {

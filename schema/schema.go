@@ -20,44 +20,16 @@ import (
 
 	cschema "github.com/conduitio/conduit-commons/schema"
 	pschema "github.com/conduitio/conduit-connector-protocol/conduit/schema"
-	"github.com/conduitio/conduit-connector-protocol/conduit/schema/client"
 )
 
-type Interface interface {
-	Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (cschema.Instance, error)
-	Get(ctx context.Context, name string, version int) (cschema.Instance, error)
-}
+var Service = pschema.NewInMemoryService()
 
-// NewService creates a new Service.
-// If the connector is running in standalone mode, the Service
-// communicates with Conduit via gRPC.
-// If the connector is running in built-in mode, then the Service
-// communicates with Conduit via method calls.
-func NewService(ctx context.Context) (Interface, error) {
-	target, err := client.New(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return newSchemaServiceAdapter(target), nil
-}
-
-// schemaServiceAdapter adapts Conduit/connector protocol's schema.Service
-// to the SDK Service interface.
-type schemaServiceAdapter struct {
-	target pschema.Service
-}
-
-func newSchemaServiceAdapter(target pschema.Service) *schemaServiceAdapter {
-	return &schemaServiceAdapter{target: target}
-}
-
-func (s *schemaServiceAdapter) Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (cschema.Instance, error) {
+func Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (cschema.Instance, error) {
 	if typ != cschema.TypeAvro {
 		return cschema.Instance{}, fmt.Errorf("type %v is not supported (only Avro is supported)", typ)
 	}
 
-	resp, err := s.target.Create(ctx, pschema.CreateRequest{
+	resp, err := Service.Create(ctx, pschema.CreateRequest{
 		Subject: name,
 		Type:    pschema.Type(typ),
 		Bytes:   bytes,
@@ -69,8 +41,8 @@ func (s *schemaServiceAdapter) Create(ctx context.Context, typ cschema.Type, nam
 	return resp.Instance, nil
 }
 
-func (s *schemaServiceAdapter) Get(ctx context.Context, name string, version int) (cschema.Instance, error) {
-	resp, err := s.target.Get(ctx, pschema.GetRequest{
+func Get(ctx context.Context, name string, version int) (cschema.Instance, error) {
+	resp, err := Service.Get(ctx, pschema.GetRequest{
 		Subject: name,
 		Version: version,
 	})

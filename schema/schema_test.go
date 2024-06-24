@@ -16,132 +16,47 @@ package schema
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/conduitio/conduit-commons/schema"
-	pschema "github.com/conduitio/conduit-connector-protocol/conduit/schema"
-	"github.com/conduitio/conduit-connector-protocol/conduit/schema/client"
-	"github.com/conduitio/conduit-connector-protocol/conduit/schema/mock"
 	"github.com/google/go-cmp/cmp"
 	"github.com/matryer/is"
-	"go.uber.org/mock/gomock"
 )
 
-func TestSchemaService_Create_OK(t *testing.T) {
+func TestInMemoryService(t *testing.T) {
 	is := is.New(t)
 	ctx := context.Background()
-	schemaBytes := []byte(`
-{
-  "type": "record",
-  "name": "ExampleRecord",
-  "fields": [
-    {
-      "name": "id",
-      "type": "int"
-    }
-  ]
-}
-`)
-	want := schema.Instance{
-		ID:      "12345",
-		Subject: "schema-name",
-		Version: 12,
+
+	want1 := schema.Instance{
+		Subject: "test-subject",
+		Version: 1,
 		Type:    schema.TypeAvro,
-		Bytes:   schemaBytes,
+		Bytes:   []byte("irrelevant 1"),
 	}
-	service := mock.NewService(gomock.NewController(t))
-	service.EXPECT().
-		Create(gomock.Any(), pschema.CreateRequest{
-			Subject: "schema-name",
-			Type:    pschema.TypeAvro,
-			Bytes:   schemaBytes,
-		}).
-		Return(
-			pschema.CreateResponse{
-				Instance: want,
-			},
-			nil,
-		)
-	underTest, err := NewService(client.WithSchemaService(ctx, service))
+
+	// Create first version
+	created1, err := Create(ctx, want1.Type, want1.Subject, want1.Bytes)
 	is.NoErr(err)
+	is.Equal("", cmp.Diff(want1, created1))
 
-	got, err := underTest.Create(ctx, schema.TypeAvro, "schema-name", schemaBytes)
-	is.NoErr(err)
-	is.Equal("", cmp.Diff(want, got))
-}
-
-func TestSchemaService_Create_Err(t *testing.T) {
-	is := is.New(t)
-	ctx := context.Background()
-	schemaBytes := []byte{1, 2, 3}
-	service := mock.NewService(gomock.NewController(t))
-	serviceErr := errors.New("boom")
-	service.EXPECT().
-		Create(gomock.Any(), gomock.Any()).
-		Return(pschema.CreateResponse{}, serviceErr)
-	underTest, err := NewService(client.WithSchemaService(ctx, service))
-	is.NoErr(err)
-
-	_, err = underTest.Create(ctx, schema.TypeAvro, "schema-name", schemaBytes)
-	is.True(errors.Is(err, serviceErr))
-}
-
-func TestSchemaService_Get_OK(t *testing.T) {
-	is := is.New(t)
-	ctx := context.Background()
-	schemaBytes := []byte(`
-{
-  "type": "record",
-  "name": "ExampleRecord",
-  "fields": [
-    {
-      "name": "id",
-      "type": "int"
-    }
-  ]
-}
-`)
-	want := schema.Instance{
-		ID:      "12345",
-		Subject: "schema-name",
-		Version: 12,
-		Type:    schema.TypeAvro,
-		Bytes:   schemaBytes,
+	// Create second version
+	want2 := schema.Instance{
+		Subject: want1.Subject,
+		Version: 2,
+		Type:    want1.Type,
+		Bytes:   []byte("irrelevant 2"),
 	}
-	service := mock.NewService(gomock.NewController(t))
-	service.EXPECT().
-		Get(gomock.Any(), pschema.GetRequest{
-			Subject: "schema-name",
-			Version: 12,
-		}).
-		Return(
-			pschema.GetResponse{
-				Instance: want,
-			},
-			nil,
-		)
-
-	underTest, err := NewService(client.WithSchemaService(ctx, service))
+	got2, err := Create(ctx, want2.Type, want2.Subject, want2.Bytes)
 	is.NoErr(err)
+	is.Equal("", cmp.Diff(want2, got2))
 
-	got, err := underTest.Get(ctx, "schema-name", 12)
+	// Get first version
+	getResp1, err := Get(ctx, want1.Subject, 1)
 	is.NoErr(err)
-	is.Equal("", cmp.Diff(want, got))
-}
+	is.Equal("", cmp.Diff(want1, getResp1))
 
-func TestSchemaService_Get_Err(t *testing.T) {
-	is := is.New(t)
-	ctx := context.Background()
-	service := mock.NewService(gomock.NewController(t))
-	serviceErr := errors.New("boom")
-	service.EXPECT().
-		Get(gomock.Any(), gomock.Any()).
-		Return(pschema.GetResponse{}, serviceErr)
-
-	underTest, err := NewService(client.WithSchemaService(ctx, service))
+	// Get second version
+	getResp2, err := Get(ctx, want2.Subject, 2)
 	is.NoErr(err)
-
-	_, err = underTest.Get(ctx, "schema-name", 12)
-	is.True(errors.Is(err, serviceErr))
+	is.Equal("", cmp.Diff(want2, getResp2))
 }
