@@ -18,86 +18,16 @@ import (
 	"context"
 
 	"github.com/conduitio/conduit-commons/config"
-	"github.com/conduitio/conduit-connector-protocol/cpluginv1"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
 )
 
 // Specification contains general information regarding the plugin like its name
 // and what it does.
-type Specification struct {
-	// Name is the name of the plugin.
-	Name string
-	// Summary is a brief description of the plugin and what it does. Try not to
-	// exceed 200 characters.
-	Summary string
-	// Description is a more long form area appropriate for README-like text
-	// that the author can provide for explaining the behavior of the connector
-	// or specific parameters.
-	Description string
-	// Version string. Should be prepended with `v` like Go, e.g. `v1.54.3`.
-	Version string
-	// Author declares the entity that created or maintains this plugin.
-	Author string
-}
-
-// Parameter defines a single connector parameter.
-type Parameter struct {
-	// Default is the default value of the parameter, if any.
-	Default string
-	// Required controls if the parameter will be shown as required or optional.
-	// Deprecated: add ValidationRequired to Parameter.Validations instead.
-	Required bool
-	// Description holds a description of the field and how to configure it.
-	Description string
-	// Type defines the parameter data type.
-	Type ParameterType
-	// Validations slice of validations to be checked for the parameter.
-	Validations []Validation
-}
-
-func (p Parameter) toConfigParameter() config.Parameter {
-	var validations []config.Validation
-
-	var isRequired bool
-	if p.Validations != nil {
-		validations = make([]config.Validation, len(p.Validations))
-		for i, v := range p.Validations {
-			val := v.configValidation()
-			if val.Type() == config.ValidationTypeRequired {
-				isRequired = true
-			}
-			validations[i] = val
-		}
-	}
-	if p.Required && !isRequired {
-		//nolint:makezero // This is done for backwards compatibility and is the expected behavior.
-		validations = append(validations, config.ValidationRequired{})
-	}
-
-	return config.Parameter{
-		Default:     p.Default,
-		Description: p.Description,
-		Type:        config.ParameterType(p.Type),
-		Validations: validations,
-	}
-}
-
-// utility type to convert a slice of Parameter to a slice of config.Parameter
-type parameters map[string]Parameter
-
-func (p parameters) toConfigParameters() config.Parameters {
-	if p == nil {
-		return nil
-	}
-	out := make(config.Parameters, len(p))
-	for k, v := range p {
-		out[k] = v.toConfigParameter()
-	}
-	return out
-}
+type Specification pconnector.Specification
 
 // NewSpecifierPlugin takes a Specification and wraps it into an adapter that
-// converts it into a cpluginv1.SpecifierPlugin.
-func NewSpecifierPlugin(specs Specification, source Source, dest Destination) cpluginv1.SpecifierPlugin {
+// converts it into a pconnector.SpecifierPlugin.
+func NewSpecifierPlugin(specs Specification, source Source, dest Destination) pconnector.SpecifierPlugin {
 	if source == nil {
 		// prevent nil pointer
 		source = UnimplementedSource{}
@@ -116,36 +46,12 @@ func NewSpecifierPlugin(specs Specification, source Source, dest Destination) cp
 
 type specifierPluginAdapter struct {
 	specs             Specification
-	sourceParams      map[string]Parameter
-	destinationParams map[string]Parameter
+	sourceParams      config.Parameters
+	destinationParams config.Parameters
 }
 
-func (s *specifierPluginAdapter) Specify(context.Context, cpluginv1.SpecifierSpecifyRequest) (cpluginv1.SpecifierSpecifyResponse, error) {
-	return cpluginv1.SpecifierSpecifyResponse{
-		Name:              s.specs.Name,
-		Summary:           s.specs.Summary,
-		Description:       s.specs.Description,
-		Version:           s.specs.Version,
-		Author:            s.specs.Author,
-		SourceParams:      s.convertParameters(s.sourceParams),
-		DestinationParams: s.convertParameters(s.destinationParams),
+func (s *specifierPluginAdapter) Specify(context.Context, pconnector.SpecifierSpecifyRequest) (pconnector.SpecifierSpecifyResponse, error) {
+	return pconnector.SpecifierSpecifyResponse{
+		Specification: pconnector.Specification(s.specs),
 	}, nil
-}
-
-func (s *specifierPluginAdapter) convertParameters(params map[string]Parameter) map[string]cpluginv1.SpecifierParameter {
-	out := make(map[string]cpluginv1.SpecifierParameter)
-	for k, v := range params {
-		out[k] = s.convertParameter(v)
-	}
-	return out
-}
-
-func (s *specifierPluginAdapter) convertParameter(p Parameter) cpluginv1.SpecifierParameter {
-	return cpluginv1.SpecifierParameter{
-		Default:     p.Default,
-		Required:    p.Required,
-		Description: p.Description,
-		Type:        cpluginv1.ParameterType(p.Type),
-		Validations: convertValidations(p.Validations),
-	}
 }

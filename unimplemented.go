@@ -17,18 +17,21 @@ package sdk
 import (
 	"context"
 	"fmt"
+
+	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/opencdc"
 )
 
 // UnimplementedDestination should be embedded to have forward compatible implementations.
 type UnimplementedDestination struct{}
 
 // Parameters needs to be overridden in the actual implementation.
-func (UnimplementedDestination) Parameters() map[string]Parameter {
+func (UnimplementedDestination) Parameters() config.Parameters {
 	return nil
 }
 
 // Configure needs to be overridden in the actual implementation.
-func (UnimplementedDestination) Configure(context.Context, map[string]string) error {
+func (UnimplementedDestination) Configure(context.Context, config.Config) error {
 	return fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
 }
 
@@ -38,7 +41,7 @@ func (UnimplementedDestination) Open(context.Context) error {
 }
 
 // Write needs to be overridden in the actual implementation.
-func (UnimplementedDestination) Write(context.Context, []Record) (int, error) {
+func (UnimplementedDestination) Write(context.Context, []opencdc.Record) (int, error) {
 	return 0, fmt.Errorf("action \"Write\": %w", ErrUnimplemented)
 }
 
@@ -48,17 +51,17 @@ func (UnimplementedDestination) Teardown(context.Context) error {
 }
 
 // LifecycleOnCreated won't do anything by default.
-func (UnimplementedDestination) LifecycleOnCreated(context.Context, map[string]string) error {
+func (UnimplementedDestination) LifecycleOnCreated(context.Context, config.Config) error {
 	return nil
 }
 
 // LifecycleOnUpdated won't do anything by default.
-func (UnimplementedDestination) LifecycleOnUpdated(context.Context, map[string]string, map[string]string) error {
+func (UnimplementedDestination) LifecycleOnUpdated(context.Context, config.Config, config.Config) error {
 	return nil
 }
 
 // LifecycleOnDeleted won't do anything by default.
-func (UnimplementedDestination) LifecycleOnDeleted(context.Context, map[string]string) error {
+func (UnimplementedDestination) LifecycleOnDeleted(context.Context, config.Config) error {
 	return nil
 }
 
@@ -68,28 +71,28 @@ func (UnimplementedDestination) mustEmbedUnimplementedDestination() {}
 type UnimplementedSource struct{}
 
 // Parameters needs to be overridden in the actual implementation.
-func (UnimplementedSource) Parameters() map[string]Parameter {
+func (UnimplementedSource) Parameters() config.Parameters {
 	return nil
 }
 
 // Configure needs to be overridden in the actual implementation.
-func (UnimplementedSource) Configure(context.Context, map[string]string) error {
+func (UnimplementedSource) Configure(context.Context, config.Config) error {
 	return fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
 }
 
 // Open needs to be overridden in the actual implementation.
-func (UnimplementedSource) Open(context.Context, Position) error {
+func (UnimplementedSource) Open(context.Context, opencdc.Position) error {
 	return fmt.Errorf("action \"Open\": %w", ErrUnimplemented)
 }
 
 // Read needs to be overridden in the actual implementation.
-func (UnimplementedSource) Read(context.Context) (Record, error) {
-	return Record{}, fmt.Errorf("action \"Read\": %w", ErrUnimplemented)
+func (UnimplementedSource) Read(context.Context) (opencdc.Record, error) {
+	return opencdc.Record{}, fmt.Errorf("action \"Read\": %w", ErrUnimplemented)
 }
 
 // Ack should be overridden if acks need to be forwarded to the source,
 // otherwise it is optional.
-func (UnimplementedSource) Ack(context.Context, Position) error {
+func (UnimplementedSource) Ack(context.Context, opencdc.Position) error {
 	return fmt.Errorf("action \"Ack\": %w", ErrUnimplemented)
 }
 
@@ -99,17 +102,17 @@ func (UnimplementedSource) Teardown(context.Context) error {
 }
 
 // LifecycleOnCreated won't do anything by default.
-func (UnimplementedSource) LifecycleOnCreated(context.Context, map[string]string) error {
+func (UnimplementedSource) LifecycleOnCreated(context.Context, config.Config) error {
 	return nil
 }
 
 // LifecycleOnUpdated won't do anything by default.
-func (UnimplementedSource) LifecycleOnUpdated(context.Context, map[string]string, map[string]string) error {
+func (UnimplementedSource) LifecycleOnUpdated(context.Context, config.Config, config.Config) error {
 	return nil
 }
 
 // LifecycleOnDeleted won't do anything by default.
-func (UnimplementedSource) LifecycleOnDeleted(context.Context, map[string]string) error {
+func (UnimplementedSource) LifecycleOnDeleted(context.Context, config.Config) error {
 	return nil
 }
 

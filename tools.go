@@ -14,6 +14,10 @@
 
 //go:build tools
 
-// This file should be ignored because of the build tag.
-
 package main
+
+import (
+	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
+	_ "go.uber.org/mock/mockgen"
+	_ "golang.org/x/tools/cmd/stringer"
+)

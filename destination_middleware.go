@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/opencdc"
 	"golang.org/x/time/rate"
 )
 
@@ -74,6 +76,7 @@ type DestinationWithBatch struct {
 func (d DestinationWithBatch) BatchSizeParameterName() string {
 	return configDestinationBatchSize
 }
+
 func (d DestinationWithBatch) BatchDelayParameterName() string {
 	return configDestinationBatchDelay
 }
@@ -100,6 +103,7 @@ func (DestinationWithBatch) setBatchEnabled(ctx context.Context, enabled bool) c
 	}
 	return ctx
 }
+
 func (DestinationWithBatch) getBatchEnabled(ctx context.Context) bool {
 	flag, ok := ctx.Value(ctxKeyBatchEnabled{}).(*bool)
 	if !ok {
@@ -113,22 +117,22 @@ type destinationWithBatch struct {
 	defaults DestinationWithBatch
 }
 
-func (d *destinationWithBatch) Parameters() map[string]Parameter {
-	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
+func (d *destinationWithBatch) Parameters() config.Parameters {
+	return mergeParameters(d.Destination.Parameters(), config.Parameters{
 		configDestinationBatchSize: {
 			Default:     strconv.Itoa(d.defaults.DefaultBatchSize),
 			Description: "Maximum size of batch before it gets written to the destination.",
-			Type:        ParameterTypeInt,
+			Type:        config.ParameterTypeInt,
 		},
 		configDestinationBatchDelay: {
 			Default:     d.defaults.DefaultBatchDelay.String(),
 			Description: "Maximum delay before an incomplete batch is written to the destination.",
-			Type:        ParameterTypeDuration,
+			Type:        config.ParameterTypeDuration,
 		},
 	})
 }
 
-func (d *destinationWithBatch) Configure(ctx context.Context, config map[string]string) error {
+func (d *destinationWithBatch) Configure(ctx context.Context, config config.Config) error {
 	// Batching is actually implemented in the plugin adapter because it is the
 	// only place we have access to acknowledgments.
 	// We need to signal back to the adapter that batching is enabled. We do
@@ -193,22 +197,22 @@ type destinationWithRateLimit struct {
 	limiter  *rate.Limiter
 }
 
-func (d *destinationWithRateLimit) Parameters() map[string]Parameter {
-	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
+func (d *destinationWithRateLimit) Parameters() config.Parameters {
+	return mergeParameters(d.Destination.Parameters(), config.Parameters{
 		configDestinationRatePerSecond: {
 			Default:     strconv.FormatFloat(d.defaults.DefaultRatePerSecond, 'f', -1, 64),
 			Description: "Maximum times records can be written per second (0 means no rate limit).",
-			Type:        ParameterTypeFloat,
+			Type:        config.ParameterTypeFloat,
 		},
 		configDestinationRateBurst: {
 			Default:     strconv.Itoa(d.defaults.DefaultBurst),
 			Description: "Allow bursts of at most X writes (1 or less means that bursts are not allowed). Only takes effect if a rate limit per second is set.",
-			Type:        ParameterTypeInt,
+			Type:        config.ParameterTypeInt,
 		},
 	})
 }
 
-func (d *destinationWithRateLimit) Configure(ctx context.Context, config map[string]string) error {
+func (d *destinationWithRateLimit) Configure(ctx context.Context, config config.Config) error {
 	err := d.Destination.Configure(ctx, config)
 	if err != nil {
 		return err
@@ -244,7 +248,7 @@ func (d *destinationWithRateLimit) Configure(ctx context.Context, config map[str
 	return nil
 }
 
-func (d *destinationWithRateLimit) Write(ctx context.Context, recs []Record) (int, error) {
+func (d *destinationWithRateLimit) Write(ctx context.Context, recs []opencdc.Record) (int, error) {
 	if d.limiter != nil {
 		err := d.limiter.Wait(ctx)
 		if err != nil {
@@ -270,25 +274,26 @@ const (
 type DestinationWithRecordFormat struct {
 	// DefaultRecordFormat is the default record format.
 	DefaultRecordFormat string
-	RecordFormatters    []RecordFormatter
+	RecordSerializers   []RecordSerializer
 }
 
 func (d DestinationWithRecordFormat) RecordFormatParameterName() string {
 	return configDestinationRecordFormat
 }
+
 func (d DestinationWithRecordFormat) RecordFormatOptionsParameterName() string {
 	return configDestinationRecordFormatOptions
 }
 
-// DefaultRecordFormatters returns the list of record formatters that are used
-// if DestinationWithRecordFormat.RecordFormatters is nil.
-func (d DestinationWithRecordFormat) DefaultRecordFormatters() []RecordFormatter {
-	formatters := []RecordFormatter{
-		// define specific formatters here
-		TemplateRecordFormatter{},
+// DefaultRecordSerializers returns the list of record serializers that are used
+// if DestinationWithRecordFormat.RecordSerializers is nil.
+func (d DestinationWithRecordFormat) DefaultRecordSerializers() []RecordSerializer {
+	serializers := []RecordSerializer{
+		// define specific serializers here
+		TemplateRecordSerializer{},
 	}
 
-	// add generic formatters here, they are combined in all possible combinations
+	// add generic serializers here, they are combined in all possible combinations
 	genericConverters := []Converter{
 		OpenCDCConverter{},
 		DebeziumConverter{},
@@ -299,29 +304,29 @@ func (d DestinationWithRecordFormat) DefaultRecordFormatters() []RecordFormatter
 
 	for _, c := range genericConverters {
 		for _, e := range genericEncoders {
-			formatters = append(
-				formatters,
-				GenericRecordFormatter{
+			serializers = append(
+				serializers,
+				GenericRecordSerializer{
 					Converter: c,
 					Encoder:   e,
 				},
 			)
 		}
 	}
-	return formatters
+	return serializers
 }
 
 // Wrap a Destination into the record format middleware.
 func (d DestinationWithRecordFormat) Wrap(impl Destination) Destination {
 	if d.DefaultRecordFormat == "" {
-		d.DefaultRecordFormat = defaultFormatter.Name()
+		d.DefaultRecordFormat = defaultSerializer.Name()
 	}
-	if len(d.RecordFormatters) == 0 {
-		d.RecordFormatters = d.DefaultRecordFormatters()
+	if len(d.RecordSerializers) == 0 {
+		d.RecordSerializers = d.DefaultRecordSerializers()
 	}
 
-	// sort record formatters by name to ensure we can binary search them
-	sort.Slice(d.RecordFormatters, func(i, j int) bool { return d.RecordFormatters[i].Name() < d.RecordFormatters[j].Name() })
+	// sort record serializers by name to ensure we can binary search them
+	sort.Slice(d.RecordSerializers, func(i, j int) bool { return d.RecordSerializers[i].Name() < d.RecordSerializers[j].Name() })
 
 	return &destinationWithRecordFormat{
 		Destination: impl,
@@ -333,26 +338,26 @@ type destinationWithRecordFormat struct {
 	Destination
 	defaults DestinationWithRecordFormat
 
-	formatter RecordFormatter
+	serializer RecordSerializer
 }
 
 func (d *destinationWithRecordFormat) formats() []string {
-	names := make([]string, len(d.defaults.RecordFormatters))
+	names := make([]string, len(d.defaults.RecordSerializers))
 	i := 0
-	for _, c := range d.defaults.RecordFormatters {
+	for _, c := range d.defaults.RecordSerializers {
 		names[i] = c.Name()
 		i++
 	}
 	return names
 }
 
-func (d *destinationWithRecordFormat) Parameters() map[string]Parameter {
-	return mergeParameters(d.Destination.Parameters(), map[string]Parameter{
+func (d *destinationWithRecordFormat) Parameters() config.Parameters {
+	return mergeParameters(d.Destination.Parameters(), config.Parameters{
 		configDestinationRecordFormat: {
 			Default:     d.defaults.DefaultRecordFormat,
 			Description: "The format of the output record.",
-			Validations: []Validation{
-				ValidationInclusion{List: d.formats()},
+			Validations: []config.Validation{
+				config.ValidationInclusion{List: d.formats()},
 			},
 		},
 		configDestinationRecordFormatOptions: {
@@ -361,7 +366,7 @@ func (d *destinationWithRecordFormat) Parameters() map[string]Parameter {
 	})
 }
 
-func (d *destinationWithRecordFormat) Configure(ctx context.Context, config map[string]string) error {
+func (d *destinationWithRecordFormat) Configure(ctx context.Context, config config.Config) error {
 	err := d.Destination.Configure(ctx, config)
 	if err != nil {
 		return err
@@ -374,23 +379,23 @@ func (d *destinationWithRecordFormat) Configure(ctx context.Context, config map[
 
 	i := sort.SearchStrings(d.formats(), format)
 	// if the string is not found i is equal to the size of the slice
-	if i == len(d.defaults.RecordFormatters) {
+	if i == len(d.defaults.RecordSerializers) {
 		return fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordFormat, format, d.formats())
 	}
 
-	formatter := d.defaults.RecordFormatters[i]
-	formatter, err = formatter.Configure(config[configDestinationRecordFormatOptions])
+	serializer := d.defaults.RecordSerializers[i]
+	serializer, err = serializer.Configure(config[configDestinationRecordFormatOptions])
 	if err != nil {
 		return fmt.Errorf("invalid %s for %q: %w", configDestinationRecordFormatOptions, format, err)
 	}
 
-	d.formatter = formatter
+	d.serializer = serializer
 	return nil
 }
 
-func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []Record) (int, error) {
+func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []opencdc.Record) (int, error) {
 	for i := range recs {
-		recs[i].formatter = d.formatter
+		recs[i].SetSerializer(d.serializer)
 	}
 	return d.Destination.Write(ctx, recs)
 }

@@ -24,8 +24,4 @@ var (
 	// ErrUnimplemented is returned in functions of plugins that don't implement
 	// a certain method.
 	ErrUnimplemented = errors.New("the connector plugin does not implement this action, please check the source code of the connector and make sure all required connector methods are implemented")
-
-	// ErrMetadataFieldNotFound is returned in metadata utility functions when a
-	// metadata field is not found.
-	ErrMetadataFieldNotFound = errors.New("metadata field not found")
 )

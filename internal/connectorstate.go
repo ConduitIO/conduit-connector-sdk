@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/conduitio/conduit-connector-sdk/internal/csync"
+	"github.com/conduitio/conduit-commons/csync"
 )
 
 type ConnectorState int

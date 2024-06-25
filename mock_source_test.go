@@ -10,6 +10,8 @@ import (
 	context "context"
 	reflect "reflect"
 
+	config "github.com/conduitio/conduit-commons/config"
+	opencdc "github.com/conduitio/conduit-commons/opencdc"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -37,7 +39,7 @@ func (m *MockSource) EXPECT() *MockSourceMockRecorder {
 }
 
 // Ack mocks base method.
-func (m *MockSource) Ack(arg0 context.Context, arg1 Position) error {
+func (m *MockSource) Ack(arg0 context.Context, arg1 opencdc.Position) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Ack", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -51,7 +53,7 @@ func (mr *MockSourceMockRecorder) Ack(arg0, arg1 any) *gomock.Call {
 }
 
 // Configure mocks base method.
-func (m *MockSource) Configure(arg0 context.Context, arg1 map[string]string) error {
+func (m *MockSource) Configure(arg0 context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Configure", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -65,7 +67,7 @@ func (mr *MockSourceMockRecorder) Configure(arg0, arg1 any) *gomock.Call {
 }
 
 // LifecycleOnCreated mocks base method.
-func (m *MockSource) LifecycleOnCreated(arg0 context.Context, arg1 map[string]string) error {
+func (m *MockSource) LifecycleOnCreated(arg0 context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LifecycleOnCreated", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -79,7 +81,7 @@ func (mr *MockSourceMockRecorder) LifecycleOnCreated(arg0, arg1 any) *gomock.Cal
 }
 
 // LifecycleOnDeleted mocks base method.
-func (m *MockSource) LifecycleOnDeleted(arg0 context.Context, arg1 map[string]string) error {
+func (m *MockSource) LifecycleOnDeleted(arg0 context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LifecycleOnDeleted", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -93,7 +95,7 @@ func (mr *MockSourceMockRecorder) LifecycleOnDeleted(arg0, arg1 any) *gomock.Cal
 }
 
 // LifecycleOnUpdated mocks base method.
-func (m *MockSource) LifecycleOnUpdated(arg0 context.Context, arg1, arg2 map[string]string) error {
+func (m *MockSource) LifecycleOnUpdated(arg0 context.Context, arg1, arg2 config.Config) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LifecycleOnUpdated", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
@@ -107,7 +109,7 @@ func (mr *MockSourceMockRecorder) LifecycleOnUpdated(arg0, arg1, arg2 any) *gomo
 }
 
 // Open mocks base method.
-func (m *MockSource) Open(arg0 context.Context, arg1 Position) error {
+func (m *MockSource) Open(arg0 context.Context, arg1 opencdc.Position) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Open", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -121,10 +123,10 @@ func (mr *MockSourceMockRecorder) Open(arg0, arg1 any) *gomock.Call {
 }
 
 // Parameters mocks base method.
-func (m *MockSource) Parameters() map[string]Parameter {
+func (m *MockSource) Parameters() config.Parameters {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Parameters")
-	ret0, _ := ret[0].(map[string]Parameter)
+	ret0, _ := ret[0].(config.Parameters)
 	return ret0
 }
 
@@ -135,10 +137,10 @@ func (mr *MockSourceMockRecorder) Parameters() *gomock.Call {
 }
 
 // Read mocks base method.
-func (m *MockSource) Read(arg0 context.Context) (Record, error) {
+func (m *MockSource) Read(arg0 context.Context) (opencdc.Record, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Read", arg0)
-	ret0, _ := ret[0].(Record)
+	ret0, _ := ret[0].(opencdc.Record)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

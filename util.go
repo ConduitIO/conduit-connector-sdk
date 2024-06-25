@@ -15,6 +15,7 @@
 package sdk
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/conduitio/conduit-commons/config"
@@ -26,17 +27,29 @@ var Util = struct {
 	Source SourceUtil
 	// SourceUtil provides utility methods for implementing a destination.
 	Destination DestinationUtil
-	// ParseConfig provided to parse a config map into a struct
-	// Under the hood, this function uses the library mitchellh/mapstructure, with the "mapstructure" tag renamed to "json",
-	// so to rename a key, use the "json" tag and set a value directly. To embed structs, append ",squash" to your tag.
-	// for more details and docs, check https://pkg.go.dev/github.com/mitchellh/mapstructure
-	ParseConfig func(map[string]string, interface{}) error
+
+	// ParseConfig sanitizes the configuration, applies defaults, validates it and
+	// copies the values into the target object. It combines the functionality
+	// provided by github.com/conduitio/conduit-commons/config.Config into a single
+	// convenient function. It is intended to be used in the Configure method of a
+	// connector to parse the configuration map.
+	//
+	// The function does the following:
+	//   - Removes leading and trailing spaces from all keys and values in the
+	//     configuration.
+	//   - Applies the default values defined in the parameter specifications to the
+	//     configuration.
+	//   - Validates the configuration by checking for unrecognized parameters, type
+	//     validations, and value validations.
+	//   - Copies configuration values into the target object. The target object must
+	//     be a pointer to a struct.
+	ParseConfig func(ctx context.Context, cfg config.Config, target any, params config.Parameters) error
 }{
 	ParseConfig: parseConfig,
 }
 
-func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[string]Parameter {
-	params := make(map[string]Parameter, len(p1)+len(p2))
+func mergeParameters(p1 config.Parameters, p2 config.Parameters) config.Parameters {
+	params := make(config.Parameters, len(p1)+len(p2))
 	for k, v := range p1 {
 		params[k] = v
 	}
@@ -50,6 +63,24 @@ func mergeParameters(p1 map[string]Parameter, p2 map[string]Parameter) map[strin
 	return params
 }
 
-func parseConfig(cfg map[string]string, v interface{}) error {
-	return config.Config(cfg).DecodeInto(v)
+func parseConfig(
+	ctx context.Context,
+	cfg config.Config,
+	target any,
+	params config.Parameters,
+) error {
+	logger := Logger(ctx)
+
+	logger.Debug().Msg("sanitizing configuration and applying defaults")
+	c := cfg.Sanitize().ApplyDefaults(params)
+
+	logger.Debug().Msg("validating configuration according to the specifications")
+	err := c.Validate(params)
+	if err != nil {
+		return fmt.Errorf("config invalid: %w", err)
+	}
+
+	logger.Debug().Type("target", target).Msg("decoding configuration into the target object")
+	//nolint:wrapcheck // error is already wrapped by DecodeInto
+	return c.DecodeInto(target)
 }
