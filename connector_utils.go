@@ -17,7 +17,7 @@ package sdk
 import (
 	"fmt"
 
-	v1 "github.com/conduitio/conduit-connector-protocol/conduit/schema/v1"
+	v1 "github.com/conduitio/conduit-connector-protocol/conduit/pschema/v1"
 	"github.com/conduitio/conduit-connector-sdk/schema"
 )
 

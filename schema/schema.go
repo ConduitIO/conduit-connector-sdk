@@ -19,7 +19,7 @@ import (
 	"fmt"
 
 	cschema "github.com/conduitio/conduit-commons/schema"
-	pschema "github.com/conduitio/conduit-connector-protocol/conduit/schema"
+	"github.com/conduitio/conduit-connector-protocol/conduit/pschema"
 )
 
 var Service = pschema.NewInMemoryService()
