@@ -469,6 +469,7 @@ func (SourceUtil) NewRecordDelete(
 	position opencdc.Position,
 	metadata opencdc.Metadata,
 	key opencdc.Data,
+	payloadBefore opencdc.Data,
 ) opencdc.Record {
 	if metadata == nil {
 		metadata = make(map[string]string)
@@ -479,5 +480,8 @@ func (SourceUtil) NewRecordDelete(
 		Operation: opencdc.OperationDelete,
 		Metadata:  metadata,
 		Key:       key,
+		Payload: opencdc.Change{
+			Before: payloadBefore,
+		},
 	}
 }
