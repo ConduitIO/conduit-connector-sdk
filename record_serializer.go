@@ -193,12 +193,12 @@ func (c DebeziumConverter) Convert(r opencdc.Record) (any, error) {
 func (c DebeziumConverter) getStructuredData(d opencdc.Data) (opencdc.StructuredData, error) {
 	switch d := d.(type) {
 	case nil:
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil is a valid value for structured data
 	case opencdc.StructuredData:
 		return d, nil
 	case opencdc.RawData:
 		if len(d) == 0 {
-			return nil, nil
+			return nil, nil //nolint:nilnil // nil is a valid value for structured data
 		}
 		sd, err := c.parseRawDataAsJSON(d)
 		if err != nil {
