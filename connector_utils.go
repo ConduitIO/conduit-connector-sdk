@@ -17,16 +17,22 @@ package sdk
 import (
 	"fmt"
 
-	v1 "github.com/conduitio/conduit-connector-protocol/conduit/pschema/v1"
-	"github.com/conduitio/conduit-connector-sdk/schema"
+	"github.com/conduitio/conduit-connector-protocol/pconduit/v1/client"
+	"google.golang.org/grpc"
 )
 
 func initConnectorUtils() error {
-	s, err := v1.NewClient()
+	// TODO: Fix
+	conn, err := grpc.NewClient("localhost:8080")
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+
+	s := client.NewSchemaServiceClient(conn)
 	if err != nil {
 		return fmt.Errorf("failed to initialize schema service client: %w", err)
 	}
-	schema.Service = s
+	//schema.Service = s
 
 	return nil
 }
