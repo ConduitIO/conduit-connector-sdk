@@ -48,7 +48,12 @@ func serve(c Connector) error {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
-	if err = internal.InitStandaloneConnectorUtilities(""); err != nil { // TODO: Grab the target from ENV
+	target := os.Getenv("CONDUIT_STANDALONE_GRPC_TARGET")
+	if target == "" {
+		target = internal.DefaultStandaloneGRPCTarget
+	}
+
+	if err = internal.InitStandaloneConnectorGRPCClient(target); err != nil {
 		return fmt.Errorf("failed to initialize standalone connector utilities: %w", err)
 	}
 
