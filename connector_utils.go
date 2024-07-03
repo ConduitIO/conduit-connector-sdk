@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/conduitio/conduit-connector-protocol/pconduit/v1/client"
+	"github.com/conduitio/conduit-connector-sdk/schema"
 	"google.golang.org/grpc"
 )
 
@@ -32,7 +33,7 @@ func initConnectorUtils() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize schema service client: %w", err)
 	}
-	//schema.Service = s
+	schema.Service = s
 
 	return nil
 }
