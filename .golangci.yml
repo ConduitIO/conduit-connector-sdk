@@ -78,7 +78,7 @@ linters:
     - gci
     - ginkgolinter
     - gocheckcompilerdirectives
-    - gochecknoinits
+    # - gochecknoinits
     - gocognit
     - goconst
     - gocritic
@@ -125,7 +125,7 @@ linters:
     - testableexamples
     # - thelper
     - unconvert
-    - unparam
+    # - unparam
     - unused
     - usestdlibvars
     - wastedassign
