@@ -19,36 +19,50 @@ import (
 	"fmt"
 
 	cschema "github.com/conduitio/conduit-commons/schema"
-	"github.com/conduitio/conduit-connector-protocol/conduit/pschema"
+	"github.com/conduitio/conduit-connector-protocol/pconduit"
+	"github.com/conduitio/conduit-connector-protocol/pconduit/v1/client"
+	"github.com/conduitio/conduit-connector-sdk/internal"
+	"google.golang.org/grpc"
 )
 
-var Service = pschema.NewInMemoryService()
+func init() {
+	internal.StandaloneConnectorUtilities = append(internal.StandaloneConnectorUtilities, standaloneInitializer{})
+}
 
-func Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (cschema.Instance, error) {
+var Service = NewInMemoryService()
+
+func Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (cschema.Schema, error) {
 	if typ != cschema.TypeAvro {
-		return cschema.Instance{}, fmt.Errorf("type %v is not supported (only Avro is supported)", typ)
+		return cschema.Schema{}, fmt.Errorf("type %v is not supported (only Avro is supported)", typ)
 	}
 
-	resp, err := Service.Create(ctx, pschema.CreateRequest{
+	resp, err := Service.CreateSchema(ctx, pconduit.CreateSchemaRequest{
 		Subject: name,
-		Type:    pschema.Type(typ),
+		Type:    typ,
 		Bytes:   bytes,
 	})
 	if err != nil {
-		return cschema.Instance{}, err
+		return cschema.Schema{}, err
 	}
 
-	return resp.Instance, nil
+	return resp.Schema, nil
 }
 
-func Get(ctx context.Context, name string, version int) (cschema.Instance, error) {
-	resp, err := Service.Get(ctx, pschema.GetRequest{
+func Get(ctx context.Context, name string, version int) (cschema.Schema, error) {
+	resp, err := Service.GetSchema(ctx, pconduit.GetSchemaRequest{
 		Subject: name,
 		Version: version,
 	})
 	if err != nil {
-		return cschema.Instance{}, err
+		return cschema.Schema{}, err
 	}
 
-	return resp.Instance, nil
+	return resp.Schema, nil
+}
+
+type standaloneInitializer struct{}
+
+func (standaloneInitializer) Init(conn *grpc.ClientConn) error {
+	Service = client.NewSchemaServiceClient(conn)
+	return nil
 }

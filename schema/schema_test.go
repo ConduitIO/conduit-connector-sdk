@@ -27,7 +27,7 @@ func TestInMemoryService(t *testing.T) {
 	is := is.New(t)
 	ctx := context.Background()
 
-	want1 := schema.Instance{
+	want1 := schema.Schema{
 		Subject: "test-subject",
 		Version: 1,
 		Type:    schema.TypeAvro,
@@ -40,7 +40,7 @@ func TestInMemoryService(t *testing.T) {
 	is.Equal("", cmp.Diff(want1, created1))
 
 	// Create second version
-	want2 := schema.Instance{
+	want2 := schema.Schema{
 		Subject: want1.Subject,
 		Version: 2,
 		Type:    want1.Type,

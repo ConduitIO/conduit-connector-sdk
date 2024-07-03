@@ -21,6 +21,7 @@ import (
 
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-protocol/pconnector/server"
+	"github.com/conduitio/conduit-connector-sdk/internal"
 )
 
 // Serve starts the plugin and takes care of its whole lifecycle by blocking
@@ -47,9 +48,8 @@ func serve(c Connector) error {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
-	err = initConnectorUtils()
-	if err != nil {
-		return fmt.Errorf("failed to initialize connector utils: %w", err)
+	if err = internal.InitStandaloneConnectorUtilities(""); err != nil { // TODO: Grab the target from ENV
+		return fmt.Errorf("failed to initialize standalone connector utilities: %w", err)
 	}
 
 	if c.NewSpecification == nil {
