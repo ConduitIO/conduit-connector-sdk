@@ -12,28 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sdk
+package internal
 
-import (
-	"fmt"
+import "google.golang.org/grpc"
 
-	"github.com/conduitio/conduit-connector-protocol/pconduit/v1/client"
-	"github.com/conduitio/conduit-connector-sdk/schema"
-	"google.golang.org/grpc"
-)
+var StandaloneConnectorUtilities []ConnectorUtilityService
 
-func initConnectorUtils() error {
-	// TODO: Fix
-	conn, err := grpc.NewClient("localhost:8080")
-	if err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
+type ConnectorUtilityService interface {
+	Init(conn *grpc.ClientConn) error
+}
+
+func InitStandaloneConnectorUtilities(target string) error {
+	if len(StandaloneConnectorUtilities) == 0 {
+		return nil
 	}
 
-	s := client.NewSchemaServiceClient(conn)
+	conn, err := grpc.NewClient(target)
 	if err != nil {
-		return fmt.Errorf("failed to initialize schema service client: %w", err)
+		return err
 	}
-	schema.Service = s
 
+	for _, utility := range StandaloneConnectorUtilities {
+		if err := utility.Init(conn); err != nil {
+			return err
+		}
+	}
 	return nil
 }
