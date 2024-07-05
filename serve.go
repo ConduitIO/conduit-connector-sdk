@@ -19,8 +19,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-protocol/pconnector/server"
+	"github.com/conduitio/conduit-connector-sdk/internal"
 )
 
 // Serve starts the plugin and takes care of its whole lifecycle by blocking
@@ -42,9 +44,15 @@ func Serve(c Connector) {
 }
 
 func serve(c Connector) error {
-	err := initStandaloneModeLogger()
+	initStandaloneModeLogger()
+
+	target, err := getGRPCTargetEnv()
 	if err != nil {
 		return err
+	}
+
+	if err := internal.InitStandaloneConnectorUtilities(target); err != nil {
+		return fmt.Errorf("failed to initialize standalone connector utilities: %w", err)
 	}
 
 	if c.NewSpecification == nil {
@@ -64,4 +72,15 @@ func serve(c Connector) error {
 		func() pconnector.SourcePlugin { return NewSourcePlugin(c.NewSource()) },
 		func() pconnector.DestinationPlugin { return NewDestinationPlugin(c.NewDestination()) },
 	)
+}
+
+// getGRPCTargetEnv checks the environment variable provided by conduit-connector-protocol
+// and returns an error if it is not specified or empty.
+func getGRPCTargetEnv() (string, error) {
+	value := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+	if value == "" {
+		return "", fmt.Errorf("%q is not set. This indicates you are using an old version of Conduit."+
+			"Please, consider upgrading to at least v0.11.0. https://github.com/ConduitIO/conduit/releases/latest", pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+	}
+	return value, nil
 }
