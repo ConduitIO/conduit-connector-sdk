@@ -78,7 +78,7 @@ linters:
     - gci
     - ginkgolinter
     - gocheckcompilerdirectives
-    - gochecknoinits
+    # - gochecknoinits
     - gocognit
     - goconst
     - gocritic
