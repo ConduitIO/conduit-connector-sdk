@@ -19,13 +19,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-protocol/pconnector/server"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 )
-
-// TODO: This will be created by the protocol (just a placeholder for now).
-var envConduitConnectorUtilitiesGRPCTarget = "CONDUIT_CONNECTOR_UTILITIES_GRPC_TARGET"
 
 // Serve starts the plugin and takes care of its whole lifecycle by blocking
 // until the plugin can safely stop running. Any fixable errors will be output
@@ -48,12 +46,9 @@ func Serve(c Connector) {
 func serve(c Connector) error {
 	initStandaloneModeLogger()
 
-	target := os.Getenv(envConduitConnectorUtilitiesGRPCTarget)
-	if target == "" {
-		return fmt.Errorf(
-			"environment variable %s is not set. This indicates you are using an older version of Conduit."+
-				"Please, consider upgrading to at least version 0.11.0, available at https://github.com/ConduitIO/conduit/releases/tag/v0.11.0",
-			envConduitConnectorUtilitiesGRPCTarget)
+	target, err := getGRPCTargetEnv()
+	if err != nil {
+		return err
 	}
 
 	if err := internal.InitStandaloneConnectorUtilities(target); err != nil {
@@ -77,4 +72,15 @@ func serve(c Connector) error {
 		func() pconnector.SourcePlugin { return NewSourcePlugin(c.NewSource()) },
 		func() pconnector.DestinationPlugin { return NewDestinationPlugin(c.NewDestination()) },
 	)
+}
+
+// getGRPCTargetEnv checks the environmental variable provided by conduit-connector-protocol
+// and returns an error if it is not specified or empty.
+func getGRPCTargetEnv() (string, error) {
+	value := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+	if value == "" {
+		return "", fmt.Errorf("%q is not set. This indicates you are using an older version of Conduit."+
+			"Please, consider upgrading to at least version 0.11.0, available at https://github.com/ConduitIO/conduit/releases/tag/v0.11.0", pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+	}
+	return value, nil
 }
