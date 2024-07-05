@@ -18,15 +18,13 @@ import (
 	"google.golang.org/grpc"
 )
 
-const DefaultStandaloneGRPCTarget = "localhost:50051"
+var StandaloneConnectorUtilities []StandaloneConnectorUtility
 
-var StandaloneConnectorUtilities []ConnectorUtilityService
-
-type ConnectorUtilityService interface {
+type StandaloneConnectorUtility interface {
 	Init(conn *grpc.ClientConn) error
 }
 
-func InitStandaloneConnectorGRPCClient(target string) error {
+func InitStandaloneConnectorUtilities(target string) error {
 	if len(StandaloneConnectorUtilities) == 0 {
 		return nil
 	}

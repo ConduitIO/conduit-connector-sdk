@@ -24,6 +24,9 @@ import (
 	"github.com/conduitio/conduit-connector-sdk/internal"
 )
 
+// TODO: This will be created by the protocol (just a placerholder for now)
+var envConduitConnectorUtilitiesGRPCTarget = "CONDUIT_CONNECTOR_UTILITIES_GRPC_TARGET"
+
 // Serve starts the plugin and takes care of its whole lifecycle by blocking
 // until the plugin can safely stop running. Any fixable errors will be output
 // to os.Stderr and the process will exit with a status code of 1. Serve will
@@ -48,13 +51,16 @@ func serve(c Connector) error {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
-	target := os.Getenv("CONDUIT_STANDALONE_GRPC_TARGET")
+	target := os.Getenv(envConduitConnectorUtilitiesGRPCTarget)
 	if target == "" {
-		target = internal.DefaultStandaloneGRPCTarget
-	}
-
-	if err = internal.InitStandaloneConnectorGRPCClient(target); err != nil {
-		return fmt.Errorf("failed to initialize standalone connector utilities: %w", err)
+		return fmt.Errorf(
+			"The environment variable %s is not set. This indicates you are using an older version of Conduit."+
+				"Please, consider upgrading to at least version 0.11.0, available at https://github.com/ConduitIO/conduit/releases/tag/v0.11.0",
+			envConduitConnectorUtilitiesGRPCTarget)
+	} else {
+		if internal.InitStandaloneConnectorUtilities(target); err != nil {
+			return fmt.Errorf("failed to initialize standalone connector utilities: %w", err)
+		}
 	}
 
 	if c.NewSpecification == nil {

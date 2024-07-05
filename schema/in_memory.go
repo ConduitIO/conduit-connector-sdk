@@ -16,7 +16,6 @@ package schema
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 

@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	cschema "github.com/conduitio/conduit-commons/schema"
+	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconduit/v1/client"
 	"github.com/conduitio/conduit-connector-sdk/internal"
@@ -31,9 +31,9 @@ func init() {
 
 var Service = NewInMemoryService()
 
-func Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (cschema.Schema, error) {
-	if typ != cschema.TypeAvro {
-		return cschema.Schema{}, fmt.Errorf("type %v is not supported (only Avro is supported)", typ)
+func Create(ctx context.Context, typ schema.Type, name string, bytes []byte) (schema.Schema, error) {
+	if typ != schema.TypeAvro {
+		return schema.Schema{}, fmt.Errorf("type %v is not supported (only Avro is supported)", typ)
 	}
 
 	resp, err := Service.CreateSchema(ctx, pconduit.CreateSchemaRequest{
@@ -42,19 +42,19 @@ func Create(ctx context.Context, typ cschema.Type, name string, bytes []byte) (c
 		Bytes:   bytes,
 	})
 	if err != nil {
-		return cschema.Schema{}, err
+		return schema.Schema{}, err
 	}
 
 	return resp.Schema, nil
 }
 
-func Get(ctx context.Context, name string, version int) (cschema.Schema, error) {
+func Get(ctx context.Context, name string, version int) (schema.Schema, error) {
 	resp, err := Service.GetSchema(ctx, pconduit.GetSchemaRequest{
 		Subject: name,
 		Version: version,
 	})
 	if err != nil {
-		return cschema.Schema{}, err
+		return schema.Schema{}, err
 	}
 
 	return resp.Schema, nil
