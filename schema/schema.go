@@ -29,8 +29,11 @@ func init() {
 	internal.StandaloneConnectorUtilities = append(internal.StandaloneConnectorUtilities, standaloneInitializer{})
 }
 
+// Service is the schema service client that can be used to interact with the schema service.
+// It is initialized with an in-memory service by default.
 var Service = NewInMemoryService()
 
+// Create creates a new schema with the given name and bytes. The schema type must be Avro.
 func Create(ctx context.Context, typ schema.Type, name string, bytes []byte) (schema.Schema, error) {
 	if typ != schema.TypeAvro {
 		return schema.Schema{}, fmt.Errorf("type %v is not supported (only Avro is supported)", typ)
@@ -48,6 +51,7 @@ func Create(ctx context.Context, typ schema.Type, name string, bytes []byte) (sc
 	return resp.Schema, nil
 }
 
+// Get retrieves the schema with the given name and version. If the schema does not exist, an error is returned.
 func Get(ctx context.Context, name string, version int) (schema.Schema, error) {
 	resp, err := Service.GetSchema(ctx, pconduit.GetSchemaRequest{
 		Subject: name,
@@ -62,6 +66,7 @@ func Get(ctx context.Context, name string, version int) (schema.Schema, error) {
 
 type standaloneInitializer struct{}
 
+// Init initializes the schema service client with the given gRPC connection.
 func (standaloneInitializer) Init(conn *grpc.ClientConn) error {
 	Service = client.NewSchemaServiceClient(conn)
 	return nil
