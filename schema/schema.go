@@ -16,7 +16,6 @@ package schema
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconduit"
@@ -35,10 +34,6 @@ var Service = newInMemoryService()
 
 // Create creates a new schema with the given name and bytes. The schema type must be Avro.
 func Create(ctx context.Context, typ schema.Type, name string, bytes []byte) (schema.Schema, error) {
-	if typ != schema.TypeAvro {
-		return schema.Schema{}, fmt.Errorf("type %v is not supported (only Avro is supported)", typ)
-	}
-
 	resp, err := Service.CreateSchema(ctx, pconduit.CreateSchemaRequest{
 		Subject: name,
 		Type:    typ,

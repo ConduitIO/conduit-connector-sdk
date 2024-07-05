@@ -45,6 +45,10 @@ func newInMemoryService() pconduit.SchemaService {
 }
 
 func (s *inMemoryService) CreateSchema(_ context.Context, request pconduit.CreateSchemaRequest) (pconduit.CreateSchemaResponse, error) {
+	if request.Type != schema.TypeAvro {
+		return pconduit.CreateSchemaResponse{}, ErrInvalidSchemaType
+	}
+
 	s.m.Lock()
 	defer s.m.Unlock()
 
