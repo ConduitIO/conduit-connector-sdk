@@ -79,8 +79,8 @@ func serve(c Connector) error {
 func getGRPCTargetEnv() (string, error) {
 	value := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
 	if value == "" {
-		return "", fmt.Errorf("%q is not set. This indicates you are using an older version of Conduit."+
-			"Please, consider upgrading to at least version 0.11.0, available at https://github.com/ConduitIO/conduit/releases/tag/v0.11.0", pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+		return "", fmt.Errorf("%q is not set. This indicates you are using an old version of Conduit."+
+			"Please, consider upgrading to at least v0.11.0. https://github.com/ConduitIO/conduit/releases/latest", pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
 	}
 	return value, nil
 }
