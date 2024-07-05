@@ -46,10 +46,7 @@ func Serve(c Connector) {
 }
 
 func serve(c Connector) error {
-	err := initStandaloneModeLogger()
-	if err != nil {
-		return fmt.Errorf("failed to initialize logger: %w", err)
-	}
+	initStandaloneModeLogger()
 
 	target := os.Getenv(envConduitConnectorUtilitiesGRPCTarget)
 	if target == "" {
