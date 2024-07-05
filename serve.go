@@ -74,7 +74,7 @@ func serve(c Connector) error {
 	)
 }
 
-// getGRPCTargetEnv checks the environmental variable provided by conduit-connector-protocol
+// getGRPCTargetEnv checks the environment variable provided by conduit-connector-protocol
 // and returns an error if it is not specified or empty.
 func getGRPCTargetEnv() (string, error) {
 	value := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
