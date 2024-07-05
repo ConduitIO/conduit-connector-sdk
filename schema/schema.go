@@ -31,7 +31,7 @@ func init() {
 
 // Service is the schema service client that can be used to interact with the schema service.
 // It is initialized with an in-memory service by default.
-var Service = NewInMemoryService()
+var Service = newInMemoryService()
 
 // Create creates a new schema with the given name and bytes. The schema type must be Avro.
 func Create(ctx context.Context, typ schema.Type, name string, bytes []byte) (schema.Schema, error) {

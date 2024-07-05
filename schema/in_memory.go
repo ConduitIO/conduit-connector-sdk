@@ -38,7 +38,7 @@ type inMemoryService struct {
 	m sync.Mutex
 }
 
-func NewInMemoryService() pconduit.SchemaService {
+func newInMemoryService() pconduit.SchemaService {
 	return &inMemoryService{
 		schemas: make(map[string][]schema.Schema),
 	}
