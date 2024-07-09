@@ -1,10 +1,12 @@
 module github.com/conduitio/conduit-connector-sdk
 
-go 1.22.3
+go 1.22.4
+
+toolchain go1.22.5
 
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
-	github.com/conduitio/conduit-commons v0.2.1-0.20240701165122-3948a38f3667
+	github.com/conduitio/conduit-commons v0.2.1-0.20240709142247-d973cba9694c
 	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240705154009-b938cfa7f251
 	github.com/goccy/go-json v0.10.3
 	github.com/golangci/golangci-lint v1.59.1
@@ -190,6 +192,7 @@ require (
 	github.com/timonwong/loggercheck v0.9.4 // indirect
 	github.com/tomarrell/wrapcheck/v2 v2.8.3 // indirect
 	github.com/tommy-muehle/go-mnd/v2 v2.5.1 // indirect
+	github.com/twmb/go-cache v1.2.1 // indirect
 	github.com/ultraware/funlen v0.1.0 // indirect
 	github.com/ultraware/whitespace v0.1.1 // indirect
 	github.com/uudashr/gocognit v1.1.2 // indirect
@@ -220,3 +223,5 @@ require (
 	mvdan.cc/gofumpt v0.6.0 // indirect
 	mvdan.cc/unparam v0.0.0-20240528143540-8a5130ca722f // indirect
 )
+
+replace github.com/conduitio/conduit-connector-protocol => ../conduit-connector-protocol
