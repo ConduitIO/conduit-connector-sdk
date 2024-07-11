@@ -46,12 +46,12 @@ func Serve(c Connector) {
 func serve(c Connector) error {
 	initStandaloneModeLogger()
 
-	target, err := getGRPCTargetEnv()
+	target, token, err := connectorUtilitiesConfig()
 	if err != nil {
 		return err
 	}
 
-	if err := internal.InitStandaloneConnectorUtilities(target); err != nil {
+	if err := internal.InitStandaloneConnectorUtilities(target, token); err != nil {
 		return fmt.Errorf("failed to initialize standalone connector utilities: %w", err)
 	}
 
@@ -74,13 +74,28 @@ func serve(c Connector) error {
 	)
 }
 
-// getGRPCTargetEnv checks the environment variable provided by conduit-connector-protocol
-// and returns an error if it is not specified or empty.
-func getGRPCTargetEnv() (string, error) {
-	value := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
-	if value == "" {
-		return "", fmt.Errorf("%q is not set. This indicates you are using an old version of Conduit."+
-			"Please, consider upgrading to at least v0.11.0. https://github.com/ConduitIO/conduit/releases/latest", pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+// connectorUtilitiesConfig returns the address and token to be used for the connector utilities service.
+// The values are fetched from environment variables provided by conduit-connector-protocol.
+// The function returns an error if the environment variables are not specified or empty.
+func connectorUtilitiesConfig() (string, string, error) {
+	target := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+	if target == "" {
+		return "", "", missingEnvError(pconduit.EnvConduitConnectorUtilitiesGRPCTarget, "v0.11.0")
 	}
-	return value, nil
+
+	token := os.Getenv(pconduit.EnvConduitConnectorSchemaToken)
+	if token == "" {
+		return "", "", missingEnvError(pconduit.EnvConduitConnectorSchemaToken, "v0.11.0")
+	}
+
+	return target, token, nil
+}
+
+func missingEnvError(envVar, conduitVersion string) error {
+	return fmt.Errorf(
+		"%q is not set. This indicates you are using an old version of Conduit."+
+			"Please, consider upgrading to at least %v. https://github.com/ConduitIO/conduit/releases/latest",
+		pconduit.EnvConduitConnectorUtilitiesGRPCTarget,
+		conduitVersion,
+	)
 }

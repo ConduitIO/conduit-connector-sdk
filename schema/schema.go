@@ -62,7 +62,7 @@ func Get(ctx context.Context, name string, version int) (schema.Schema, error) {
 type standaloneInitializer struct{}
 
 // Init initializes the schema service client with the given gRPC connection.
-func (standaloneInitializer) Init(conn *grpc.ClientConn) error {
-	Service = client.NewSchemaServiceClient(conn)
+func (standaloneInitializer) Init(conn *grpc.ClientConn, token string) error {
+	Service = client.NewSchemaServiceClient(conn, token)
 	return nil
 }

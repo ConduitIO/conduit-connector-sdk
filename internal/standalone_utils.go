@@ -22,10 +22,10 @@ import (
 var StandaloneConnectorUtilities []StandaloneConnectorUtility
 
 type StandaloneConnectorUtility interface {
-	Init(conn *grpc.ClientConn) error
+	Init(conn *grpc.ClientConn, token string) error
 }
 
-func InitStandaloneConnectorUtilities(target string) error {
+func InitStandaloneConnectorUtilities(target, token string) error {
 	if len(StandaloneConnectorUtilities) == 0 {
 		return nil
 	}
@@ -36,7 +36,7 @@ func InitStandaloneConnectorUtilities(target string) error {
 	}
 
 	for _, utility := range StandaloneConnectorUtilities {
-		if err := utility.Init(conn); err != nil {
+		if err := utility.Init(conn, token); err != nil {
 			return err
 		}
 	}
