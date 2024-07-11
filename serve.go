@@ -95,7 +95,7 @@ func missingEnvError(envVar, conduitVersion string) error {
 	return fmt.Errorf(
 		"%q is not set. This indicates you are using an old version of Conduit."+
 			"Please, consider upgrading to at least %v. https://github.com/ConduitIO/conduit/releases/latest",
-		pconduit.EnvConduitConnectorUtilitiesGRPCTarget,
+		envVar,
 		conduitVersion,
 	)
 }
