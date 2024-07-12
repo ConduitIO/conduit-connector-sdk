@@ -122,16 +122,18 @@ type Source interface {
 // NewSourcePlugin takes a Source and wraps it into an adapter that converts it
 // into a pconnector.SourcePlugin. If the parameter is nil it will wrap
 // UnimplementedSource instead.
-func NewSourcePlugin(impl Source) pconnector.SourcePlugin {
+func NewSourcePlugin(impl Source, cfg pconnector.PluginConfig) pconnector.SourcePlugin {
 	if impl == nil {
 		// prevent nil pointers
 		impl = UnimplementedSource{}
 	}
-	return &sourcePluginAdapter{impl: impl}
+
+	return &sourcePluginAdapter{impl: impl, cfg: cfg}
 }
 
 type sourcePluginAdapter struct {
 	impl Source
+	cfg  pconnector.PluginConfig
 
 	state internal.ConnectorStateWatcher
 

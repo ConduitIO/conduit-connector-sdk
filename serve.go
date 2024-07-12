@@ -46,18 +46,19 @@ func Serve(c Connector) {
 func serve(c Connector) error {
 	initStandaloneModeLogger()
 
-	target, token, err := connectorUtilitiesConfig()
+	target, err := connectorUtilsAddress()
 	if err != nil {
 		return err
 	}
 
-	if err := internal.InitStandaloneConnectorUtilities(target, token); err != nil {
+	if err := internal.InitStandaloneConnectorUtilities(target); err != nil {
 		return fmt.Errorf("failed to initialize standalone connector utilities: %w", err)
 	}
 
 	if c.NewSpecification == nil {
 		return errors.New("Connector.NewSpecification is a required field")
 	}
+
 	if c.NewSource == nil {
 		c.NewSource = func() Source { return nil }
 	}
@@ -65,30 +66,44 @@ func serve(c Connector) error {
 		c.NewDestination = func() Destination { return nil }
 	}
 
+	cfg, err := getPluginConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get plugin configuration: %w", err)
+	}
+
 	return server.Serve(
 		func() pconnector.SpecifierPlugin {
 			return NewSpecifierPlugin(c.NewSpecification(), c.NewSource(), c.NewDestination())
 		},
-		func() pconnector.SourcePlugin { return NewSourcePlugin(c.NewSource()) },
+		func() pconnector.SourcePlugin { return NewSourcePlugin(c.NewSource(), cfg) },
 		func() pconnector.DestinationPlugin { return NewDestinationPlugin(c.NewDestination()) },
 	)
 }
 
-// connectorUtilitiesConfig returns the address and token to be used for the connector utilities service.
-// The values are fetched from environment variables provided by conduit-connector-protocol.
-// The function returns an error if the environment variables are not specified or empty.
-func connectorUtilitiesConfig() (string, string, error) {
-	target := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
-	if target == "" {
-		return "", "", missingEnvError(pconduit.EnvConduitConnectorUtilitiesGRPCTarget, "v0.11.0")
-	}
-
+func getPluginConfig() (pconnector.PluginConfig, error) {
 	token := os.Getenv(pconduit.EnvConduitConnectorSchemaToken)
 	if token == "" {
-		return "", "", missingEnvError(pconduit.EnvConduitConnectorSchemaToken, "v0.11.0")
+		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorSchemaToken, "v0.11.0")
 	}
 
-	return target, token, nil
+	return pconnector.PluginConfig{
+		Token: token,
+		// TODO parse from env vars
+		ConnectorID: "",
+		Level:       0,
+	}, nil
+}
+
+// connectorUtilsAddress returns the address and token to be used for the connector utilities service.
+// The values are fetched from environment variables provided by conduit-connector-protocol.
+// The function returns an error if the environment variables are not specified or empty.
+func connectorUtilsAddress() (string, error) {
+	target := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+	if target == "" {
+		return "", missingEnvError(pconduit.EnvConduitConnectorUtilitiesGRPCTarget, "v0.11.0")
+	}
+
+	return target, nil
 }
 
 func missingEnvError(envVar, conduitVersion string) error {
