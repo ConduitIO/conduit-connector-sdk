@@ -17,6 +17,7 @@ package sdk
 import (
 	"context"
 	"errors"
+	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"io"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	var gotCtx context.Context
@@ -61,7 +62,7 @@ func TestSourcePluginAdapter_Open_ClosedContext(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	var gotCtx context.Context
@@ -90,7 +91,7 @@ func TestSourcePluginAdapter_Open_Logger(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 	wantLogger := zerolog.New(zerolog.NewTestWriter(t))
 
@@ -113,7 +114,7 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	want := opencdc.Record{
@@ -199,7 +200,7 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 		stopTimeout = time.Minute
 	}()
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	want := opencdc.Record{
@@ -256,7 +257,7 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 		stopTimeout = time.Minute // reset
 	}()
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	want := opencdc.Record{
@@ -317,7 +318,7 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
@@ -376,10 +377,11 @@ func TestSourcePluginAdapter_LifecycleOnCreated(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 
+	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
-	src.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
+	src.EXPECT().LifecycleOnCreated(wantCtx, want).Return(nil)
 
 	req := pconnector.SourceLifecycleOnCreatedRequest{Config: want}
 	_, err := srcPlugin.LifecycleOnCreated(ctx, req)
@@ -392,11 +394,12 @@ func TestSourcePluginAdapter_LifecycleOnUpdated(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
 
 	wantBefore := config.Config{"foo": "bar"}
 	wantAfter := config.Config{"foo": "baz"}
-	src.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
+	src.EXPECT().LifecycleOnUpdated(wantCtx, wantBefore, wantAfter).Return(nil)
 
 	req := pconnector.SourceLifecycleOnUpdatedRequest{
 		ConfigBefore: wantBefore,
@@ -412,10 +415,11 @@ func TestSourcePluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 
+	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
-	src.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
+	src.EXPECT().LifecycleOnDeleted(wantCtx, want).Return(nil)
 
 	req := pconnector.SourceLifecycleOnDeletedRequest{Config: want}
 	_, err := srcPlugin.LifecycleOnDeleted(ctx, req)

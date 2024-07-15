@@ -28,7 +28,8 @@ import (
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/opencdc"
-	pconnector "github.com/conduitio/conduit-connector-protocol/pconnector"
+	"github.com/conduitio/conduit-connector-protocol/pconduit"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/jpillora/backoff"
 	"gopkg.in/tomb.v2"
@@ -122,16 +123,18 @@ type Source interface {
 // NewSourcePlugin takes a Source and wraps it into an adapter that converts it
 // into a pconnector.SourcePlugin. If the parameter is nil it will wrap
 // UnimplementedSource instead.
-func NewSourcePlugin(impl Source) pconnector.SourcePlugin {
+func NewSourcePlugin(impl Source, cfg pconnector.PluginConfig) pconnector.SourcePlugin {
 	if impl == nil {
 		// prevent nil pointers
 		impl = UnimplementedSource{}
 	}
-	return &sourcePluginAdapter{impl: impl}
+
+	return &sourcePluginAdapter{impl: impl, cfg: cfg}
 }
 
 type sourcePluginAdapter struct {
 	impl Source
+	cfg  pconnector.PluginConfig
 
 	state internal.ConnectorStateWatcher
 
@@ -147,6 +150,8 @@ type sourcePluginAdapter struct {
 }
 
 func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.SourceConfigureRequest) (pconnector.SourceConfigureResponse, error) {
+	ctx = pconduit.Enrich(ctx, a.cfg)
+
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateInitial},
 		StateBefore:          internal.StateConfiguring,
@@ -160,6 +165,8 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.Sour
 }
 
 func (a *sourcePluginAdapter) Open(ctx context.Context, req pconnector.SourceOpenRequest) (pconnector.SourceOpenResponse, error) {
+	ctx = pconduit.Enrich(ctx, a.cfg)
+
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateConfigured},
 		StateBefore:          internal.StateStarting,
@@ -191,6 +198,8 @@ func (a *sourcePluginAdapter) Open(ctx context.Context, req pconnector.SourceOpe
 }
 
 func (a *sourcePluginAdapter) Run(ctx context.Context, stream pconnector.SourceRunStream) (err error) {
+	ctx = pconduit.Enrich(ctx, a.cfg)
+
 	err = a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateStarted},
 		StateBefore:          internal.StateInitiatingRun,
@@ -238,6 +247,10 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.Sou
 	}
 
 	for {
+		Logger(ctx).Info().
+			Any("connector_token", pconduit.ConnectorTokenFromContext(ctx)).
+			Msg("sourcePluginAdapter.runRead token")
+
 		r, err := a.impl.Read(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -288,6 +301,8 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream pconnector.Sour
 }
 
 func (a *sourcePluginAdapter) Stop(ctx context.Context, _ pconnector.SourceStopRequest) (pconnector.SourceStopResponse, error) {
+	ctx = pconduit.Enrich(ctx, a.cfg)
+
 	ctx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
@@ -328,6 +343,8 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ pconnector.SourceStopR
 }
 
 func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ pconnector.SourceTeardownRequest) (pconnector.SourceTeardownResponse, error) {
+	ctx = pconduit.Enrich(ctx, a.cfg)
+
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates: nil, // Teardown can be called from any state
 		StateBefore:    internal.StateTearingDown,
@@ -367,14 +384,20 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ pconnector.SourceT
 }
 
 func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req pconnector.SourceLifecycleOnCreatedRequest) (pconnector.SourceLifecycleOnCreatedResponse, error) {
+	ctx = pconduit.Enrich(ctx, a.cfg)
+
 	return pconnector.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
 
 func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req pconnector.SourceLifecycleOnUpdatedRequest) (pconnector.SourceLifecycleOnUpdatedResponse, error) {
+	ctx = pconduit.Enrich(ctx, a.cfg)
+
 	return pconnector.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
 
 func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req pconnector.SourceLifecycleOnDeletedRequest) (pconnector.SourceLifecycleOnDeletedResponse, error) {
+	ctx = pconduit.Enrich(ctx, a.cfg)
+
 	return pconnector.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }
 

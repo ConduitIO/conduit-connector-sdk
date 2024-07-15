@@ -17,6 +17,7 @@ package sdk
 import (
 	"context"
 	"errors"
+	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"io"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestDestinationPluginAdapter_Start_OpenContext(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
 	var gotCtx context.Context
 	dst.EXPECT().Open(gomock.Any()).
@@ -58,7 +59,7 @@ func TestDestinationPluginAdapter_Open_ClosedContext(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
 	var gotCtx context.Context
 	dst.EXPECT().Open(gomock.Any()).
@@ -86,7 +87,7 @@ func TestDestinationPluginAdapter_Open_Logger(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 	wantLogger := zerolog.New(zerolog.NewTestWriter(t))
 
 	dst.EXPECT().Open(gomock.Any()).
@@ -108,7 +109,7 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
 	want := opencdc.Record{
 		Position:  opencdc.Position("foo"),
@@ -172,6 +173,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 
 	dstPlugin := NewDestinationPlugin(
 		DestinationWithMiddleware(dst, DestinationWithBatch{}),
+		pconnector.PluginConfig{},
 	).(*destinationPluginAdapter)
 
 	want := opencdc.Record{
@@ -243,6 +245,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 
 	dstPlugin := NewDestinationPlugin(
 		DestinationWithMiddleware(dst, DestinationWithBatch{}),
+		pconnector.PluginConfig{},
 	).(*destinationPluginAdapter)
 
 	want := opencdc.Record{
@@ -323,7 +326,7 @@ func TestDestinationPluginAdapter_Stop_AwaitLastRecord(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
 	lastRecord := opencdc.Record{Position: opencdc.Position("foo")}
 
@@ -404,10 +407,11 @@ func TestDestinationPluginAdapter_LifecycleOnCreated(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
+	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
-	dst.EXPECT().LifecycleOnCreated(ctx, want).Return(nil)
+	dst.EXPECT().LifecycleOnCreated(wantCtx, want).Return(nil)
 
 	req := pconnector.DestinationLifecycleOnCreatedRequest{Config: want}
 	_, err := dstPlugin.LifecycleOnCreated(ctx, req)
@@ -420,11 +424,12 @@ func TestDestinationPluginAdapter_LifecycleOnUpdated(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
+	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
 	wantBefore := config.Config{"foo": "bar"}
 	wantAfter := config.Config{"foo": "baz"}
-	dst.EXPECT().LifecycleOnUpdated(ctx, wantBefore, wantAfter).Return(nil)
+	dst.EXPECT().LifecycleOnUpdated(wantCtx, wantBefore, wantAfter).Return(nil)
 
 	req := pconnector.DestinationLifecycleOnUpdatedRequest{
 		ConfigBefore: wantBefore,
@@ -440,10 +445,11 @@ func TestDestinationPluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	dstPlugin := NewDestinationPlugin(dst).(*destinationPluginAdapter)
+	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
+	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
-	dst.EXPECT().LifecycleOnDeleted(ctx, want).Return(nil)
+	dst.EXPECT().LifecycleOnDeleted(wantCtx, want).Return(nil)
 
 	req := pconnector.DestinationLifecycleOnDeletedRequest{Config: want}
 	_, err := dstPlugin.LifecycleOnDeleted(ctx, req)

@@ -16,6 +16,7 @@ package internal
 
 import (
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var StandaloneConnectorUtilities []StandaloneConnectorUtility
@@ -29,7 +30,7 @@ func InitStandaloneConnectorUtilities(target string) error {
 		return nil
 	}
 
-	conn, err := grpc.NewClient(target)
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
