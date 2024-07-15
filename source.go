@@ -247,10 +247,6 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.Sou
 	}
 
 	for {
-		Logger(ctx).Info().
-			Any("connector_token", pconduit.ConnectorTokenFromContext(ctx)).
-			Msg("sourcePluginAdapter.runRead token")
-
 		r, err := a.impl.Read(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
