@@ -17,7 +17,6 @@ package sdk
 import (
 	"context"
 	"errors"
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"io"
 	"testing"
 	"time"
@@ -25,6 +24,7 @@ import (
 	"github.com/conduitio/conduit-commons/cchan"
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
+	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/matryer/is"

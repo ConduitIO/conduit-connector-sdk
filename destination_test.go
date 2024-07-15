@@ -17,13 +17,13 @@ package sdk
 import (
 	"context"
 	"errors"
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"io"
 	"testing"
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
+	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
