@@ -2,8 +2,6 @@ module github.com/conduitio/conduit-connector-sdk
 
 go 1.22.4
 
-toolchain go1.22.5
-
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/conduitio/conduit-commons v0.2.1-0.20240709142247-d973cba9694c
@@ -21,6 +19,7 @@ require (
 	golang.org/x/tools v0.23.0
 	google.golang.org/grpc v1.65.0
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
+	mvdan.cc/gofumpt v0.6.0
 )
 
 require (
@@ -220,6 +219,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.4.7 // indirect
-	mvdan.cc/gofumpt v0.6.0 // indirect
 	mvdan.cc/unparam v0.0.0-20240528143540-8a5130ca722f // indirect
 )
