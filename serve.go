@@ -86,11 +86,16 @@ func getPluginConfig() (pconnector.PluginConfig, error) {
 		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorSchemaToken, "v0.11.0")
 	}
 
+	connectorID := os.Getenv(pconduit.EnvConduitConnectorID)
+	if connectorID == "" {
+		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorID, "v0.11.0")
+	}
+
 	return pconnector.PluginConfig{
-		Token: token,
+		Token:       token,
+		ConnectorID: connectorID,
 		// TODO parse from env vars
-		ConnectorID: "",
-		LogLevel:    0,
+		LogLevel: 0,
 	}, nil
 }
 
