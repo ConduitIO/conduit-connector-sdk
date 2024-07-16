@@ -45,19 +45,19 @@ func ConnectorIDFromContext(ctx context.Context) string {
 type logLevelCtxKey struct{}
 
 // ContextWithLogLevel wraps ctx and returns a context that contains the connector LogLevel.
-func ContextWithLogLevel(ctx context.Context, logLevel pconnector.LogLevel) context.Context {
+func ContextWithLogLevel(ctx context.Context, logLevel string) context.Context {
 	return context.WithValue(ctx, logLevelCtxKey{}, logLevel)
 }
 
 // LogLevelFromContext fetches the connector LogLevel from the context. If the
 // context does not contain a connector LogLevel it returns an empty string.
-func LogLevelFromContext(ctx context.Context) pconnector.LogLevel {
+func LogLevelFromContext(ctx context.Context) string {
 	logLevel := ctx.Value(logLevelCtxKey{})
 	if logLevel != nil {
-		return logLevel.(pconnector.LogLevel) //nolint:forcetypeassert // only this package can set the value, it has to be a string
+		return logLevel.(string) //nolint:forcetypeassert // only this package can set the value, it has to be a string
 	}
 
-	return pconnector.LogLevelNo
+	return ""
 }
 
 func Enrich(ctx context.Context, cfg pconnector.PluginConfig) context.Context {

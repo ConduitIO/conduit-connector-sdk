@@ -127,8 +127,8 @@ github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDk
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
 github.com/conduitio/conduit-commons v0.2.1-0.20240709142247-d973cba9694c h1:RK1K+aWz49ce72Y4xadv0dXj0qH2JeQBVbj0xEW/dfg=
 github.com/conduitio/conduit-commons v0.2.1-0.20240709142247-d973cba9694c/go.mod h1:XdZNIIVGjm7mpPkE1VsuJGs+we5sc8CX1rle7jTfsOM=
-github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240716140005-6e9a5decadca h1:luhRWE7vNWgw/Q9zlX8rXKdfgF7TVLzYvX6v8Z7UT4g=
-github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240716140005-6e9a5decadca/go.mod h1:nN3W0Y+IA+CokBbqnNgOZNNc1yW4BJOQm47AsQa5nUM=
+github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240716142204-7ee3cc32a231 h1:pudz+7WZEEJuk8OuNqSj2F6BaRtr/gmdUS6HAX4XSd8=
+github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240716142204-7ee3cc32a231/go.mod h1:nN3W0Y+IA+CokBbqnNgOZNNc1yW4BJOQm47AsQa5nUM=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/cpuguy83/go-md2man/v2 v2.0.4/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/curioswitch/go-reassign v0.2.0 h1:G9UZyOcpk/d7Gd6mqYgd8XYWFMw/znxwGDUstnC9DIo=

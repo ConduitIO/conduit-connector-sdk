@@ -91,11 +91,12 @@ func getPluginConfig() (pconnector.PluginConfig, error) {
 		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorID, "v0.11.0")
 	}
 
+	logLevel := os.Getenv(pconduit.EnvConduitLogLevel)
+
 	return pconnector.PluginConfig{
 		Token:       token,
 		ConnectorID: connectorID,
-		// TODO parse from env vars
-		LogLevel: 0,
+		LogLevel:    logLevel,
 	}, nil
 }
 

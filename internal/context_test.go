@@ -29,7 +29,7 @@ func TestContextUtils_Enrich(t *testing.T) {
 	cfg := pconnector.PluginConfig{
 		Token:       "test-token",
 		ConnectorID: "test-connector-id",
-		LogLevel:    pconnector.LogLevelDebug,
+		LogLevel:    "trace",
 	}
 
 	got := Enrich(ctx, cfg)
