@@ -15,30 +15,25 @@
 package internal
 
 import (
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"context"
+	"testing"
+
+	"github.com/conduitio/conduit-connector-protocol/pconduit"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
+	"github.com/matryer/is"
 )
 
-var StandaloneConnectorUtilities []StandaloneConnectorUtility
-
-type StandaloneConnectorUtility interface {
-	Init(conn *grpc.ClientConn) error
-}
-
-func InitStandaloneConnectorUtilities(target string) error {
-	if len(StandaloneConnectorUtilities) == 0 {
-		return nil
+func TestContextUtils_Enrich(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+	cfg := pconnector.PluginConfig{
+		Token:       "test-token",
+		ConnectorID: "test-connector-id",
+		LogLevel:    "trace",
 	}
 
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return err
-	}
-
-	for _, utility := range StandaloneConnectorUtilities {
-		if err := utility.Init(conn); err != nil {
-			return err
-		}
-	}
-	return nil
+	got := Enrich(ctx, cfg)
+	is.Equal(cfg.Token, pconduit.ConnectorTokenFromContext(got))
+	is.Equal(cfg.ConnectorID, ConnectorIDFromContext(got))
+	is.Equal(cfg.LogLevel, LogLevelFromContext(got))
 }

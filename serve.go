@@ -46,7 +46,7 @@ func Serve(c Connector) {
 func serve(c Connector) error {
 	initStandaloneModeLogger()
 
-	target, err := getGRPCTargetEnv()
+	target, err := connectorUtilitiesGRPCTarget()
 	if err != nil {
 		return err
 	}
@@ -58,6 +58,7 @@ func serve(c Connector) error {
 	if c.NewSpecification == nil {
 		return errors.New("Connector.NewSpecification is a required field")
 	}
+
 	if c.NewSource == nil {
 		c.NewSource = func() Source { return nil }
 	}
@@ -65,22 +66,57 @@ func serve(c Connector) error {
 		c.NewDestination = func() Destination { return nil }
 	}
 
+	cfg, err := getPluginConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get plugin configuration: %w", err)
+	}
+
 	return server.Serve(
 		func() pconnector.SpecifierPlugin {
 			return NewSpecifierPlugin(c.NewSpecification(), c.NewSource(), c.NewDestination())
 		},
-		func() pconnector.SourcePlugin { return NewSourcePlugin(c.NewSource()) },
-		func() pconnector.DestinationPlugin { return NewDestinationPlugin(c.NewDestination()) },
+		func() pconnector.SourcePlugin { return NewSourcePlugin(c.NewSource(), cfg) },
+		func() pconnector.DestinationPlugin { return NewDestinationPlugin(c.NewDestination(), cfg) },
 	)
 }
 
-// getGRPCTargetEnv checks the environment variable provided by conduit-connector-protocol
-// and returns an error if it is not specified or empty.
-func getGRPCTargetEnv() (string, error) {
-	value := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
-	if value == "" {
-		return "", fmt.Errorf("%q is not set. This indicates you are using an old version of Conduit."+
-			"Please, consider upgrading to at least v0.11.0. https://github.com/ConduitIO/conduit/releases/latest", pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+func getPluginConfig() (pconnector.PluginConfig, error) {
+	token := os.Getenv(pconduit.EnvConduitConnectorSchemaToken)
+	if token == "" {
+		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorSchemaToken, "v0.11.0")
 	}
-	return value, nil
+
+	connectorID := os.Getenv(pconduit.EnvConduitConnectorID)
+	if connectorID == "" {
+		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorID, "v0.11.0")
+	}
+
+	logLevel := os.Getenv(pconduit.EnvConduitLogLevel)
+
+	return pconnector.PluginConfig{
+		Token:       token,
+		ConnectorID: connectorID,
+		LogLevel:    logLevel,
+	}, nil
+}
+
+// connectorUtilitiesGRPCTarget returns the address and token to be used for the connector utilities service.
+// The values are fetched from environment variables provided by conduit-connector-protocol.
+// The function returns an error if the environment variables are not specified or empty.
+func connectorUtilitiesGRPCTarget() (string, error) {
+	target := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+	if target == "" {
+		return "", missingEnvError(pconduit.EnvConduitConnectorUtilitiesGRPCTarget, "v0.11.0")
+	}
+
+	return target, nil
+}
+
+func missingEnvError(envVar, conduitVersion string) error {
+	return fmt.Errorf(
+		"%q is not set. This indicates you are using an old version of Conduit."+
+			"Please, consider upgrading to at least %v. https://github.com/ConduitIO/conduit/releases/latest",
+		envVar,
+		conduitVersion,
+	)
 }
