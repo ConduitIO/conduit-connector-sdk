@@ -23,8 +23,8 @@ import (
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
+	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
 	"go.uber.org/mock/gomock"
@@ -409,7 +409,7 @@ func TestDestinationPluginAdapter_LifecycleOnCreated(t *testing.T) {
 
 	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
-	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
+	wantCtx := internal.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
 	dst.EXPECT().LifecycleOnCreated(wantCtx, want).Return(nil)
 
@@ -426,7 +426,7 @@ func TestDestinationPluginAdapter_LifecycleOnUpdated(t *testing.T) {
 
 	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
-	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
+	wantCtx := internal.Enrich(ctx, pconnector.PluginConfig{})
 	wantBefore := config.Config{"foo": "bar"}
 	wantAfter := config.Config{"foo": "baz"}
 	dst.EXPECT().LifecycleOnUpdated(wantCtx, wantBefore, wantAfter).Return(nil)
@@ -447,7 +447,7 @@ func TestDestinationPluginAdapter_LifecycleOnDeleted(t *testing.T) {
 
 	dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}).(*destinationPluginAdapter)
 
-	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
+	wantCtx := internal.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
 	dst.EXPECT().LifecycleOnDeleted(wantCtx, want).Return(nil)
 

@@ -28,7 +28,6 @@ import (
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/jpillora/backoff"
@@ -150,7 +149,7 @@ type sourcePluginAdapter struct {
 }
 
 func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.SourceConfigureRequest) (pconnector.SourceConfigureResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateInitial},
@@ -165,7 +164,7 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.Sour
 }
 
 func (a *sourcePluginAdapter) Open(ctx context.Context, req pconnector.SourceOpenRequest) (pconnector.SourceOpenResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateConfigured},
@@ -198,7 +197,7 @@ func (a *sourcePluginAdapter) Open(ctx context.Context, req pconnector.SourceOpe
 }
 
 func (a *sourcePluginAdapter) Run(ctx context.Context, stream pconnector.SourceRunStream) (err error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	err = a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates:       []internal.ConnectorState{internal.StateStarted},
@@ -297,7 +296,7 @@ func (a *sourcePluginAdapter) runAck(ctx context.Context, stream pconnector.Sour
 }
 
 func (a *sourcePluginAdapter) Stop(ctx context.Context, _ pconnector.SourceStopRequest) (pconnector.SourceStopResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	ctx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
@@ -339,7 +338,7 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ pconnector.SourceStopR
 }
 
 func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ pconnector.SourceTeardownRequest) (pconnector.SourceTeardownResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	err := a.state.DoWithLock(ctx, internal.DoWithLockOptions{
 		ExpectedStates: nil, // Teardown can be called from any state
@@ -380,19 +379,19 @@ func (a *sourcePluginAdapter) Teardown(ctx context.Context, _ pconnector.SourceT
 }
 
 func (a *sourcePluginAdapter) LifecycleOnCreated(ctx context.Context, req pconnector.SourceLifecycleOnCreatedRequest) (pconnector.SourceLifecycleOnCreatedResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	return pconnector.SourceLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
 
 func (a *sourcePluginAdapter) LifecycleOnUpdated(ctx context.Context, req pconnector.SourceLifecycleOnUpdatedRequest) (pconnector.SourceLifecycleOnUpdatedResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	return pconnector.SourceLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
 
 func (a *sourcePluginAdapter) LifecycleOnDeleted(ctx context.Context, req pconnector.SourceLifecycleOnDeletedRequest) (pconnector.SourceLifecycleOnDeletedResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	return pconnector.SourceLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }

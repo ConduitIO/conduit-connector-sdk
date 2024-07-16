@@ -29,7 +29,6 @@ import (
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 )
@@ -118,7 +117,7 @@ type destinationPluginAdapter struct {
 }
 
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req pconnector.DestinationConfigureRequest) (pconnector.DestinationConfigureResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
 
@@ -176,7 +175,7 @@ func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, c
 }
 
 func (a *destinationPluginAdapter) Open(ctx context.Context, _ pconnector.DestinationOpenRequest) (pconnector.DestinationOpenResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	a.lastPosition = new(csync.ValueWatcher[opencdc.Position])
 
@@ -203,7 +202,7 @@ func (a *destinationPluginAdapter) Open(ctx context.Context, _ pconnector.Destin
 }
 
 func (a *destinationPluginAdapter) Run(ctx context.Context, stream pconnector.DestinationRunStream) error {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	for stream := stream.Server(); ; {
 		batch, err := stream.Recv()
@@ -254,7 +253,7 @@ func (a *destinationPluginAdapter) ack(r opencdc.Record, writeErr error, stream 
 // also has a timeout of 1 minute, after which the stop operation returns with
 // an error. In the worst case this operation can thus take 2 minutes.
 func (a *destinationPluginAdapter) Stop(ctx context.Context, req pconnector.DestinationStopRequest) (pconnector.DestinationStopResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	// last thing we do is cancel context in Open
 	defer a.openCancel()
@@ -290,7 +289,7 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req pconnector.Dest
 }
 
 func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ pconnector.DestinationTeardownRequest) (pconnector.DestinationTeardownResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	// cancel open context, in case Stop was not called (can happen in case the
 	// stop was triggered by an error)
@@ -309,19 +308,19 @@ func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ pconnector.De
 }
 
 func (a *destinationPluginAdapter) LifecycleOnCreated(ctx context.Context, req pconnector.DestinationLifecycleOnCreatedRequest) (pconnector.DestinationLifecycleOnCreatedResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	return pconnector.DestinationLifecycleOnCreatedResponse{}, a.impl.LifecycleOnCreated(ctx, req.Config)
 }
 
 func (a *destinationPluginAdapter) LifecycleOnUpdated(ctx context.Context, req pconnector.DestinationLifecycleOnUpdatedRequest) (pconnector.DestinationLifecycleOnUpdatedResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	return pconnector.DestinationLifecycleOnUpdatedResponse{}, a.impl.LifecycleOnUpdated(ctx, req.ConfigBefore, req.ConfigAfter)
 }
 
 func (a *destinationPluginAdapter) LifecycleOnDeleted(ctx context.Context, req pconnector.DestinationLifecycleOnDeletedRequest) (pconnector.DestinationLifecycleOnDeletedResponse, error) {
-	ctx = pconduit.Enrich(ctx, a.cfg)
+	ctx = internal.Enrich(ctx, a.cfg)
 
 	return pconnector.DestinationLifecycleOnDeletedResponse{}, a.impl.LifecycleOnDeleted(ctx, req.Config)
 }

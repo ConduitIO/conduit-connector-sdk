@@ -24,7 +24,6 @@ import (
 	"github.com/conduitio/conduit-commons/cchan"
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/matryer/is"
@@ -379,7 +378,7 @@ func TestSourcePluginAdapter_LifecycleOnCreated(t *testing.T) {
 
 	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 
-	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
+	wantCtx := internal.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
 	src.EXPECT().LifecycleOnCreated(wantCtx, want).Return(nil)
 
@@ -395,7 +394,7 @@ func TestSourcePluginAdapter_LifecycleOnUpdated(t *testing.T) {
 	src := NewMockSource(ctrl)
 
 	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
-	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
+	wantCtx := internal.Enrich(ctx, pconnector.PluginConfig{})
 
 	wantBefore := config.Config{"foo": "bar"}
 	wantAfter := config.Config{"foo": "baz"}
@@ -417,7 +416,7 @@ func TestSourcePluginAdapter_LifecycleOnDeleted(t *testing.T) {
 
 	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
 
-	wantCtx := pconduit.Enrich(ctx, pconnector.PluginConfig{})
+	wantCtx := internal.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
 	src.EXPECT().LifecycleOnDeleted(wantCtx, want).Return(nil)
 
