@@ -61,9 +61,14 @@ func LogLevelFromContext(ctx context.Context) string {
 }
 
 func Enrich(ctx context.Context, cfg pconnector.PluginConfig) context.Context {
-	ctx = pconduit.ContextWithConnectorToken(ctx, cfg.Token)
-	ctx = ContextWithConnectorID(ctx, cfg.ConnectorID)
+	// NB: The context is essentially a stack, so fetching a value from the context means
+	// we have to pop values from the stack until we get to the one we are looking for.
+	// We know that the token will be used in calls to connector utils, so it should be
+	// on the top of the stack.
+	// The connector ID is expected to be used more often than the log level.
 	ctx = ContextWithLogLevel(ctx, cfg.LogLevel)
+	ctx = ContextWithConnectorID(ctx, cfg.ConnectorID)
+	ctx = pconduit.ContextWithConnectorToken(ctx, cfg.Token)
 
 	return ctx
 }
