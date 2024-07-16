@@ -46,7 +46,7 @@ func Serve(c Connector) {
 func serve(c Connector) error {
 	initStandaloneModeLogger()
 
-	target, err := connectorUtilsAddress()
+	target, err := connectorUtilitiesGRPCTarget()
 	if err != nil {
 		return err
 	}
@@ -99,10 +99,10 @@ func getPluginConfig() (pconnector.PluginConfig, error) {
 	}, nil
 }
 
-// connectorUtilsAddress returns the address and token to be used for the connector utilities service.
+// connectorUtilitiesGRPCTarget returns the address and token to be used for the connector utilities service.
 // The values are fetched from environment variables provided by conduit-connector-protocol.
 // The function returns an error if the environment variables are not specified or empty.
-func connectorUtilsAddress() (string, error) {
+func connectorUtilitiesGRPCTarget() (string, error) {
 	target := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
 	if target == "" {
 		return "", missingEnvError(pconduit.EnvConduitConnectorUtilitiesGRPCTarget, "v0.11.0")
