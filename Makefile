@@ -2,6 +2,10 @@
 test:
 	go test $(GOTEST_FLAGS) -race ./...
 
+.PHONY: fmt
+fmt:
+	gofumpt -l -w .
+
 .PHONY: lint
 lint:
 	golangci-lint run
