@@ -23,13 +23,6 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/pconduit"
 )
 
-var (
-	ErrSchemaNotFound       = pconduit.ErrSchemaNotFound
-	ErrInvalidSchemaSubject = pconduit.ErrInvalidSchemaSubject
-	ErrInvalidSchemaType    = pconduit.ErrInvalidSchemaType
-	ErrInvalidSchemaBytes   = pconduit.ErrInvalidSchemaBytes
-)
-
 type inMemoryService struct {
 	// schemas is a map of schema subjects to all the versions of that schema
 	// versioning starts at 1, newer versions are appended to the end of the versions slice.

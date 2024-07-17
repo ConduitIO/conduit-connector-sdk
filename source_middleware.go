@@ -18,11 +18,13 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-commons/rabin"
 	"github.com/conduitio/conduit-commons/schema"
+	"github.com/conduitio/conduit-connector-sdk/internal"
 	sdkschema "github.com/conduitio/conduit-connector-sdk/schema"
 )
 
@@ -36,9 +38,11 @@ type SourceMiddleware interface {
 func DefaultSourceMiddleware() []SourceMiddleware {
 	return []SourceMiddleware{
 		SourceWithSchema{
-			DefaultSchemaFormat:  schema.TypeAvro.String(),
-			DefaultEncodePayload: true,
-			DefaultEncodeKey:     true,
+			DefaultSchemaFormat:   schema.TypeAvro.String(),
+			DefaultPayloadEncode:  true,
+			DefaultPayloadSubject: "", // defaults to [connectorID-payload]
+			DefaultKeyEncode:      true,
+			DefaultKeySubject:     "", // defaults to [connectorID-key]
 		},
 	}
 }
@@ -54,19 +58,28 @@ func SourceWithMiddleware(d Source, middleware ...SourceMiddleware) Source {
 // -- SourceWithSchema ----------------------------------------------
 
 const (
-	configSourceSchemaFormat        = "sdk.schema.format"
-	configSourceSchemaEncodePayload = "sdk.schema.encodePayload"
-	configSourceSchemaEncodeKey     = "sdk.schema.encodeKey"
+	configSourceSchemaFormat         = "sdk.schema.format"
+	configSourceSchemaPayloadEncode  = "sdk.schema.payload.encode"
+	configSourceSchemaPayloadSubject = "sdk.schema.payload.subject"
+	configSourceSchemaKeyEncode      = "sdk.schema.key.encode"
+	configSourceSchemaKeySubject     = "sdk.schema.key.subject"
 )
 
-// SourceWithSchema TODO
+// SourceWithSchema is a middleware that extracts and encodes the record payload
+// and key with a schema. The schema is extracted from the record data for each
+// record produced by the source. The schema is registered with the schema
+// service and the schema subject is attached to the record metadata.
 type SourceWithSchema struct {
 	// DefaultSchemaFormat is the default schema format.
 	DefaultSchemaFormat string
-	// DefaultEncodePayload is the default value for the encode payload option.
-	DefaultEncodePayload bool
-	// DefaultEncodeKey is the default value for the encode key option.
-	DefaultEncodeKey bool
+	// DefaultPayloadEncode is the default value for the encode payload parameter.
+	DefaultPayloadEncode bool
+	// DefaultPayloadSubject is the default value for the payload subject parameter.
+	DefaultPayloadSubject string
+	// DefaultKeyEncode is the default value for the encode key parameter.
+	DefaultKeyEncode bool
+	// DefaultKeySubject is the default value for the key subject parameter.
+	DefaultKeySubject string
 }
 
 func (s SourceWithSchema) SchemaFormatParameterName() string {
@@ -85,9 +98,13 @@ type sourceWithSchema struct {
 	Source
 	defaults SourceWithSchema
 
-	payloadSchemaType *schema.Type
-	keySchemaType     *schema.Type
-	fingerprintCache  map[uint64]schema.Schema
+	schemaType       schema.Type
+	payloadSubject   string
+	keySubject       string
+	fingerprintCache map[uint64]schema.Schema
+
+	payloadWarnOnce sync.Once
+	keyWarnOnce     sync.Once
 }
 
 func (s *sourceWithSchema) formats() []string {
@@ -102,18 +119,43 @@ func (s *sourceWithSchema) Parameters() config.Parameters {
 	return mergeParameters(s.Source.Parameters(), config.Parameters{
 		configSourceSchemaFormat: {
 			Default:     s.defaults.DefaultSchemaFormat,
+			Type:        config.ParameterTypeString,
 			Description: "The format of the payload schema.",
 			Validations: []config.Validation{
 				config.ValidationInclusion{List: s.formats()},
 			},
 		},
-		configSourceSchemaEncodePayload: {
-			Default:     strconv.FormatBool(s.defaults.DefaultEncodePayload),
+		configSourceSchemaPayloadEncode: {
+			Default:     strconv.FormatBool(s.defaults.DefaultPayloadEncode),
+			Type:        config.ParameterTypeBool,
 			Description: "Whether to extract and encode the record payload with a schema.",
 		},
-		configSourceSchemaEncodeKey: {
-			Default:     strconv.FormatBool(s.defaults.DefaultEncodeKey),
+		configSourceSchemaPayloadSubject: {
+			Default: s.defaults.DefaultPayloadSubject,
+			Type:    config.ParameterTypeString,
+			Description: func() string {
+				desc := "The subject of the payload schema."
+				if s.defaults.DefaultPayloadSubject == "" {
+					desc += ` Defaults to the connector ID with a "-payload" postfix.`
+				}
+				return desc
+			}(),
+		},
+		configSourceSchemaKeyEncode: {
+			Default:     strconv.FormatBool(s.defaults.DefaultKeyEncode),
+			Type:        config.ParameterTypeBool,
 			Description: "Whether to extract and encode the record key with a schema.",
+		},
+		configSourceSchemaKeySubject: {
+			Default: s.defaults.DefaultKeySubject,
+			Type:    config.ParameterTypeString,
+			Description: func() string {
+				desc := "The subject of the payload schema."
+				if s.defaults.DefaultPayloadSubject == "" {
+					desc += ` Defaults to the connector ID with a "-key" postfix.`
+				}
+				return desc
+			}(),
 		},
 	})
 }
@@ -124,13 +166,58 @@ func (s *sourceWithSchema) Configure(ctx context.Context, config config.Config) 
 		return err
 	}
 
-	// TODO parse config
+	connectorID := internal.ConnectorIDFromContext(ctx)
+
+	format := s.defaults.DefaultSchemaFormat
+	if val, ok := config[configSourceSchemaFormat]; ok {
+		format = val
+	}
+
+	var t schema.Type
+	if err := t.UnmarshalText([]byte(format)); err != nil {
+		return fmt.Errorf("invalid %s: failed to parse schema format: %w", configSourceSchemaFormat, err)
+	}
+
+	encodeKey := s.defaults.DefaultKeyEncode
+	if val, ok := config[configSourceSchemaKeyEncode]; ok {
+		encodeKey, err = strconv.ParseBool(val)
+		if err != nil {
+			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configSourceSchemaKeyEncode, err)
+		}
+	}
+	if encodeKey {
+		s.keySubject = s.defaults.DefaultKeySubject
+		if val, ok := config[configSourceSchemaKeySubject]; ok {
+			s.keySubject = val
+		}
+		if s.keySubject == "" {
+			s.keySubject = connectorID + "-key"
+		}
+	}
+
+	encodePayload := s.defaults.DefaultPayloadEncode
+	if val, ok := config[configSourceSchemaPayloadEncode]; ok {
+		encodePayload, err = strconv.ParseBool(val)
+		if err != nil {
+			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configSourceSchemaPayloadEncode, err)
+		}
+	}
+	if encodePayload {
+		s.payloadSubject = s.defaults.DefaultPayloadSubject
+		if val, ok := config[configSourceSchemaPayloadSubject]; ok {
+			s.payloadSubject = val
+		}
+		if s.payloadSubject == "" {
+			s.payloadSubject = connectorID + "-payload"
+		}
+	}
+
 	return nil
 }
 
 func (s *sourceWithSchema) Read(ctx context.Context) (opencdc.Record, error) {
 	rec, err := s.Source.Read(ctx)
-	if err != nil || (s.keySchemaType == nil && s.payloadSchemaType == nil) {
+	if err != nil || (s.keySubject == "" && s.payloadSubject == "") {
 		return rec, err
 	}
 
@@ -145,15 +232,18 @@ func (s *sourceWithSchema) Read(ctx context.Context) (opencdc.Record, error) {
 }
 
 func (s *sourceWithSchema) encodeKey(ctx context.Context, rec *opencdc.Record) error {
-	if s.keySchemaType == nil {
+	if s.keySubject == "" {
 		return nil // key schema encoding is disabled
 	}
 	if _, ok := rec.Key.(opencdc.StructuredData); !ok {
-		// TODO log warning
+		// log warning once, to avoid spamming the logs
+		s.keyWarnOnce.Do(func() {
+			Logger(ctx).Warn().Msg(`record key is not structured, consider disabling the source schema key encoding using "sdk.schema.key.encode: false"`)
+		})
 		return nil
 	}
 
-	sch, err := s.schemaForType(ctx, *s.keySchemaType, rec.Key)
+	sch, err := s.schemaForType(ctx, rec.Key, s.keySubject)
 	if err != nil {
 		return fmt.Errorf("failed to extract schema for key: %w", err)
 	}
@@ -168,13 +258,16 @@ func (s *sourceWithSchema) encodeKey(ctx context.Context, rec *opencdc.Record) e
 }
 
 func (s *sourceWithSchema) encodePayload(ctx context.Context, rec *opencdc.Record) error {
-	if s.payloadSchemaType == nil {
+	if s.payloadSubject == "" {
 		return nil // payload schema encoding is disabled
 	}
 	_, beforeIsStructured := rec.Payload.Before.(opencdc.StructuredData)
 	_, afterIsStructured := rec.Payload.After.(opencdc.StructuredData)
 	if !beforeIsStructured && !afterIsStructured {
-		// TODO log warning
+		// log warning once, to avoid spamming the logs
+		s.payloadWarnOnce.Do(func() {
+			Logger(ctx).Warn().Msg(`record payload is not structured, consider disabling the source schema payload encoding using "sdk.schema.payload.encode: false"`)
+		})
 		return nil
 	}
 
@@ -184,7 +277,7 @@ func (s *sourceWithSchema) encodePayload(ctx context.Context, rec *opencdc.Recor
 		val = rec.Payload.Before
 	}
 
-	sch, err := s.schemaForType(ctx, *s.payloadSchemaType, val)
+	sch, err := s.schemaForType(ctx, val, s.payloadSubject)
 	if err != nil {
 		return fmt.Errorf("failed to extract schema for payload: %w", err)
 	}
@@ -204,12 +297,12 @@ func (s *sourceWithSchema) encodePayload(ctx context.Context, rec *opencdc.Recor
 		}
 		rec.Payload.After = opencdc.RawData(encoded)
 	}
-	schema.AttachKeySchemaToRecord(*rec, sch)
+	schema.AttachPayloadSchemaToRecord(*rec, sch)
 	return nil
 }
 
-func (s *sourceWithSchema) schemaForType(ctx context.Context, t schema.Type, data any) (schema.Schema, error) {
-	srd, err := schema.KnownSerdeFactories[t].SerdeForType(data)
+func (s *sourceWithSchema) schemaForType(ctx context.Context, data any, subject string) (schema.Schema, error) {
+	srd, err := schema.KnownSerdeFactories[s.schemaType].SerdeForType(data)
 	if err != nil {
 		return schema.Schema{}, fmt.Errorf("failed to create schema for value: %w", err)
 	}
@@ -218,7 +311,7 @@ func (s *sourceWithSchema) schemaForType(ctx context.Context, t schema.Type, dat
 
 	sch, ok := s.fingerprintCache[fp]
 	if !ok {
-		sch, err = sdkschema.Create(ctx, t, "TODO", schemaBytes)
+		sch, err = sdkschema.Create(ctx, s.schemaType, subject, schemaBytes)
 		if err != nil {
 			return schema.Schema{}, fmt.Errorf("failed to create schema: %w", err)
 		}

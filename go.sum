@@ -75,8 +75,8 @@ github.com/chavacava/garif v0.1.0 h1:2JHa3hbYf5D9dsgseMKAmc/MZ109otzgNFk5s87H9Pc
 github.com/chavacava/garif v0.1.0/go.mod h1:XMyYCkEL58DF0oyW4qDjjnPWONs2HBqYKI+UIPD+Gww=
 github.com/ckaznocha/intrange v0.1.2 h1:3Y4JAxcMntgb/wABQ6e8Q8leMd26JbX2790lIss9MTI=
 github.com/ckaznocha/intrange v0.1.2/go.mod h1:RWffCw/vKBwHeOEwWdCikAtY0q4gGt8VhJZEEA5n+RE=
-github.com/conduitio/conduit-commons v0.2.1-0.20240715133252-72d26c1a749f h1:GBQ8Pj20xrjcJYZxfHxMMyOuvMfdZtHTOZm5i6CtqIk=
-github.com/conduitio/conduit-commons v0.2.1-0.20240715133252-72d26c1a749f/go.mod h1:x+zzJa4KfMDVAmGMdbDCvedLT6/+Spkz1Xx9uO2Xh2M=
+github.com/conduitio/conduit-commons v0.2.1-0.20240717143839-f1f6699797cc h1:Vfa3NFp4nx/0lx0sl6wf7NP+abLQSGx7jDH7J2QoFtk=
+github.com/conduitio/conduit-commons v0.2.1-0.20240717143839-f1f6699797cc/go.mod h1:w0eHaH81yoab8VcrrTjFGNGRQMx45RnXWobKMpKjgrM=
 github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240716144613-8ef04cf70e73 h1:WnfXToyuoA6hEI+Elb3sVsm1DURW+7mdc3u7D1iFxiY=
 github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240716144613-8ef04cf70e73/go.mod h1:nN3W0Y+IA+CokBbqnNgOZNNc1yW4BJOQm47AsQa5nUM=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
