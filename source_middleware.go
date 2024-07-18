@@ -79,15 +79,19 @@ type SourceWithSchema struct {
 func (s SourceWithSchema) SchemaTypeParameterName() string {
 	return configSourceSchemaType
 }
+
 func (s SourceWithSchema) SchemaPayloadEncodeParameterName() string {
 	return configSourceSchemaPayloadEncode
 }
+
 func (s SourceWithSchema) SchemaPayloadSubjectParameterName() string {
 	return configSourceSchemaPayloadSubject
 }
+
 func (s SourceWithSchema) SchemaKeyEncodeParameterName() string {
 	return configSourceSchemaKeyEncode
 }
+
 func (s SourceWithSchema) SchemaKeySubjectParameterName() string {
 	return configSourceSchemaKeySubject
 }

@@ -9,6 +9,7 @@ require (
 	github.com/goccy/go-json v0.10.3
 	github.com/golangci/golangci-lint v1.59.1
 	github.com/google/go-cmp v0.6.0
+	github.com/google/uuid v1.6.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/matryer/is v1.4.1
 	github.com/rs/zerolog v1.33.0
@@ -88,7 +89,6 @@ require (
 	github.com/golangci/plugin-module-register v0.1.1 // indirect
 	github.com/golangci/revgrep v0.5.3 // indirect
 	github.com/golangci/unconvert v0.0.0-20240309020433-c5143eacb3ed // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gordonklaus/ineffassign v0.1.0 // indirect
 	github.com/gostaticanalysis/analysisutil v0.7.1 // indirect
 	github.com/gostaticanalysis/comment v1.4.2 // indirect
