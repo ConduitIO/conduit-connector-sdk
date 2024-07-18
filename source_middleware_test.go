@@ -172,7 +172,7 @@ func TestSourceWithSchema_Read(t *testing.T) {
 		"foo":   "bar",
 		"int":   1,
 		"float": 2.34,
-		"time":  time.Now().UTC(),
+		"time":  time.Now().UTC().Truncate(time.Microsecond), // avro precision is microseconds
 	}
 
 	testCases := []struct {
