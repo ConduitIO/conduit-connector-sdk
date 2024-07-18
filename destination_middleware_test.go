@@ -236,7 +236,7 @@ func TestDestinationWithRateLimit_Write(t *testing.T) {
 
 	expectWriteAfter := func(delay time.Duration) {
 		start := time.Now()
-		dst.EXPECT().Write(ctx, recs).Do(func(context.Context, []opencdc.Record) {
+		dst.EXPECT().Write(ctx, recs).DoAndReturn(func(context.Context, []opencdc.Record) (int, error) {
 			dur := time.Since(start)
 			diff := dur - delay
 			if diff < 0 {
@@ -245,7 +245,8 @@ func TestDestinationWithRateLimit_Write(t *testing.T) {
 			if diff > tolerance {
 				t.Fatalf("expected delay: %s, actual delay: %s, tolerance: %s", delay, dur, tolerance)
 			}
-		}).Return(len(recs), nil)
+			return len(recs), nil
+		})
 	}
 
 	// first write should happen right away

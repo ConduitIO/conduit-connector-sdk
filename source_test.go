@@ -210,9 +210,10 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 
 	// first produce "normal" records, then produce last record, then return ErrBackoffRetry
 	r1 := src.EXPECT().Read(gomock.Any()).Return(want, nil)
-	src.EXPECT().Read(gomock.Any()).DoAndReturn(func(ctx context.Context) {
+	src.EXPECT().Read(gomock.Any()).DoAndReturn(func(ctx context.Context) (opencdc.Record, error) {
 		<-make(chan struct{}) // block forever and ever
-	}).After(r1)
+		return opencdc.Record{}, nil
+	}).After(r1.Call)
 
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)
@@ -267,7 +268,7 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 
 	// produce one record, then return ErrBackoffRetry
 	r1 := src.EXPECT().Read(gomock.Any()).Return(want, nil)
-	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r1)
+	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r1.Call)
 
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)
@@ -322,7 +323,7 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 
 	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
 	r1 := src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, nil)
-	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r1)
+	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r1.Call)
 
 	ctx := context.Background()
 	stream := NewInMemorySourceRunStream(ctx)

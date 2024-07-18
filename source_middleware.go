@@ -112,8 +112,9 @@ func (s SourceWithSchema) Wrap(impl Source) Source {
 	}
 
 	return &sourceWithSchema{
-		Source:   impl,
-		defaults: s,
+		Source:           impl,
+		defaults:         s,
+		fingerprintCache: make(map[uint64]schema.Schema),
 	}
 }
 
@@ -277,6 +278,9 @@ func (s *sourceWithSchema) encodeKey(ctx context.Context, rec *opencdc.Record) e
 	}
 
 	rec.Key = opencdc.RawData(encoded)
+	if rec.Metadata == nil {
+		rec.Metadata = opencdc.Metadata{}
+	}
 	schema.AttachKeySchemaToRecord(*rec, sch)
 	return nil
 }
@@ -320,6 +324,9 @@ func (s *sourceWithSchema) encodePayload(ctx context.Context, rec *opencdc.Recor
 			return fmt.Errorf("failed to encode after payload: %w", err)
 		}
 		rec.Payload.After = opencdc.RawData(encoded)
+	}
+	if rec.Metadata == nil {
+		rec.Metadata = opencdc.Metadata{}
 	}
 	schema.AttachPayloadSchemaToRecord(*rec, sch)
 	return nil
