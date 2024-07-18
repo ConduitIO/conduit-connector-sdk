@@ -85,6 +85,18 @@ type SourceWithSchema struct {
 func (s SourceWithSchema) SchemaFormatParameterName() string {
 	return configSourceSchemaFormat
 }
+func (s SourceWithSchema) SchemaPayloadEncodeParameterName() string {
+	return configSourceSchemaPayloadEncode
+}
+func (s SourceWithSchema) SchemaPayloadSubjectParameterName() string {
+	return configSourceSchemaPayloadSubject
+}
+func (s SourceWithSchema) SchemaKeyEncodeParameterName() string {
+	return configSourceSchemaKeyEncode
+}
+func (s SourceWithSchema) SchemaKeySubjectParameterName() string {
+	return configSourceSchemaKeySubject
+}
 
 // Wrap a Source into the schema middleware.
 func (s SourceWithSchema) Wrap(impl Source) Source {
@@ -191,6 +203,8 @@ func (s *sourceWithSchema) Configure(ctx context.Context, config config.Config) 
 			s.keySubject = val
 		}
 		if s.keySubject == "" {
+			// TODO: when adding schema context support, set DefaultKeySubject
+			//  to "key" and let the schema service attach the prefix / context.
 			s.keySubject = connectorID + "-key"
 		}
 	}
@@ -208,6 +222,8 @@ func (s *sourceWithSchema) Configure(ctx context.Context, config config.Config) 
 			s.payloadSubject = val
 		}
 		if s.payloadSubject == "" {
+			// TODO: when adding schema context support, set DefaultPayloadSubject
+			//  to "payload" and let the schema service attach the prefix / context.
 			s.payloadSubject = connectorID + "-payload"
 		}
 	}
