@@ -95,8 +95,8 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		have:       config.Config{},
 
 		wantSchemaType:     schema.TypeAvro,
-		wantPayloadSubject: connectorID + "-payload",
-		wantKeySubject:     connectorID + "-key",
+		wantPayloadSubject: connectorID + ".payload",
+		wantKeySubject:     connectorID + ".key",
 	}, {
 		name:       "invalid schema type",
 		middleware: SourceWithSchema{},

@@ -86,11 +86,11 @@ type SourceWithSchemaConfig struct {
 	SchemaType schema.Type
 	// Whether to extract and encode the record payload with a schema.
 	PayloadEncode *bool
-	// The subject of the payload schema. Defaults to the connector ID with a "-payload" postfix.
+	// The subject of the payload schema. Defaults to the connector ID with a ".payload" postfix.
 	PayloadSubject *string
 	// Whether to extract and encode the record key with a schema.
 	KeyEncode *bool
-	// The subject of the key schema. Defaults to the connector ID with a "-key" postfix.
+	// The subject of the key schema. Defaults to the connector ID with a ".key" postfix.
 	KeySubject *string
 }
 
@@ -140,7 +140,7 @@ func (s SourceWithSchemaConfig) parameters() config.Parameters {
 			Description: func() string {
 				desc := "The subject of the payload schema."
 				if s.PayloadSubject == nil {
-					desc += ` Defaults to the connector ID with a "-payload" postfix.`
+					desc += ` Defaults to the connector ID with a ".payload" postfix.`
 				}
 				return desc
 			}(),
@@ -161,7 +161,7 @@ func (s SourceWithSchemaConfig) parameters() config.Parameters {
 			Description: func() string {
 				desc := "The subject of the payload schema."
 				if s.KeySubject == nil {
-					desc += ` Defaults to the connector ID with a "-key" postfix.`
+					desc += ` Defaults to the connector ID with a ".key" postfix.`
 				}
 				return desc
 			}(),
@@ -250,7 +250,7 @@ func (s *sourceWithSchema) Configure(ctx context.Context, config config.Config) 
 	if encodeKey {
 		// TODO: when adding schema context support, set DefaultKeySubject
 		//  to "key" and let the schema service attach the prefix / context.
-		s.keySubject = connectorID + "-key"
+		s.keySubject = connectorID + ".key"
 		if s.config.KeySubject != nil {
 			s.keySubject = *s.config.KeySubject
 		}
@@ -269,7 +269,7 @@ func (s *sourceWithSchema) Configure(ctx context.Context, config config.Config) 
 	if encodePayload {
 		// TODO: when adding schema context support, set DefaultPayloadSubject
 		//  to "payload" and let the schema service attach the prefix / context.
-		s.payloadSubject = connectorID + "-payload"
+		s.payloadSubject = connectorID + ".payload"
 		if s.config.PayloadSubject != nil {
 			s.payloadSubject = *s.config.PayloadSubject
 		}
