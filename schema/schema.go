@@ -16,6 +16,8 @@ package schema
 
 import (
 	"context"
+	"fmt"
+	sdk "github.com/conduitio/conduit-connector-sdk"
 
 	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconduit"
@@ -33,9 +35,9 @@ func init() {
 var Service = newInMemoryService()
 
 // Create creates a new schema with the given name and bytes. The schema type must be Avro.
-func Create(ctx context.Context, typ schema.Type, name string, bytes []byte) (schema.Schema, error) {
+func Create(ctx context.Context, typ schema.Type, subject string, bytes []byte) (schema.Schema, error) {
 	resp, err := Service.CreateSchema(ctx, pconduit.CreateSchemaRequest{
-		Subject: name,
+		Subject: qualifiedSubject(ctx, subject),
 		Type:    typ,
 		Bytes:   bytes,
 	})
@@ -46,10 +48,15 @@ func Create(ctx context.Context, typ schema.Type, name string, bytes []byte) (sc
 	return resp.Schema, nil
 }
 
+func qualifiedSubject(ctx context.Context, subject string) string {
+	// todo better delimiter
+	return fmt.Sprintf("%s_%s", sdk.GetSchemaContextName(ctx), subject)
+}
+
 // Get retrieves the schema with the given name and version. If the schema does not exist, an error is returned.
-func Get(ctx context.Context, name string, version int) (schema.Schema, error) {
+func Get(ctx context.Context, subject string, version int) (schema.Schema, error) {
 	resp, err := Service.GetSchema(ctx, pconduit.GetSchemaRequest{
-		Subject: name,
+		Subject: subject,
 		Version: version,
 	})
 	if err != nil {
