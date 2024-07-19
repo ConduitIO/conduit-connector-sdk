@@ -20,6 +20,7 @@ import (
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-sdk/internal"
+	"github.com/conduitio/conduit-connector-sdk/schema"
 	"strconv"
 )
 
@@ -50,8 +51,6 @@ type SourceWithSchemaContext struct {
 	UseContext  bool
 	ContextName string
 }
-
-type schemaContextNameKey struct{}
 
 func (s *SourceWithSchemaContext) Wrap(impl Source) Source {
 	s.Source = impl
@@ -94,44 +93,29 @@ func (s *SourceWithSchemaContext) Configure(ctx context.Context, cfg config.Conf
 		}
 	}
 
-	return s.Source.Configure(s.enrichContext(ctx), cfg)
+	return s.Source.Configure(schema.WithSchemaContextName(ctx, s.ContextName), cfg)
 }
 
 func (s *SourceWithSchemaContext) Open(ctx context.Context, pos opencdc.Position) error {
-	return s.Source.Open(s.enrichContext(ctx), pos)
+	return s.Source.Open(schema.WithSchemaContextName(ctx, s.ContextName), pos)
 }
 
 func (s *SourceWithSchemaContext) Read(ctx context.Context) (opencdc.Record, error) {
-	return s.Source.Read(s.enrichContext(ctx))
+	return s.Source.Read(schema.WithSchemaContextName(ctx, s.ContextName))
 }
 
 func (s *SourceWithSchemaContext) Teardown(ctx context.Context) error {
-	return s.Source.Teardown(s.enrichContext(ctx))
+	return s.Source.Teardown(schema.WithSchemaContextName(ctx, s.ContextName))
 }
 
 func (s *SourceWithSchemaContext) LifecycleOnCreated(ctx context.Context, config config.Config) error {
-	return s.Source.LifecycleOnCreated(s.enrichContext(ctx), config)
+	return s.Source.LifecycleOnCreated(schema.WithSchemaContextName(ctx, s.ContextName), config)
 }
 
 func (s *SourceWithSchemaContext) LifecycleOnUpdated(ctx context.Context, configBefore, configAfter config.Config) error {
-	return s.Source.LifecycleOnUpdated(s.enrichContext(ctx), configBefore, configAfter)
+	return s.Source.LifecycleOnUpdated(schema.WithSchemaContextName(ctx, s.ContextName), configBefore, configAfter)
 }
 
 func (s *SourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config config.Config) error {
-	return s.Source.LifecycleOnDeleted(s.enrichContext(ctx), config)
-}
-
-func (s *SourceWithSchemaContext) enrichContext(ctx context.Context) context.Context {
-	ctx = context.WithValue(ctx, schemaContextNameKey{}, s.ContextName)
-
-	return ctx
-}
-
-func GetSchemaContextName(ctx context.Context) string {
-	name := ctx.Value(schemaContextNameKey{})
-	if name != nil {
-		return name.(string) //nolint:forcetypeassert // only this package can set the value, it has to be a string
-	}
-
-	return ""
+	return s.Source.LifecycleOnDeleted(schema.WithSchemaContextName(ctx, s.ContextName), config)
 }
