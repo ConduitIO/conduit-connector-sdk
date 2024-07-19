@@ -31,12 +31,30 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func TestWithSourceWithSchemaConfig(t *testing.T) {
+	is := is.New(t)
+
+	boolPtr := func(b bool) *bool { return &b }
+	strPtr := func(s string) *string { return &s }
+	wantCfg := SourceWithSchemaConfig{
+		PayloadEncode:  boolPtr(true),
+		KeyEncode:      boolPtr(true),
+		PayloadSubject: strPtr("foo"),
+		KeySubject:     strPtr("bar"),
+	}
+
+	have := &SourceWithSchema{}
+	WithSourceWithSchemaConfig(wantCfg)(have)
+
+	is.Equal(have.Config, wantCfg)
+}
+
 func TestSourceWithSchema_Parameters(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	s := SourceWithSchema{}.Wrap(src)
+	s := (&SourceWithSchema{}).Wrap(src)
 
 	want := config.Parameters{
 		"foo": {
@@ -60,6 +78,7 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 	connectorID := uuid.NewString()
 	ctx = internal.Enrich(ctx, pconnector.PluginConfig{ConnectorID: connectorID})
 	boolPtr := func(b bool) *bool { return &b }
+	strPtr := func(s string) *string { return &s }
 
 	testCases := []struct {
 		name       string
@@ -88,8 +107,10 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 	}, {
 		name: "disabled by default",
 		middleware: SourceWithSchema{
-			DefaultPayloadEncode: boolPtr(false),
-			DefaultKeyEncode:     boolPtr(false),
+			Config: SourceWithSchemaConfig{
+				PayloadEncode: boolPtr(false),
+				KeyEncode:     boolPtr(false),
+			},
 		},
 		have: config.Config{},
 
@@ -110,8 +131,10 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 	}, {
 		name: "static default payload subject",
 		middleware: SourceWithSchema{
-			DefaultPayloadSubject: "foo",
-			DefaultKeySubject:     "bar",
+			Config: SourceWithSchemaConfig{
+				PayloadSubject: strPtr("foo"),
+				KeySubject:     strPtr("bar"),
+			},
 		},
 		have: config.Config{},
 
@@ -162,7 +185,7 @@ func TestSourceWithSchema_Read(t *testing.T) {
 	connectorID := uuid.NewString()
 	ctx = internal.Enrich(ctx, pconnector.PluginConfig{ConnectorID: connectorID})
 
-	s := SourceWithSchema{}.Wrap(src)
+	s := (&SourceWithSchema{}).Wrap(src)
 
 	src.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
 	err := s.Configure(ctx, config.Config{})

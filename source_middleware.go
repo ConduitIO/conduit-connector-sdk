@@ -33,12 +33,23 @@ type SourceMiddleware interface {
 	Wrap(Source) Source
 }
 
+// SourceMiddlewareOption can be used to change the behavior of the default source
+// middleware created with DefaultSourceMiddleware.
+type SourceMiddlewareOption func(SourceMiddleware)
+
 // DefaultSourceMiddleware returns a slice of middleware that should be added to
 // all sources unless there's a good reason not to.
-func DefaultSourceMiddleware() []SourceMiddleware {
-	return []SourceMiddleware{
-		SourceWithSchema{},
+func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware {
+	middleware := []SourceMiddleware{
+		&SourceWithSchema{},
 	}
+	// apply options to all middleware
+	for _, m := range middleware {
+		for _, opt := range opts {
+			opt(m)
+		}
+	}
+	return middleware
 }
 
 // SourceWithMiddleware wraps the source into the supplied middleware.
@@ -59,68 +70,147 @@ const (
 	configSourceSchemaKeySubject     = "sdk.schema.key.subject"
 )
 
+// WithSourceWithSchemaConfig returns a SourceMiddlewareOption that sets the
+// default configuration for the SourceWithSchema middleware.
+func WithSourceWithSchemaConfig(cfg SourceWithSchemaConfig) SourceMiddlewareOption {
+	return func(m SourceMiddleware) {
+		if s, ok := m.(*SourceWithSchema); ok {
+			s.Config = cfg
+		}
+	}
+}
+
+// SourceWithSchemaConfig is the configuration for the SourceWithSchema middleware.
+type SourceWithSchemaConfig struct {
+	// The type of the payload schema.
+	SchemaType schema.Type
+	// Whether to extract and encode the record payload with a schema.
+	PayloadEncode *bool
+	// The subject of the payload schema. Defaults to the connector ID with a "-payload" postfix.
+	PayloadSubject *string
+	// Whether to extract and encode the record key with a schema.
+	KeyEncode *bool
+	// The subject of the key schema. Defaults to the connector ID with a "-key" postfix.
+	KeySubject *string
+}
+
+func (s SourceWithSchemaConfig) SchemaTypeParameterName() string {
+	return configSourceSchemaType
+}
+
+func (s SourceWithSchemaConfig) SchemaPayloadEncodeParameterName() string {
+	return configSourceSchemaPayloadEncode
+}
+
+func (s SourceWithSchemaConfig) SchemaPayloadSubjectParameterName() string {
+	return configSourceSchemaPayloadSubject
+}
+
+func (s SourceWithSchemaConfig) SchemaKeyEncodeParameterName() string {
+	return configSourceSchemaKeyEncode
+}
+
+func (s SourceWithSchemaConfig) SchemaKeySubjectParameterName() string {
+	return configSourceSchemaKeySubject
+}
+
+func (s SourceWithSchemaConfig) parameters() config.Parameters {
+	return config.Parameters{
+		configSourceSchemaType: {
+			Default:     s.SchemaType.String(),
+			Type:        config.ParameterTypeString,
+			Description: "The type of the payload schema.",
+			Validations: []config.Validation{
+				config.ValidationInclusion{List: s.types()},
+			},
+		},
+		configSourceSchemaPayloadEncode: {
+			Default:     strconv.FormatBool(*s.PayloadEncode),
+			Type:        config.ParameterTypeBool,
+			Description: "Whether to extract and encode the record payload with a schema.",
+		},
+		configSourceSchemaPayloadSubject: {
+			Default: func() string {
+				if s.PayloadSubject != nil {
+					return *s.PayloadSubject
+				}
+				return ""
+			}(),
+			Type: config.ParameterTypeString,
+			Description: func() string {
+				desc := "The subject of the payload schema."
+				if s.PayloadSubject == nil {
+					desc += ` Defaults to the connector ID with a "-payload" postfix.`
+				}
+				return desc
+			}(),
+		},
+		configSourceSchemaKeyEncode: {
+			Default:     strconv.FormatBool(*s.KeyEncode),
+			Type:        config.ParameterTypeBool,
+			Description: "Whether to extract and encode the record key with a schema.",
+		},
+		configSourceSchemaKeySubject: {
+			Default: func() string {
+				if s.KeySubject != nil {
+					return *s.KeySubject
+				}
+				return ""
+			}(),
+			Type: config.ParameterTypeString,
+			Description: func() string {
+				desc := "The subject of the payload schema."
+				if s.KeySubject == nil {
+					desc += ` Defaults to the connector ID with a "-key" postfix.`
+				}
+				return desc
+			}(),
+		},
+	}
+}
+
+func (s SourceWithSchemaConfig) types() []string {
+	out := make([]string, 0, len(schema.KnownSerdeFactories))
+	for t := range schema.KnownSerdeFactories {
+		out = append(out, t.String())
+	}
+	return out
+}
+
 // SourceWithSchema is a middleware that extracts and encodes the record payload
 // and key with a schema. The schema is extracted from the record data for each
 // record produced by the source. The schema is registered with the schema
 // service and the schema subject is attached to the record metadata.
 type SourceWithSchema struct {
-	// DefaultSchemaType is the default schema type.
-	DefaultSchemaType schema.Type
-	// DefaultPayloadEncode is the default value for the encode payload parameter.
-	DefaultPayloadEncode *bool
-	// DefaultPayloadSubject is the default value for the payload subject parameter.
-	DefaultPayloadSubject string
-	// DefaultKeyEncode is the default value for the encode key parameter.
-	DefaultKeyEncode *bool
-	// DefaultKeySubject is the default value for the key subject parameter.
-	DefaultKeySubject string
-}
-
-func (s SourceWithSchema) SchemaTypeParameterName() string {
-	return configSourceSchemaType
-}
-
-func (s SourceWithSchema) SchemaPayloadEncodeParameterName() string {
-	return configSourceSchemaPayloadEncode
-}
-
-func (s SourceWithSchema) SchemaPayloadSubjectParameterName() string {
-	return configSourceSchemaPayloadSubject
-}
-
-func (s SourceWithSchema) SchemaKeyEncodeParameterName() string {
-	return configSourceSchemaKeyEncode
-}
-
-func (s SourceWithSchema) SchemaKeySubjectParameterName() string {
-	return configSourceSchemaKeySubject
+	Config SourceWithSchemaConfig
 }
 
 // Wrap a Source into the schema middleware.
-func (s SourceWithSchema) Wrap(impl Source) Source {
-	if s.DefaultSchemaType == 0 {
-		s.DefaultSchemaType = schema.TypeAvro
+func (s *SourceWithSchema) Wrap(impl Source) Source {
+	if s.Config.SchemaType == 0 {
+		s.Config.SchemaType = schema.TypeAvro
 	}
 
-	if s.DefaultKeyEncode == nil {
+	if s.Config.KeyEncode == nil {
 		t := true
-		s.DefaultKeyEncode = &t
+		s.Config.KeyEncode = &t
 	}
-	if s.DefaultPayloadEncode == nil {
+	if s.Config.PayloadEncode == nil {
 		t := true
-		s.DefaultPayloadEncode = &t
+		s.Config.PayloadEncode = &t
 	}
 
 	return &sourceWithSchema{
 		Source:           impl,
-		defaults:         s,
+		config:           s.Config,
 		fingerprintCache: make(map[uint64]schema.Schema),
 	}
 }
 
+// sourceWithSchema is the actual middleware implementation.
 type sourceWithSchema struct {
 	Source
-	defaults SourceWithSchema
+	config SourceWithSchemaConfig
 
 	schemaType     schema.Type
 	payloadSubject string
@@ -131,57 +221,8 @@ type sourceWithSchema struct {
 	keyWarnOnce      sync.Once
 }
 
-func (s *sourceWithSchema) types() []string {
-	out := make([]string, 0, len(schema.KnownSerdeFactories))
-	for t := range schema.KnownSerdeFactories {
-		out = append(out, t.String())
-	}
-	return out
-}
-
 func (s *sourceWithSchema) Parameters() config.Parameters {
-	return mergeParameters(s.Source.Parameters(), config.Parameters{
-		configSourceSchemaType: {
-			Default:     s.defaults.DefaultSchemaType.String(),
-			Type:        config.ParameterTypeString,
-			Description: "The type of the payload schema.",
-			Validations: []config.Validation{
-				config.ValidationInclusion{List: s.types()},
-			},
-		},
-		configSourceSchemaPayloadEncode: {
-			Default:     strconv.FormatBool(*s.defaults.DefaultPayloadEncode),
-			Type:        config.ParameterTypeBool,
-			Description: "Whether to extract and encode the record payload with a schema.",
-		},
-		configSourceSchemaPayloadSubject: {
-			Default: s.defaults.DefaultPayloadSubject,
-			Type:    config.ParameterTypeString,
-			Description: func() string {
-				desc := "The subject of the payload schema."
-				if s.defaults.DefaultPayloadSubject == "" {
-					desc += ` Defaults to the connector ID with a "-payload" postfix.`
-				}
-				return desc
-			}(),
-		},
-		configSourceSchemaKeyEncode: {
-			Default:     strconv.FormatBool(*s.defaults.DefaultKeyEncode),
-			Type:        config.ParameterTypeBool,
-			Description: "Whether to extract and encode the record key with a schema.",
-		},
-		configSourceSchemaKeySubject: {
-			Default: s.defaults.DefaultKeySubject,
-			Type:    config.ParameterTypeString,
-			Description: func() string {
-				desc := "The subject of the payload schema."
-				if s.defaults.DefaultPayloadSubject == "" {
-					desc += ` Defaults to the connector ID with a "-key" postfix.`
-				}
-				return desc
-			}(),
-		},
-	})
+	return mergeParameters(s.Source.Parameters(), s.config.parameters())
 }
 
 func (s *sourceWithSchema) Configure(ctx context.Context, config config.Config) error {
@@ -192,14 +233,14 @@ func (s *sourceWithSchema) Configure(ctx context.Context, config config.Config) 
 
 	connectorID := internal.ConnectorIDFromContext(ctx)
 
-	s.schemaType = s.defaults.DefaultSchemaType
+	s.schemaType = s.config.SchemaType
 	if val, ok := config[configSourceSchemaType]; ok {
 		if err := s.schemaType.UnmarshalText([]byte(val)); err != nil {
 			return fmt.Errorf("invalid %s: failed to parse schema type: %w", configSourceSchemaType, err)
 		}
 	}
 
-	encodeKey := *s.defaults.DefaultKeyEncode
+	encodeKey := *s.config.KeyEncode
 	if val, ok := config[configSourceSchemaKeyEncode]; ok {
 		encodeKey, err = strconv.ParseBool(val)
 		if err != nil {
@@ -207,18 +248,18 @@ func (s *sourceWithSchema) Configure(ctx context.Context, config config.Config) 
 		}
 	}
 	if encodeKey {
-		s.keySubject = s.defaults.DefaultKeySubject
+		// TODO: when adding schema context support, set DefaultKeySubject
+		//  to "key" and let the schema service attach the prefix / context.
+		s.keySubject = connectorID + "-key"
+		if s.config.KeySubject != nil {
+			s.keySubject = *s.config.KeySubject
+		}
 		if val, ok := config[configSourceSchemaKeySubject]; ok {
 			s.keySubject = val
 		}
-		if s.keySubject == "" {
-			// TODO: when adding schema context support, set DefaultKeySubject
-			//  to "key" and let the schema service attach the prefix / context.
-			s.keySubject = connectorID + "-key"
-		}
 	}
 
-	encodePayload := *s.defaults.DefaultPayloadEncode
+	encodePayload := *s.config.PayloadEncode
 	if val, ok := config[configSourceSchemaPayloadEncode]; ok {
 		encodePayload, err = strconv.ParseBool(val)
 		if err != nil {
@@ -226,14 +267,14 @@ func (s *sourceWithSchema) Configure(ctx context.Context, config config.Config) 
 		}
 	}
 	if encodePayload {
-		s.payloadSubject = s.defaults.DefaultPayloadSubject
+		// TODO: when adding schema context support, set DefaultPayloadSubject
+		//  to "payload" and let the schema service attach the prefix / context.
+		s.payloadSubject = connectorID + "-payload"
+		if s.config.PayloadSubject != nil {
+			s.payloadSubject = *s.config.PayloadSubject
+		}
 		if val, ok := config[configSourceSchemaPayloadSubject]; ok {
 			s.payloadSubject = val
-		}
-		if s.payloadSubject == "" {
-			// TODO: when adding schema context support, set DefaultPayloadSubject
-			//  to "payload" and let the schema service attach the prefix / context.
-			s.payloadSubject = connectorID + "-payload"
 		}
 	}
 
