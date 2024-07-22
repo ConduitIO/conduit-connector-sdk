@@ -36,15 +36,15 @@ func TestWithSourceWithSchemaConfig(t *testing.T) {
 
 	boolPtr := func(b bool) *bool { return &b }
 	strPtr := func(s string) *string { return &s }
-	wantCfg := SourceWithSchemaConfig{
+	wantCfg := SourceWithSchemaExtractionConfig{
 		PayloadEncode:  boolPtr(true),
 		KeyEncode:      boolPtr(true),
 		PayloadSubject: strPtr("foo"),
 		KeySubject:     strPtr("bar"),
 	}
 
-	have := &SourceWithSchema{}
-	WithSourceWithSchemaConfig(wantCfg)(have)
+	have := &SourceWithSchemaExtraction{}
+	wantCfg.Apply(have)
 
 	is.Equal(have.Config, wantCfg)
 }
@@ -54,7 +54,7 @@ func TestSourceWithSchema_Parameters(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	s := (&SourceWithSchema{}).Wrap(src)
+	s := (&SourceWithSchemaExtraction{}).Wrap(src)
 
 	want := config.Parameters{
 		"foo": {
@@ -82,7 +82,7 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 
 	testCases := []struct {
 		name       string
-		middleware SourceWithSchema
+		middleware SourceWithSchemaExtraction
 		have       config.Config
 
 		wantErr            error
@@ -91,7 +91,7 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		wantKeySubject     string
 	}{{
 		name:       "empty config",
-		middleware: SourceWithSchema{},
+		middleware: SourceWithSchemaExtraction{},
 		have:       config.Config{},
 
 		wantSchemaType:     schema.TypeAvro,
@@ -99,15 +99,15 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		wantKeySubject:     connectorID + ".key",
 	}, {
 		name:       "invalid schema type",
-		middleware: SourceWithSchema{},
+		middleware: SourceWithSchemaExtraction{},
 		have: config.Config{
-			configSourceSchemaType: "foo",
+			configSourceSchemaExtractionType: "foo",
 		},
 		wantErr: schema.ErrUnsupportedType,
 	}, {
 		name: "disabled by default",
-		middleware: SourceWithSchema{
-			Config: SourceWithSchemaConfig{
+		middleware: SourceWithSchemaExtraction{
+			Config: SourceWithSchemaExtractionConfig{
 				PayloadEncode: boolPtr(false),
 				KeyEncode:     boolPtr(false),
 			},
@@ -119,10 +119,10 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		wantKeySubject:     "",
 	}, {
 		name:       "disabled by config",
-		middleware: SourceWithSchema{},
+		middleware: SourceWithSchemaExtraction{},
 		have: config.Config{
-			configSourceSchemaPayloadEncode: "false",
-			configSourceSchemaKeyEncode:     "false",
+			configSourceSchemaExtractionPayloadEncode: "false",
+			configSourceSchemaExtractionKeyEncode:     "false",
 		},
 
 		wantSchemaType:     schema.TypeAvro,
@@ -130,8 +130,8 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		wantKeySubject:     "",
 	}, {
 		name: "static default payload subject",
-		middleware: SourceWithSchema{
-			Config: SourceWithSchemaConfig{
+		middleware: SourceWithSchemaExtraction{
+			Config: SourceWithSchemaExtractionConfig{
 				PayloadSubject: strPtr("foo"),
 				KeySubject:     strPtr("bar"),
 			},
@@ -143,10 +143,10 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		wantKeySubject:     "bar",
 	}, {
 		name:       "payload subject by config",
-		middleware: SourceWithSchema{},
+		middleware: SourceWithSchemaExtraction{},
 		have: config.Config{
-			configSourceSchemaPayloadSubject: "foo",
-			configSourceSchemaKeySubject:     "bar",
+			configSourceSchemaExtractionPayloadSubject: "foo",
+			configSourceSchemaExtractionKeySubject:     "bar",
 		},
 
 		wantSchemaType:     schema.TypeAvro,
@@ -157,7 +157,7 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			is := is.New(t)
-			s := tt.middleware.Wrap(src).(*sourceWithSchema)
+			s := tt.middleware.Wrap(src).(*sourceWithSchemaExtraction)
 
 			src.EXPECT().Configure(ctx, tt.have).Return(nil)
 
@@ -185,7 +185,7 @@ func TestSourceWithSchema_Read(t *testing.T) {
 	connectorID := uuid.NewString()
 	ctx = internal.Enrich(ctx, pconnector.PluginConfig{ConnectorID: connectorID})
 
-	s := (&SourceWithSchema{}).Wrap(src)
+	s := (&SourceWithSchemaExtraction{}).Wrap(src)
 
 	src.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
 	err := s.Configure(ctx, config.Config{})
