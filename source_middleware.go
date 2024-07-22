@@ -187,7 +187,8 @@ type SourceWithSchemaExtraction struct {
 	Config SourceWithSchemaExtractionConfig
 }
 
-// Wrap a Source into the schema middleware.
+// Wrap a Source into the schema middleware. It will apply default configuration
+// values if they are not explicitly set.
 func (s *SourceWithSchemaExtraction) Wrap(impl Source) Source {
 	if s.Config.SchemaType == 0 {
 		s.Config.SchemaType = schema.TypeAvro
