@@ -70,15 +70,19 @@ const (
 	configSourceSchemaExtractionKeySubject     = "sdk.schemaExtraction.key.subject"
 )
 
-// SourceWithSchemaExtractionConfig is the configuration for the SourceWithSchemaExtraction middleware.
+// SourceWithSchemaExtractionConfig is the configuration for the
+// SourceWithSchemaExtraction middleware. Fields set to their zero value are
+// ignored and will be set to the default value.
 type SourceWithSchemaExtractionConfig struct {
-	// The type of the payload schema.
+	// The type of the payload schema. Defaults to Avro.
 	SchemaType schema.Type
 	// Whether to extract and encode the record payload with a schema.
+	// If unset, defaults to true.
 	PayloadEncode *bool
 	// The subject of the payload schema. Defaults to the connector ID with a ".payload" postfix.
 	PayloadSubject *string
 	// Whether to extract and encode the record key with a schema.
+	// If unset, defaults to true.
 	KeyEncode *bool
 	// The subject of the key schema. Defaults to the connector ID with a ".key" postfix.
 	KeySubject *string
