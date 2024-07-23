@@ -438,7 +438,7 @@ func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 			Default: *c.ContextName,
 			Description: func() string {
 				d := "Schema context name to be used. Used as a prefix for all schema subject names."
-				if *c.ContextName == "" {
+				if c.ContextName == nil {
 					d += " Defaults to the connector ID."
 				}
 				return d
