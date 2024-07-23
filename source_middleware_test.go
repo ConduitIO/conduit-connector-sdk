@@ -34,8 +34,6 @@ import (
 func TestWithSourceWithSchemaConfig(t *testing.T) {
 	is := is.New(t)
 
-	boolPtr := func(b bool) *bool { return &b }
-	strPtr := func(s string) *string { return &s }
 	wantCfg := SourceWithSchemaExtractionConfig{
 		PayloadEncode:  boolPtr(true),
 		KeyEncode:      boolPtr(true),
@@ -175,6 +173,8 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		})
 	}
 }
+
+// -- SourceWithSchemaExtraction -----------------------------------------------
 
 func TestSourceWithSchema_Read(t *testing.T) {
 	is := is.New(t)
@@ -380,3 +380,104 @@ func TestSourceWithSchema_Read(t *testing.T) {
 		})
 	}
 }
+
+// -- SourceWithSchemaContext --------------------------------------------------
+
+func TestSourceWithSchemaContext_Configure(t *testing.T) {
+	connID := "test-connector-id"
+
+	testCases := []struct {
+		name            string
+		middlewareCfg   SourceWithSchemaContextConfig
+		connectorCfg    config.Config
+		wantContextName string
+	}{
+		{
+			name:            "default middleware config, no user config",
+			middlewareCfg:   SourceWithSchemaContextConfig{},
+			connectorCfg:    config.Config{},
+			wantContextName: connID,
+		},
+		{
+			name: "custom context in middleware, no user config",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				UseContext:  boolPtr(true),
+				ContextName: strPtr("foobar"),
+			},
+			connectorCfg:    config.Config{},
+			wantContextName: "foobar",
+		},
+		{
+			name: "middleware config: use context false, no user config",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				UseContext:  boolPtr(false),
+				ContextName: strPtr("foobar"),
+			},
+			connectorCfg:    config.Config{},
+			wantContextName: "",
+		},
+		{
+			name: "user config overrides use context",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				UseContext:  boolPtr(false),
+				ContextName: strPtr("foobar"),
+			},
+			connectorCfg: config.Config{
+				"sdk.schema.context.use": "true",
+			},
+			wantContextName: "foobar",
+		},
+		{
+			name: "user config overrides context name, non-empty",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				UseContext:  boolPtr(true),
+				ContextName: strPtr("foobar"),
+			},
+			connectorCfg: config.Config{
+				"sdk.schema.context.use":  "true",
+				"sdk.schema.context.name": "user-context-name",
+			},
+			wantContextName: "user-context-name",
+		},
+		{
+			name: "user config overrides context name, empty",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				UseContext:  boolPtr(true),
+				ContextName: strPtr("foobar"),
+			},
+			connectorCfg: config.Config{
+				"sdk.schema.context.use":  "true",
+				"sdk.schema.context.name": "",
+			},
+			wantContextName: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			ctx := internal.ContextWithConnectorID(context.Background(), connID)
+
+			s := NewMockSource(gomock.NewController(t))
+			mw := &SourceWithSchemaContext{}
+
+			tc.middlewareCfg.Apply(mw)
+			underTest := mw.Wrap(s)
+
+			s.EXPECT().
+				Configure(gomock.Any(), tc.connectorCfg).
+				DoAndReturn(func(ctx context.Context, c config.Config) error {
+					gotContextName := sdkSchema.GetSchemaContextName(ctx)
+					is.Equal(tc.wantContextName, gotContextName)
+					return nil
+				})
+
+			err := underTest.Configure(ctx, tc.connectorCfg)
+			is.NoErr(err)
+		})
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func strPtr(s string) *string { return &s }

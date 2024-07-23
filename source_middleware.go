@@ -42,7 +42,9 @@ type SourceMiddlewareOption func(SourceMiddleware)
 func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware {
 	middleware := []SourceMiddleware{
 		&SourceWithSchemaExtraction{},
+		&SourceWithSchemaContext{},
 	}
+
 	// apply options to all middleware
 	for _, m := range middleware {
 		for _, opt := range opts {
@@ -53,11 +55,11 @@ func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware 
 }
 
 // SourceWithMiddleware wraps the source into the supplied middleware.
-func SourceWithMiddleware(d Source, middleware ...SourceMiddleware) Source {
+func SourceWithMiddleware(s Source, middleware ...SourceMiddleware) Source {
 	for _, m := range middleware {
-		d = m.Wrap(d)
+		s = m.Wrap(s)
 	}
-	return d
+	return s
 }
 
 // -- SourceWithSchemaExtraction ----------------------------------------------
@@ -427,17 +429,25 @@ func (c SourceWithSchemaContextConfig) Apply(m SourceMiddleware) {
 
 func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 	return config.Parameters{
-		"sdk.schema.context.use": config.Parameter{
+		c.UseContextParameterName(): config.Parameter{
 			Default:     "true",
 			Description: "", // todo
 			Type:        config.ParameterTypeBool,
 		},
-		"sdk.schema.context.name": config.Parameter{
+		c.ContextNameParameterName(): config.Parameter{
 			Default:     "",
 			Description: "", // todo
 			Type:        config.ParameterTypeString,
 		},
 	}
+}
+
+func (c SourceWithSchemaContextConfig) UseContextParameterName() string {
+	return "sdk.schema.context.use"
+}
+
+func (c SourceWithSchemaContextConfig) ContextNameParameterName() string {
+	return "sdk.schema.context.name"
 }
 
 // SourceWithSchemaContext is a middleware that makes it possible to configure
@@ -489,7 +499,7 @@ func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Conf
 
 	if s.useContext {
 		s.contextName = *s.defaultMiddlewareCfg.ContextName
-		if s.contextName != "" {
+		if s.contextName == "" {
 			s.contextName = internal.ConnectorIDFromContext(ctx)
 		}
 		if ctxName, ok := cfg["sdk.schema.context.name"]; ok {
