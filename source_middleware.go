@@ -430,14 +430,17 @@ func (c SourceWithSchemaContextConfig) Apply(m SourceMiddleware) {
 func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 	return config.Parameters{
 		c.UseContextParameterName(): config.Parameter{
-			Default:     "true",
-			Description: "", // todo
-			Type:        config.ParameterTypeBool,
+			Default: "true",
+			Description: "Specifies whether to use a schema context name. If set to false, no schema context name will " +
+				"be used, and schemas will be saved with the subject name specified in the connector " +
+				"(not safe because of name conflicts).",
+			Type: config.ParameterTypeBool,
 		},
 		c.ContextNameParameterName(): config.Parameter{
-			Default:     "",
-			Description: "", // todo
-			Type:        config.ParameterTypeString,
+			Default: "",
+			Description: "Schema context name to be used. Used as a prefix for all schema subject names. If none is set, " +
+				"the connector ID is used.",
+			Type: config.ParameterTypeString,
 		},
 	}
 }
