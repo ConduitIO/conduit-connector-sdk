@@ -470,26 +470,27 @@ func (s *SourceWithSchemaContext) Wrap(impl Source) Source {
 	}
 
 	return &sourceWithSchemaContext{
-		Source:               impl,
-		defaultMiddlewareCfg: s.Config,
+		Source: impl,
+		mwCfg:  s.Config,
 	}
 }
 
 type sourceWithSchemaContext struct {
 	Source
-	defaultMiddlewareCfg SourceWithSchemaContextConfig
+	// mwCfg is the default middleware config
+	mwCfg SourceWithSchemaContextConfig
 
 	useContext  bool
 	contextName string
 }
 
 func (s *sourceWithSchemaContext) Parameters() config.Parameters {
-	return mergeParameters(s.Source.Parameters(), s.defaultMiddlewareCfg.parameters())
+	return mergeParameters(s.Source.Parameters(), s.mwCfg.parameters())
 }
 
 func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Config) error {
-	s.useContext = *s.defaultMiddlewareCfg.UseContext
-	if useStr, ok := cfg["sdk.schema.context.use"]; ok {
+	s.useContext = *s.mwCfg.UseContext
+	if useStr, ok := cfg[s.mwCfg.UseContextParameterName()]; ok {
 		use, err := strconv.ParseBool(useStr)
 		if err != nil {
 			return fmt.Errorf("could not parse `sdk.schema.context.use`, input %v: %w", useStr, err)
@@ -498,11 +499,15 @@ func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Conf
 	}
 
 	if s.useContext {
-		s.contextName = *s.defaultMiddlewareCfg.ContextName
+		// the order of precedence (least to most) is:
+		// 1. connector ID (if no context name is configured anywhere)
+		// 2. default middleware config
+		// 3. user config
+		s.contextName = *s.mwCfg.ContextName
 		if s.contextName == "" {
 			s.contextName = internal.ConnectorIDFromContext(ctx)
 		}
-		if ctxName, ok := cfg["sdk.schema.context.name"]; ok {
+		if ctxName, ok := cfg[s.mwCfg.ContextNameParameterName()]; ok {
 			s.contextName = ctxName
 		}
 	}
