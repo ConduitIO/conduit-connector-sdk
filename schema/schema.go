@@ -17,6 +17,7 @@ package schema
 import (
 	"context"
 	"fmt"
+
 	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconduit/v1/client"
