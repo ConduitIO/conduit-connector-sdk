@@ -478,6 +478,39 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 	}
 }
 
+func TestSourceWithSchemaContext_Open(t *testing.T) {
+	is := is.New(t)
+	connID := "test-connector-id"
+	connectorCfg := config.Config{
+		"sdk.schema.context.use":  "true",
+		"sdk.schema.context.name": "user-context-name",
+	}
+	wantContextName := "user-context-name"
+	ctx := internal.ContextWithConnectorID(context.Background(), connID)
+
+	s := NewMockSource(gomock.NewController(t))
+	underTest := (&SourceWithSchemaContext{}).Wrap(s)
+
+	s.EXPECT().
+		Configure(gomock.Any(), connectorCfg).
+		DoAndReturn(func(ctx context.Context, _ config.Config) error {
+			is.Equal(wantContextName, sdkSchema.GetSchemaContextName(ctx))
+			return nil
+		})
+	s.EXPECT().
+		Open(gomock.Any(), opencdc.Position{}).
+		DoAndReturn(func(ctx context.Context, _ opencdc.Position) error {
+			is.Equal(wantContextName, sdkSchema.GetSchemaContextName(ctx))
+			return nil
+		})
+
+	err := underTest.Configure(ctx, connectorCfg)
+	is.NoErr(err)
+
+	err = underTest.Open(ctx, opencdc.Position{})
+	is.NoErr(err)
+}
+
 func boolPtr(b bool) *bool { return &b }
 
 func strPtr(s string) *string { return &s }
