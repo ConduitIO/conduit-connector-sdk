@@ -410,77 +410,116 @@ func (s *sourceWithSchemaExtraction) encodeWithSchema(sch schema.Schema, data an
 	return encoded, nil
 }
 
-type SourceWithSchemaContext struct {
-	Source
+// -- SourceWithSchemaContext --------------------------------------------------
 
-	UseContext  bool
-	ContextName string
+type SourceWithSchemaContextConfig struct {
+	UseContext  *bool
+	ContextName *string
 }
 
-func (s *SourceWithSchemaContext) Wrap(impl Source) Source {
-	s.Source = impl
-
-	return s
+// Apply sets the default configuration for the SourceWithSchemaExtraction middleware.
+// Apply can be used as a SourceMiddlewareOption.
+func (c SourceWithSchemaContextConfig) Apply(m SourceMiddleware) {
+	if s, ok := m.(*SourceWithSchemaContext); ok {
+		s.Config = c
+	}
 }
 
-func (s *SourceWithSchemaContext) Parameters() config.Parameters {
-	return mergeParameters(
-		s.Source.Parameters(),
-		config.Parameters{
-			"sdk.schema.context.use": config.Parameter{
-				Default:     "true",
-				Description: "", // todo
-				Type:        config.ParameterTypeBool,
-			},
-			"sdk.schema.context.name": config.Parameter{
-				Default:     "",
-				Description: "", // todo
-				Type:        config.ParameterTypeString,
-			},
+func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
+	return config.Parameters{
+		"sdk.schema.context.use": config.Parameter{
+			Default:     "true",
+			Description: "", // todo
+			Type:        config.ParameterTypeBool,
 		},
-	)
+		"sdk.schema.context.name": config.Parameter{
+			Default:     "",
+			Description: "", // todo
+			Type:        config.ParameterTypeString,
+		},
+	}
 }
 
-func (s *SourceWithSchemaContext) Configure(ctx context.Context, cfg config.Config) error {
-	s.UseContext = true
+// SourceWithSchemaContext is a middleware that makes it possible to configure
+// the schema context for records read by a source.
+type SourceWithSchemaContext struct {
+	Config SourceWithSchemaContextConfig
+}
+
+// Wrap a Source into the schema middleware. It will apply default configuration
+// values if they are not explicitly set.
+func (s *SourceWithSchemaContext) Wrap(impl Source) Source {
+	if s.Config.UseContext == nil {
+		t := true
+		s.Config.UseContext = &t
+	}
+
+	if s.Config.ContextName == nil {
+		cn := ""
+		s.Config.ContextName = &cn
+	}
+
+	return &sourceWithSchemaContext{
+		Source:               impl,
+		defaultMiddlewareCfg: s.Config,
+	}
+}
+
+type sourceWithSchemaContext struct {
+	Source
+	defaultMiddlewareCfg SourceWithSchemaContextConfig
+
+	useContext  bool
+	contextName string
+}
+
+func (s *sourceWithSchemaContext) Parameters() config.Parameters {
+	return mergeParameters(s.Source.Parameters(), s.defaultMiddlewareCfg.parameters())
+}
+
+func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Config) error {
+	s.useContext = *s.defaultMiddlewareCfg.UseContext
 	if useStr, ok := cfg["sdk.schema.context.use"]; ok {
 		use, err := strconv.ParseBool(useStr)
 		if err != nil {
 			return fmt.Errorf("could not parse `sdk.schema.context.use`, input %v: %w", useStr, err)
 		}
-		s.UseContext = use
+		s.useContext = use
 	}
 
-	if s.UseContext {
-		s.ContextName = internal.ConnectorIDFromContext(ctx)
+	if s.useContext {
+		s.contextName = *s.defaultMiddlewareCfg.ContextName
+		if s.contextName != "" {
+			s.contextName = internal.ConnectorIDFromContext(ctx)
+		}
 		if ctxName, ok := cfg["sdk.schema.context.name"]; ok {
-			s.ContextName = ctxName
+			s.contextName = ctxName
 		}
 	}
 
-	return s.Source.Configure(sdkschema.WithSchemaContextName(ctx, s.ContextName), cfg)
+	return s.Source.Configure(sdkschema.WithSchemaContextName(ctx, s.contextName), cfg)
 }
 
-func (s *SourceWithSchemaContext) Open(ctx context.Context, pos opencdc.Position) error {
-	return s.Source.Open(sdkschema.WithSchemaContextName(ctx, s.ContextName), pos)
+func (s *sourceWithSchemaContext) Open(ctx context.Context, pos opencdc.Position) error {
+	return s.Source.Open(sdkschema.WithSchemaContextName(ctx, s.contextName), pos)
 }
 
-func (s *SourceWithSchemaContext) Read(ctx context.Context) (opencdc.Record, error) {
-	return s.Source.Read(sdkschema.WithSchemaContextName(ctx, s.ContextName))
+func (s *sourceWithSchemaContext) Read(ctx context.Context) (opencdc.Record, error) {
+	return s.Source.Read(sdkschema.WithSchemaContextName(ctx, s.contextName))
 }
 
-func (s *SourceWithSchemaContext) Teardown(ctx context.Context) error {
-	return s.Source.Teardown(sdkschema.WithSchemaContextName(ctx, s.ContextName))
+func (s *sourceWithSchemaContext) Teardown(ctx context.Context) error {
+	return s.Source.Teardown(sdkschema.WithSchemaContextName(ctx, s.contextName))
 }
 
-func (s *SourceWithSchemaContext) LifecycleOnCreated(ctx context.Context, config config.Config) error {
-	return s.Source.LifecycleOnCreated(sdkschema.WithSchemaContextName(ctx, s.ContextName), config)
+func (s *sourceWithSchemaContext) LifecycleOnCreated(ctx context.Context, config config.Config) error {
+	return s.Source.LifecycleOnCreated(sdkschema.WithSchemaContextName(ctx, s.contextName), config)
 }
 
-func (s *SourceWithSchemaContext) LifecycleOnUpdated(ctx context.Context, configBefore, configAfter config.Config) error {
-	return s.Source.LifecycleOnUpdated(sdkschema.WithSchemaContextName(ctx, s.ContextName), configBefore, configAfter)
+func (s *sourceWithSchemaContext) LifecycleOnUpdated(ctx context.Context, configBefore, configAfter config.Config) error {
+	return s.Source.LifecycleOnUpdated(sdkschema.WithSchemaContextName(ctx, s.contextName), configBefore, configAfter)
 }
 
-func (s *SourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config config.Config) error {
-	return s.Source.LifecycleOnDeleted(sdkschema.WithSchemaContextName(ctx, s.ContextName), config)
+func (s *sourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config config.Config) error {
+	return s.Source.LifecycleOnDeleted(sdkschema.WithSchemaContextName(ctx, s.contextName), config)
 }
