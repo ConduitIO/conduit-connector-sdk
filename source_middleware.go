@@ -253,8 +253,6 @@ func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config confi
 		}
 	}
 	if encodeKey {
-		// TODO: when adding schema context support, set DefaultKeySubject
-		//  to "key" and let the schema service attach the prefix / context.
 		s.keySubject = connectorID + ".key"
 		if s.config.KeySubject != nil {
 			s.keySubject = *s.config.KeySubject
@@ -430,16 +428,21 @@ func (c SourceWithSchemaContextConfig) Apply(m SourceMiddleware) {
 func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 	return config.Parameters{
 		c.UseContextParameterName(): config.Parameter{
-			Default: "true",
+			Default: strconv.FormatBool(*c.UseContext),
 			Description: "Specifies whether to use a schema context name. If set to false, no schema context name will " +
 				"be used, and schemas will be saved with the subject name specified in the connector " +
 				"(not safe because of name conflicts).",
 			Type: config.ParameterTypeBool,
 		},
 		c.ContextNameParameterName(): config.Parameter{
-			Default: "",
-			Description: "Schema context name to be used. Used as a prefix for all schema subject names. If none is set, " +
-				"the connector ID is used.",
+			Default: *c.ContextName,
+			Description: func() string {
+				d := "Schema context name to be used. Used as a prefix for all schema subject names."
+				if *c.ContextName == "" {
+					d += " Defaults to the connector ID."
+				}
+				return d
+			}(),
 			Type: config.ParameterTypeString,
 		},
 	}
