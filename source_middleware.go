@@ -470,11 +470,6 @@ func (s *SourceWithSchemaContext) Wrap(impl Source) Source {
 		s.Config.UseContext = &t
 	}
 
-	if s.Config.ContextName == nil {
-		cn := ""
-		s.Config.ContextName = &cn
-	}
-
 	return &sourceWithSchemaContext{
 		Source: impl,
 		mwCfg:  s.Config,
@@ -509,9 +504,9 @@ func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Conf
 		// 1. connector ID (if no context name is configured anywhere)
 		// 2. default middleware config
 		// 3. user config
-		s.contextName = *s.mwCfg.ContextName
-		if s.contextName == "" {
-			s.contextName = internal.ConnectorIDFromContext(ctx)
+		s.contextName = internal.ConnectorIDFromContext(ctx)
+		if s.mwCfg.ContextName != nil {
+			s.contextName = *s.mwCfg.ContextName
 		}
 		if ctxName, ok := cfg[s.mwCfg.ContextNameParameterName()]; ok {
 			s.contextName = ctxName
