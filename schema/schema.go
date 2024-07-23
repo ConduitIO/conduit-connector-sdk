@@ -28,6 +28,13 @@ func init() {
 	internal.StandaloneConnectorUtilities = append(internal.StandaloneConnectorUtilities, standaloneInitializer{})
 }
 
+var (
+	ErrSchemaNotFound       = pconduit.ErrSchemaNotFound
+	ErrInvalidSchemaSubject = pconduit.ErrInvalidSchemaSubject
+	ErrInvalidSchemaType    = pconduit.ErrInvalidSchemaType
+	ErrInvalidSchemaBytes   = pconduit.ErrInvalidSchemaBytes
+)
+
 // Service is the schema service client that can be used to interact with the schema service.
 // It is initialized with an in-memory service by default.
 var Service = newInMemoryService()
