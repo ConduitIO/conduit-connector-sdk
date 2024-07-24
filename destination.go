@@ -119,7 +119,7 @@ type destinationPluginAdapter struct {
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req pconnector.DestinationConfigureRequest) (pconnector.DestinationConfigureResponse, error) {
 	ctx = internal.Enrich(ctx, a.cfg)
 
-	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
+	ctx = (&destinationWithBatch{}).setBatchEnabled(ctx, false)
 
 	var errs []error
 	// Configure connector
@@ -133,7 +133,7 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req pconnector
 func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config config.Config) error {
 	a.writeStrategy = &writeStrategySingle{impl: a.impl} // by default we write single records
 
-	batchEnabled := DestinationWithBatch{}.getBatchEnabled(ctx)
+	batchEnabled := (&destinationWithBatch{}).getBatchEnabled(ctx)
 	if !batchEnabled {
 		// batching disabled, just write single records
 		return nil

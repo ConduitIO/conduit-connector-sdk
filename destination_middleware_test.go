@@ -32,7 +32,7 @@ func TestDestinationWithBatch_Parameters(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	d := DestinationWithBatch{}.Wrap(dst)
+	d := (&DestinationWithBatch{}).Wrap(dst)
 
 	want := config.Parameters{
 		"foo": {
@@ -68,8 +68,10 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 	}, {
 		name: "empty config, custom defaults",
 		middleware: DestinationWithBatch{
-			DefaultBatchSize:  5,
-			DefaultBatchDelay: time.Second,
+			Config: DestinationWithBatchConfig{
+				BatchSize:  5,
+				BatchDelay: time.Second,
+			},
 		},
 		have: config.Config{},
 		want: config.Config{
@@ -79,8 +81,10 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 	}, {
 		name: "config with values",
 		middleware: DestinationWithBatch{
-			DefaultBatchSize:  5,
-			DefaultBatchDelay: time.Second,
+			Config: DestinationWithBatchConfig{
+				BatchSize:  5,
+				BatchDelay: time.Second,
+			},
 		},
 		have: config.Config{
 			configDestinationBatchSize:  "12",
@@ -97,14 +101,14 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 			is := is.New(t)
 			d := tt.middleware.Wrap(dst)
 
-			ctx := DestinationWithBatch{}.setBatchEnabled(context.Background(), false)
+			ctx := (&destinationWithBatch{}).setBatchEnabled(context.Background(), false)
 			dst.EXPECT().Configure(ctx, gomock.AssignableToTypeOf(config.Config{})).Return(nil)
 
 			err := d.Configure(ctx, tt.have)
 
 			is.NoErr(err)
 			is.Equal(tt.have, tt.want) // expected Configure to inject default parameters
-			is.True(DestinationWithBatch{}.getBatchEnabled(ctx))
+			is.True((&destinationWithBatch{}).getBatchEnabled(ctx))
 		})
 	}
 }
@@ -114,7 +118,7 @@ func TestDestinationWithRateLimit_Parameters(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	d := DestinationWithRateLimit{}.Wrap(dst)
+	d := (&DestinationWithRateLimit{}).Wrap(dst)
 
 	want := config.Parameters{
 		"foo": {
@@ -150,8 +154,10 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 	}, {
 		name: "empty config, custom defaults",
 		middleware: DestinationWithRateLimit{
-			DefaultRatePerSecond: 1.23,
-			DefaultBurst:         4,
+			Config: DestinationWithRateLimitConfig{
+				RatePerSecond: 1.23,
+				Burst:         4,
+			},
 		},
 		have:        config.Config{},
 		wantLimiter: true,
@@ -160,8 +166,10 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 	}, {
 		name: "negative burst default",
 		middleware: DestinationWithRateLimit{
-			DefaultRatePerSecond: 1.23,
-			DefaultBurst:         -2,
+			Config: DestinationWithRateLimitConfig{
+				RatePerSecond: 1.23,
+				Burst:         -2,
+			},
 		},
 		have:        config.Config{},
 		wantLimiter: true,
@@ -170,8 +178,10 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 	}, {
 		name: "config with values",
 		middleware: DestinationWithRateLimit{
-			DefaultRatePerSecond: 1.23,
-			DefaultBurst:         4,
+			Config: DestinationWithRateLimitConfig{
+				RatePerSecond: 1.23,
+				Burst:         4,
+			},
 		},
 		have: config.Config{
 			configDestinationRatePerSecond: "12.34",
@@ -183,8 +193,10 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 	}, {
 		name: "config with zero burst",
 		middleware: DestinationWithRateLimit{
-			DefaultRatePerSecond: 1.23,
-			DefaultBurst:         4,
+			Config: DestinationWithRateLimitConfig{
+				RatePerSecond: 1.23,
+				Burst:         4,
+			},
 		},
 		have: config.Config{
 			configDestinationRateBurst: "0",
@@ -220,7 +232,7 @@ func TestDestinationWithRateLimit_Write(t *testing.T) {
 	dst := NewMockDestination(ctrl)
 	ctx := context.Background()
 
-	d := DestinationWithRateLimit{}.Wrap(dst)
+	d := (&DestinationWithRateLimit{}).Wrap(dst)
 
 	dst.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
 
@@ -270,7 +282,7 @@ func TestDestinationWithRateLimit_Write_CancelledContext(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
 
-	d := DestinationWithRateLimit{}.Wrap(dst)
+	d := (&DestinationWithRateLimit{}).Wrap(dst)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
