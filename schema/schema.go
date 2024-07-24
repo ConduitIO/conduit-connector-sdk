@@ -55,13 +55,12 @@ func Create(ctx context.Context, typ schema.Type, subject string, bytes []byte) 
 }
 
 func qualifiedSubject(ctx context.Context, subject string) string {
-	// todo better delimiter
 	schemaCtx := GetSchemaContextName(ctx)
 	if schemaCtx == "" {
 		return subject
 	}
 
-	return fmt.Sprintf("%s_%s", schemaCtx, subject)
+	return fmt.Sprintf(":.%s:%s", schemaCtx, subject)
 }
 
 // Get retrieves the schema with the given name and version. If the schema does not exist, an error is returned.
