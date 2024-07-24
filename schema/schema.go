@@ -54,6 +54,9 @@ func Create(ctx context.Context, typ schema.Type, subject string, bytes []byte) 
 	return resp.Schema, nil
 }
 
+// qualifiedSubject returns a "fully qualified" schema subject name,
+// i.e. prefixes the input subject name with the schema context name.
+// We plan adding support for proper schema contexts: https://github.com/ConduitIO/conduit/issues/1721
 func qualifiedSubject(ctx context.Context, subject string) string {
 	schemaCtx := GetSchemaContextName(ctx)
 	if schemaCtx == "" {
