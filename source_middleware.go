@@ -65,11 +65,11 @@ func SourceWithMiddleware(s Source, middleware ...SourceMiddleware) Source {
 // -- SourceWithSchemaExtraction ----------------------------------------------
 
 const (
-	configSourceSchemaExtractionType           = "sdk.schemaExtraction.type"
-	configSourceSchemaExtractionPayloadEncode  = "sdk.schemaExtraction.payload.encode"
-	configSourceSchemaExtractionPayloadSubject = "sdk.schemaExtraction.payload.subject"
-	configSourceSchemaExtractionKeyEncode      = "sdk.schemaExtraction.key.encode"
-	configSourceSchemaExtractionKeySubject     = "sdk.schemaExtraction.key.subject"
+	configSourceSchemaExtractionType           = "sdk.schema.extract.type"
+	configSourceSchemaExtractionPayloadEncode  = "sdk.schema.extract.payload.enable"
+	configSourceSchemaExtractionPayloadSubject = "sdk.schema.extract.payload.subject"
+	configSourceSchemaExtractionKeyEncode      = "sdk.schema.extract.key.enable"
+	configSourceSchemaExtractionKeySubject     = "sdk.schema.extract.key.subject"
 )
 
 // SourceWithSchemaExtractionConfig is the configuration for the
@@ -427,7 +427,7 @@ func (c SourceWithSchemaContextConfig) Apply(m SourceMiddleware) {
 
 func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 	return config.Parameters{
-		c.UseContextParameterName(): config.Parameter{
+		c.ContextEnableParameterName(): config.Parameter{
 			Default: strconv.FormatBool(*c.UseContext),
 			Description: "Specifies whether to use a schema context name. If set to false, no schema context name will " +
 				"be used, and schemas will be saved with the subject name specified in the connector " +
@@ -454,8 +454,8 @@ func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 	}
 }
 
-func (c SourceWithSchemaContextConfig) UseContextParameterName() string {
-	return "sdk.schema.context.use"
+func (c SourceWithSchemaContextConfig) ContextEnableParameterName() string {
+	return "sdk.schema.context.enable"
 }
 
 func (c SourceWithSchemaContextConfig) ContextNameParameterName() string {
@@ -497,10 +497,10 @@ func (s *sourceWithSchemaContext) Parameters() config.Parameters {
 
 func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Config) error {
 	s.useContext = *s.mwCfg.UseContext
-	if useStr, ok := cfg[s.mwCfg.UseContextParameterName()]; ok {
+	if useStr, ok := cfg[s.mwCfg.ContextEnableParameterName()]; ok {
 		use, err := strconv.ParseBool(useStr)
 		if err != nil {
-			return fmt.Errorf("could not parse `sdk.schema.context.use`, input %v: %w", useStr, err)
+			return fmt.Errorf("could not parse `%v`, input %v: %w", s.mwCfg.ContextEnableParameterName(), useStr, err)
 		}
 		s.useContext = use
 	}

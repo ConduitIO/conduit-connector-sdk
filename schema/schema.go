@@ -81,6 +81,10 @@ func Get(ctx context.Context, subject string, version int) (schema.Schema, error
 type schemaContextNameKey struct{}
 
 func WithSchemaContextName(ctx context.Context, schemaCtxName string) context.Context {
+	if schemaCtxName == "" {
+		return ctx
+	}
+
 	return context.WithValue(ctx, schemaContextNameKey{}, schemaCtxName)
 }
 

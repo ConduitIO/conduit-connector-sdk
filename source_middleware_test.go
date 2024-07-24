@@ -31,7 +31,9 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestWithSourceWithSchemaConfig(t *testing.T) {
+// -- SourceWithSchemaExtraction -----------------------------------------------
+
+func TestSourceWithSchemaExtractionConfig(t *testing.T) {
 	is := is.New(t)
 
 	wantCfg := SourceWithSchemaExtractionConfig{
@@ -47,7 +49,7 @@ func TestWithSourceWithSchemaConfig(t *testing.T) {
 	is.Equal(have.Config, wantCfg)
 }
 
-func TestSourceWithSchema_Parameters(t *testing.T) {
+func TestSourceWithSchemaExtractionConfig_Parameters(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
@@ -68,15 +70,13 @@ func TestSourceWithSchema_Parameters(t *testing.T) {
 	is.Equal(len(got), 6) // expected middleware to inject 5 parameters
 }
 
-func TestSourceWithSchema_Configure(t *testing.T) {
+func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 	ctx := context.Background()
 
 	connectorID := uuid.NewString()
 	ctx = internal.Enrich(ctx, pconnector.PluginConfig{ConnectorID: connectorID})
-	boolPtr := func(b bool) *bool { return &b }
-	strPtr := func(s string) *string { return &s }
 
 	testCases := []struct {
 		name       string
@@ -174,9 +174,7 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 	}
 }
 
-// -- SourceWithSchemaExtraction -----------------------------------------------
-
-func TestSourceWithSchema_Read(t *testing.T) {
+func TestSourceWithSchemaExtractionConfig_Read(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
@@ -423,7 +421,7 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 				ContextName: strPtr("foobar"),
 			},
 			connectorCfg: config.Config{
-				"sdk.schema.context.use": "true",
+				"sdk.schema.context.enable": "true",
 			},
 			wantContextName: "foobar",
 		},
