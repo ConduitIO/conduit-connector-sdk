@@ -435,7 +435,13 @@ func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 			Type: config.ParameterTypeBool,
 		},
 		c.ContextNameParameterName(): config.Parameter{
-			Default: *c.ContextName,
+			Default: func() string {
+				if c.ContextName == nil {
+					return ""
+				}
+
+				return *c.ContextName
+			}(),
 			Description: func() string {
 				d := "Schema context name to be used. Used as a prefix for all schema subject names."
 				if c.ContextName == nil {
