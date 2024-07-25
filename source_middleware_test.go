@@ -37,10 +37,10 @@ func TestSourceWithSchemaExtractionConfig(t *testing.T) {
 	is := is.New(t)
 
 	wantCfg := SourceWithSchemaExtractionConfig{
-		PayloadEncode:  boolPtr(true),
-		KeyEncode:      boolPtr(true),
-		PayloadSubject: strPtr("foo"),
-		KeySubject:     strPtr("bar"),
+		PayloadEncode:  ptr(true),
+		KeyEncode:      ptr(true),
+		PayloadSubject: ptr("foo"),
+		KeySubject:     ptr("bar"),
 	}
 
 	have := &SourceWithSchemaExtraction{}
@@ -106,8 +106,8 @@ func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
 		name: "disabled by default",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadEncode: boolPtr(false),
-				KeyEncode:     boolPtr(false),
+				PayloadEncode: ptr(false),
+				KeyEncode:     ptr(false),
 			},
 		},
 		have: config.Config{},
@@ -130,8 +130,8 @@ func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
 		name: "static default payload subject",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadSubject: strPtr("foo"),
-				KeySubject:     strPtr("bar"),
+				PayloadSubject: ptr("foo"),
+				KeySubject:     ptr("bar"),
 			},
 		},
 		have: config.Config{},
@@ -399,8 +399,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "custom context in middleware, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  boolPtr(true),
-				ContextName: strPtr("foobar"),
+				UseContext:  ptr(true),
+				ContextName: ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "foobar",
@@ -408,8 +408,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "middleware config: use context false, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  boolPtr(false),
-				ContextName: strPtr("foobar"),
+				UseContext:  ptr(false),
+				ContextName: ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "",
@@ -417,8 +417,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides use context",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  boolPtr(false),
-				ContextName: strPtr("foobar"),
+				UseContext:  ptr(false),
+				ContextName: ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.enable": "true",
@@ -428,8 +428,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides context name, non-empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  boolPtr(true),
-				ContextName: strPtr("foobar"),
+				UseContext:  ptr(true),
+				ContextName: ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",
@@ -440,8 +440,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides context name, empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  boolPtr(true),
-				ContextName: strPtr("foobar"),
+				UseContext:  ptr(true),
+				ContextName: ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",
@@ -509,6 +509,6 @@ func TestSourceWithSchemaContext_Open(t *testing.T) {
 	is.NoErr(err)
 }
 
-func boolPtr(b bool) *bool { return &b }
-
-func strPtr(s string) *string { return &s }
+func ptr[T any](t T) *T {
+	return &t
+}
