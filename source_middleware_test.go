@@ -411,8 +411,8 @@ func TestSourceWithSchemaContext_Parameters(t *testing.T) {
 		{
 			name: "custom middleware config",
 			mwCfg: SourceWithSchemaContextConfig{
-				UseContext:  ptr(false),
-				ContextName: ptr("foobar"),
+				Enable: ptr(false),
+				Name:   ptr("foobar"),
 			},
 			wantParams: config.Parameters{
 				"sdk.schema.context.enable": {
@@ -478,8 +478,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "custom context in middleware, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  ptr(true),
-				ContextName: ptr("foobar"),
+				Enable: ptr(true),
+				Name:   ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "foobar",
@@ -487,8 +487,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "middleware config: use context false, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  ptr(false),
-				ContextName: ptr("foobar"),
+				Enable: ptr(false),
+				Name:   ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "",
@@ -496,8 +496,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides use context",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  ptr(false),
-				ContextName: ptr("foobar"),
+				Enable: ptr(false),
+				Name:   ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.enable": "true",
@@ -507,8 +507,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides context name, non-empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  ptr(true),
-				ContextName: ptr("foobar"),
+				Enable: ptr(true),
+				Name:   ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",
@@ -519,8 +519,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides context name, empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				UseContext:  ptr(true),
-				ContextName: ptr("foobar"),
+				Enable: ptr(true),
+				Name:   ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",

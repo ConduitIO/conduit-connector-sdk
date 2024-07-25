@@ -386,8 +386,8 @@ func (s *sourceWithSchemaExtraction) encodeWithSchema(sch schema.Schema, data an
 // -- SourceWithSchemaContext --------------------------------------------------
 
 type SourceWithSchemaContextConfig struct {
-	UseContext  *bool
-	ContextName *string
+	Enable *bool
+	Name   *string
 }
 
 // Apply sets the default configuration for the SourceWithSchemaExtraction middleware.
@@ -400,24 +400,24 @@ func (c SourceWithSchemaContextConfig) Apply(m SourceMiddleware) {
 
 func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 	return config.Parameters{
-		c.ContextEnableParameterName(): config.Parameter{
-			Default: strconv.FormatBool(*c.UseContext),
+		c.EnableParameterName(): config.Parameter{
+			Default: strconv.FormatBool(*c.Enable),
 			Description: "Specifies whether to use a schema context name. If set to false, no schema context name will " +
 				"be used, and schemas will be saved with the subject name specified in the connector " +
 				"(not safe because of name conflicts).",
 			Type: config.ParameterTypeBool,
 		},
-		c.ContextNameParameterName(): config.Parameter{
+		c.NameParameterName(): config.Parameter{
 			Default: func() string {
-				if c.ContextName == nil {
+				if c.Name == nil {
 					return ""
 				}
 
-				return *c.ContextName
+				return *c.Name
 			}(),
 			Description: func() string {
 				d := "Schema context name to be used. Used as a prefix for all schema subject names."
-				if c.ContextName == nil {
+				if c.Name == nil {
 					d += " Defaults to the connector ID."
 				}
 				return d
@@ -427,11 +427,11 @@ func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 	}
 }
 
-func (c SourceWithSchemaContextConfig) ContextEnableParameterName() string {
+func (c SourceWithSchemaContextConfig) EnableParameterName() string {
 	return "sdk.schema.context.enable"
 }
 
-func (c SourceWithSchemaContextConfig) ContextNameParameterName() string {
+func (c SourceWithSchemaContextConfig) NameParameterName() string {
 	return "sdk.schema.context.name"
 }
 
@@ -444,8 +444,8 @@ type SourceWithSchemaContext struct {
 // Wrap a Source into the schema middleware. It will apply default configuration
 // values if they are not explicitly set.
 func (s *SourceWithSchemaContext) Wrap(impl Source) Source {
-	if s.Config.UseContext == nil {
-		s.Config.UseContext = ptr(true)
+	if s.Config.Enable == nil {
+		s.Config.Enable = ptr(true)
 	}
 
 	return &sourceWithSchemaContext{
@@ -468,11 +468,11 @@ func (s *sourceWithSchemaContext) Parameters() config.Parameters {
 }
 
 func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Config) error {
-	s.useContext = *s.mwCfg.UseContext
-	if useStr, ok := cfg[s.mwCfg.ContextEnableParameterName()]; ok {
+	s.useContext = *s.mwCfg.Enable
+	if useStr, ok := cfg[s.mwCfg.EnableParameterName()]; ok {
 		use, err := strconv.ParseBool(useStr)
 		if err != nil {
-			return fmt.Errorf("could not parse `%v`, input %v: %w", s.mwCfg.ContextEnableParameterName(), useStr, err)
+			return fmt.Errorf("could not parse `%v`, input %v: %w", s.mwCfg.EnableParameterName(), useStr, err)
 		}
 		s.useContext = use
 	}
@@ -483,10 +483,10 @@ func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Conf
 		// 2. default middleware config
 		// 3. user config
 		s.contextName = internal.ConnectorIDFromContext(ctx)
-		if s.mwCfg.ContextName != nil {
-			s.contextName = *s.mwCfg.ContextName
+		if s.mwCfg.Name != nil {
+			s.contextName = *s.mwCfg.Name
 		}
-		if ctxName, ok := cfg[s.mwCfg.ContextNameParameterName()]; ok {
+		if ctxName, ok := cfg[s.mwCfg.NameParameterName()]; ok {
 			s.contextName = ctxName
 		}
 	}
