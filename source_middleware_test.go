@@ -17,7 +17,6 @@ package sdk
 import (
 	"context"
 	"errors"
-	"github.com/google/go-cmp/cmp"
 	"maps"
 	"testing"
 	"time"
@@ -28,6 +27,7 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	sdkSchema "github.com/conduitio/conduit-connector-sdk/schema"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/matryer/is"
 	"go.uber.org/mock/gomock"
