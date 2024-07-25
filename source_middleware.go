@@ -175,21 +175,17 @@ func (s *SourceWithSchemaExtraction) Wrap(impl Source) Source {
 	}
 
 	if s.Config.KeyEnable == nil {
-		t := true
-		s.Config.KeyEnable = &t
+		s.Config.KeyEnable = ptr(true)
 	}
 	if s.Config.KeySubject == nil {
-		c := "key"
-		s.Config.KeySubject = &c
+		s.Config.KeySubject = ptr("key")
 	}
 
 	if s.Config.PayloadEnable == nil {
-		t := true
-		s.Config.PayloadEnable = &t
+		s.Config.PayloadEnable = ptr(true)
 	}
 	if s.Config.PayloadSubject == nil {
-		c := "payload"
-		s.Config.PayloadSubject = &c
+		s.Config.PayloadSubject = ptr("payload")
 	}
 
 	return &sourceWithSchemaExtraction{
@@ -449,8 +445,7 @@ type SourceWithSchemaContext struct {
 // values if they are not explicitly set.
 func (s *SourceWithSchemaContext) Wrap(impl Source) Source {
 	if s.Config.UseContext == nil {
-		t := true
-		s.Config.UseContext = &t
+		s.Config.UseContext = ptr(true)
 	}
 
 	return &sourceWithSchemaContext{
@@ -521,4 +516,8 @@ func (s *sourceWithSchemaContext) LifecycleOnUpdated(ctx context.Context, config
 
 func (s *sourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config config.Config) error {
 	return s.Source.LifecycleOnDeleted(sdkschema.WithSchemaContextName(ctx, s.contextName), config)
+}
+
+func ptr[T any](t T) *T {
+	return &t
 }

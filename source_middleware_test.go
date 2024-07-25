@@ -587,7 +587,3 @@ func TestSourceWithSchemaContext_Open(t *testing.T) {
 	err = underTest.Open(ctx, opencdc.Position{})
 	is.NoErr(err)
 }
-
-func ptr[T any](t T) *T {
-	return &t
-}
