@@ -93,8 +93,8 @@ func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
 		have:       config.Config{},
 
 		wantSchemaType:     schema.TypeAvro,
-		wantPayloadSubject: connectorID + ".payload",
-		wantKeySubject:     connectorID + ".key",
+		wantPayloadSubject: "payload",
+		wantKeySubject:     "key",
 	}, {
 		name:       "invalid schema type",
 		middleware: SourceWithSchemaExtraction{},
