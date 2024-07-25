@@ -17,6 +17,8 @@ package sdk
 import (
 	"context"
 	"errors"
+	"github.com/google/go-cmp/cmp"
+	"maps"
 	"testing"
 	"time"
 
@@ -37,8 +39,8 @@ func TestSourceWithSchemaExtractionConfig(t *testing.T) {
 	is := is.New(t)
 
 	wantCfg := SourceWithSchemaExtractionConfig{
-		PayloadEncode:  ptr(true),
-		KeyEncode:      ptr(true),
+		PayloadEnable:  ptr(true),
+		KeyEnable:      ptr(true),
 		PayloadSubject: ptr("foo"),
 		KeySubject:     ptr("bar"),
 	}
@@ -106,8 +108,8 @@ func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
 		name: "disabled by default",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadEncode: ptr(false),
-				KeyEncode:     ptr(false),
+				PayloadEnable: ptr(false),
+				KeyEnable:     ptr(false),
 			},
 		},
 		have: config.Config{},
@@ -380,6 +382,83 @@ func TestSourceWithSchemaExtractionConfig_Read(t *testing.T) {
 }
 
 // -- SourceWithSchemaContext --------------------------------------------------
+
+func TestSourceWithSchemaContext_Parameters(t *testing.T) {
+	testCases := []struct {
+		name       string
+		mwCfg      SourceWithSchemaContextConfig
+		wantParams config.Parameters
+	}{
+		{
+			name:  "default middleware config",
+			mwCfg: SourceWithSchemaContextConfig{},
+			wantParams: config.Parameters{
+				"sdk.schema.context.enable": {
+					Default: "true",
+					Description: "Specifies whether to use a schema context name. If set to false, no schema context name " +
+						"will be used, and schemas will be saved with the subject name specified in the connector " +
+						"(not safe because of name conflicts).",
+					Type: config.ParameterTypeBool,
+				},
+				"sdk.schema.context.name": {
+					Default: "",
+					Description: "Schema context name to be used. Used as a prefix for all schema subject names. " +
+						"Defaults to the connector ID.",
+					Type: config.ParameterTypeString,
+				},
+			},
+		},
+		{
+			name: "custom middleware config",
+			mwCfg: SourceWithSchemaContextConfig{
+				UseContext:  ptr(false),
+				ContextName: ptr("foobar"),
+			},
+			wantParams: config.Parameters{
+				"sdk.schema.context.enable": {
+					Default: "false",
+					Description: "Specifies whether to use a schema context name. If set to false, no schema context name " +
+						"will be used, and schemas will be saved with the subject name specified in the connector " +
+						"(not safe because of name conflicts).",
+					Type: config.ParameterTypeBool,
+				},
+				"sdk.schema.context.name": {
+					Default:     "foobar",
+					Description: "Schema context name to be used. Used as a prefix for all schema subject names.",
+					Type:        config.ParameterTypeString,
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			ctrl := gomock.NewController(t)
+			src := NewMockSource(ctrl)
+
+			s := (&SourceWithSchemaContext{
+				Config: tc.mwCfg,
+			}).Wrap(src)
+
+			connectorParams := config.Parameters{
+				"foo": {
+					Default:     "bar",
+					Description: "baz",
+				},
+			}
+
+			src.EXPECT().Parameters().Return(connectorParams)
+			got := s.Parameters()
+
+			want := config.Parameters{}
+			maps.Copy(want, connectorParams)
+			maps.Copy(want, tc.wantParams)
+
+			is.Equal("", cmp.Diff(want, got))
+		})
+	}
+}
 
 func TestSourceWithSchemaContext_Configure(t *testing.T) {
 	connID := "test-connector-id"

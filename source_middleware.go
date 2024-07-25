@@ -80,12 +80,12 @@ type SourceWithSchemaExtractionConfig struct {
 	SchemaType schema.Type
 	// Whether to extract and encode the record payload with a schema.
 	// If unset, defaults to true.
-	PayloadEncode *bool
+	PayloadEnable *bool
 	// The subject of the payload schema. If unset, defaults to "payload".
 	PayloadSubject *string
 	// Whether to extract and encode the record key with a schema.
 	// If unset, defaults to true.
-	KeyEncode *bool
+	KeyEnable *bool
 	// The subject of the key schema. If unset, defaults to "key".
 	KeySubject *string
 }
@@ -129,7 +129,7 @@ func (c SourceWithSchemaExtractionConfig) parameters() config.Parameters {
 			},
 		},
 		configSourceSchemaExtractionPayloadEncode: {
-			Default:     strconv.FormatBool(*c.PayloadEncode),
+			Default:     strconv.FormatBool(*c.PayloadEnable),
 			Type:        config.ParameterTypeBool,
 			Description: "Whether to extract and encode the record payload with a schema.",
 		},
@@ -139,7 +139,7 @@ func (c SourceWithSchemaExtractionConfig) parameters() config.Parameters {
 			Description: `The subject of the payload schema. Defaults to "payload".`,
 		},
 		configSourceSchemaExtractionKeyEncode: {
-			Default:     strconv.FormatBool(*c.KeyEncode),
+			Default:     strconv.FormatBool(*c.KeyEnable),
 			Type:        config.ParameterTypeBool,
 			Description: "Whether to extract and encode the record key with a schema.",
 		},
@@ -174,18 +174,18 @@ func (s *SourceWithSchemaExtraction) Wrap(impl Source) Source {
 		s.Config.SchemaType = schema.TypeAvro
 	}
 
-	if s.Config.KeyEncode == nil {
+	if s.Config.KeyEnable == nil {
 		t := true
-		s.Config.KeyEncode = &t
+		s.Config.KeyEnable = &t
 	}
 	if s.Config.KeySubject == nil {
 		c := "key"
 		s.Config.KeySubject = &c
 	}
 
-	if s.Config.PayloadEncode == nil {
+	if s.Config.PayloadEnable == nil {
 		t := true
-		s.Config.PayloadEncode = &t
+		s.Config.PayloadEnable = &t
 	}
 	if s.Config.PayloadSubject == nil {
 		c := "payload"
@@ -230,7 +230,7 @@ func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config confi
 		}
 	}
 
-	encodeKey := *s.config.KeyEncode
+	encodeKey := *s.config.KeyEnable
 	if val, ok := config[configSourceSchemaExtractionKeyEncode]; ok {
 		encodeKey, err = strconv.ParseBool(val)
 		if err != nil {
@@ -244,7 +244,7 @@ func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config confi
 		}
 	}
 
-	encodePayload := *s.config.PayloadEncode
+	encodePayload := *s.config.PayloadEnable
 	if val, ok := config[configSourceSchemaExtractionPayloadEncode]; ok {
 		encodePayload, err = strconv.ParseBool(val)
 		if err != nil {
