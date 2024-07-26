@@ -16,6 +16,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconduit"
@@ -42,7 +43,7 @@ var Service = newInMemoryService()
 // Create creates a new schema with the given name and bytes. The schema type must be Avro.
 func Create(ctx context.Context, typ schema.Type, subject string, bytes []byte) (schema.Schema, error) {
 	resp, err := Service.CreateSchema(ctx, pconduit.CreateSchemaRequest{
-		Subject: subject,
+		Subject: qualifiedSubject(ctx, subject),
 		Type:    typ,
 		Bytes:   bytes,
 	})
@@ -51,6 +52,18 @@ func Create(ctx context.Context, typ schema.Type, subject string, bytes []byte) 
 	}
 
 	return resp.Schema, nil
+}
+
+// qualifiedSubject returns a "fully qualified" schema subject name,
+// i.e. prefixes the input subject name with the schema context name.
+// We plan adding support for proper schema contexts: https://github.com/ConduitIO/conduit/issues/1721
+func qualifiedSubject(ctx context.Context, subject string) string {
+	schemaCtx := GetSchemaContextName(ctx)
+	if schemaCtx == "" {
+		return subject
+	}
+
+	return fmt.Sprintf("%s:%s", schemaCtx, subject)
 }
 
 // Get retrieves the schema with the given name and version. If the schema does not exist, an error is returned.
@@ -65,6 +78,32 @@ func Get(ctx context.Context, subject string, version int) (schema.Schema, error
 
 	return resp.Schema, nil
 }
+
+// -- Schema context utilities -------------------------------------------------
+
+type schemaContextNameKey struct{}
+
+// WithSchemaContextName wraps ctx and returns a context that contains the provided schema context name.
+func WithSchemaContextName(ctx context.Context, schemaCtxName string) context.Context {
+	if schemaCtxName == "" {
+		return ctx
+	}
+
+	return context.WithValue(ctx, schemaContextNameKey{}, schemaCtxName)
+}
+
+// GetSchemaContextName fetches the schema context name from the context.
+// If the context does not contain a schema context name it returns an empty string.
+func GetSchemaContextName(ctx context.Context) string {
+	name := ctx.Value(schemaContextNameKey{})
+	if name != nil {
+		return name.(string) //nolint:forcetypeassert // only this package can set the value, it has to be a string
+	}
+
+	return ""
+}
+
+// -- Schema service initializer -----------------------------------------------
 
 type standaloneInitializer struct{}
 

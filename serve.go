@@ -81,9 +81,9 @@ func serve(c Connector) error {
 }
 
 func getPluginConfig() (pconnector.PluginConfig, error) {
-	token := os.Getenv(pconduit.EnvConduitConnectorSchemaToken)
+	token := os.Getenv(pconduit.EnvConduitConnectorToken)
 	if token == "" {
-		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorSchemaToken, "v0.11.0")
+		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorToken, "v0.11.0")
 	}
 
 	connectorID := os.Getenv(pconduit.EnvConduitConnectorID)

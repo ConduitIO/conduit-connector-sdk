@@ -42,7 +42,9 @@ type SourceMiddlewareOption func(SourceMiddleware)
 func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware {
 	middleware := []SourceMiddleware{
 		&SourceWithSchemaExtraction{},
+		&SourceWithSchemaContext{},
 	}
+
 	// apply options to all middleware
 	for _, m := range middleware {
 		for _, opt := range opts {
@@ -53,21 +55,21 @@ func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware 
 }
 
 // SourceWithMiddleware wraps the source into the supplied middleware.
-func SourceWithMiddleware(d Source, middleware ...SourceMiddleware) Source {
+func SourceWithMiddleware(s Source, middleware ...SourceMiddleware) Source {
 	for _, m := range middleware {
-		d = m.Wrap(d)
+		s = m.Wrap(s)
 	}
-	return d
+	return s
 }
 
 // -- SourceWithSchemaExtraction ----------------------------------------------
 
 const (
-	configSourceSchemaExtractionType           = "sdk.schemaExtraction.type"
-	configSourceSchemaExtractionPayloadEncode  = "sdk.schemaExtraction.payload.encode"
-	configSourceSchemaExtractionPayloadSubject = "sdk.schemaExtraction.payload.subject"
-	configSourceSchemaExtractionKeyEncode      = "sdk.schemaExtraction.key.encode"
-	configSourceSchemaExtractionKeySubject     = "sdk.schemaExtraction.key.subject"
+	configSourceSchemaExtractionType           = "sdk.schema.extract.type"
+	configSourceSchemaExtractionPayloadEncode  = "sdk.schema.extract.payload.enable"
+	configSourceSchemaExtractionPayloadSubject = "sdk.schema.extract.payload.subject"
+	configSourceSchemaExtractionKeyEncode      = "sdk.schema.extract.key.enable"
+	configSourceSchemaExtractionKeySubject     = "sdk.schema.extract.key.subject"
 )
 
 // SourceWithSchemaExtractionConfig is the configuration for the
@@ -78,13 +80,13 @@ type SourceWithSchemaExtractionConfig struct {
 	SchemaType schema.Type
 	// Whether to extract and encode the record payload with a schema.
 	// If unset, defaults to true.
-	PayloadEncode *bool
-	// The subject of the payload schema. Defaults to the connector ID with a ".payload" postfix.
+	PayloadEnable *bool
+	// The subject of the payload schema. If unset, defaults to "payload".
 	PayloadSubject *string
 	// Whether to extract and encode the record key with a schema.
 	// If unset, defaults to true.
-	KeyEncode *bool
-	// The subject of the key schema. Defaults to the connector ID with a ".key" postfix.
+	KeyEnable *bool
+	// The subject of the key schema. If unset, defaults to "key".
 	KeySubject *string
 }
 
@@ -127,46 +129,24 @@ func (c SourceWithSchemaExtractionConfig) parameters() config.Parameters {
 			},
 		},
 		configSourceSchemaExtractionPayloadEncode: {
-			Default:     strconv.FormatBool(*c.PayloadEncode),
+			Default:     strconv.FormatBool(*c.PayloadEnable),
 			Type:        config.ParameterTypeBool,
 			Description: "Whether to extract and encode the record payload with a schema.",
 		},
 		configSourceSchemaExtractionPayloadSubject: {
-			Default: func() string {
-				if c.PayloadSubject != nil {
-					return *c.PayloadSubject
-				}
-				return ""
-			}(),
-			Type: config.ParameterTypeString,
-			Description: func() string {
-				desc := "The subject of the payload schema."
-				if c.PayloadSubject == nil {
-					desc += ` Defaults to the connector ID with a ".payload" postfix.`
-				}
-				return desc
-			}(),
+			Default:     *c.PayloadSubject,
+			Type:        config.ParameterTypeString,
+			Description: `The subject of the payload schema. Defaults to "payload".`,
 		},
 		configSourceSchemaExtractionKeyEncode: {
-			Default:     strconv.FormatBool(*c.KeyEncode),
+			Default:     strconv.FormatBool(*c.KeyEnable),
 			Type:        config.ParameterTypeBool,
 			Description: "Whether to extract and encode the record key with a schema.",
 		},
 		configSourceSchemaExtractionKeySubject: {
-			Default: func() string {
-				if c.KeySubject != nil {
-					return *c.KeySubject
-				}
-				return ""
-			}(),
-			Type: config.ParameterTypeString,
-			Description: func() string {
-				desc := "The subject of the payload schema."
-				if c.KeySubject == nil {
-					desc += ` Defaults to the connector ID with a ".key" postfix.`
-				}
-				return desc
-			}(),
+			Default:     *c.KeySubject,
+			Type:        config.ParameterTypeString,
+			Description: `The subject of the key schema. Defaults to "key".`,
 		},
 	}
 }
@@ -194,13 +174,18 @@ func (s *SourceWithSchemaExtraction) Wrap(impl Source) Source {
 		s.Config.SchemaType = schema.TypeAvro
 	}
 
-	if s.Config.KeyEncode == nil {
-		t := true
-		s.Config.KeyEncode = &t
+	if s.Config.KeyEnable == nil {
+		s.Config.KeyEnable = ptr(true)
 	}
-	if s.Config.PayloadEncode == nil {
-		t := true
-		s.Config.PayloadEncode = &t
+	if s.Config.KeySubject == nil {
+		s.Config.KeySubject = ptr("key")
+	}
+
+	if s.Config.PayloadEnable == nil {
+		s.Config.PayloadEnable = ptr(true)
+	}
+	if s.Config.PayloadSubject == nil {
+		s.Config.PayloadSubject = ptr("payload")
 	}
 
 	return &sourceWithSchemaExtraction{
@@ -234,8 +219,6 @@ func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config confi
 		return err
 	}
 
-	connectorID := internal.ConnectorIDFromContext(ctx)
-
 	s.schemaType = s.config.SchemaType
 	if val, ok := config[configSourceSchemaExtractionType]; ok {
 		if err := s.schemaType.UnmarshalText([]byte(val)); err != nil {
@@ -243,7 +226,7 @@ func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config confi
 		}
 	}
 
-	encodeKey := *s.config.KeyEncode
+	encodeKey := *s.config.KeyEnable
 	if val, ok := config[configSourceSchemaExtractionKeyEncode]; ok {
 		encodeKey, err = strconv.ParseBool(val)
 		if err != nil {
@@ -251,18 +234,13 @@ func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config confi
 		}
 	}
 	if encodeKey {
-		// TODO: when adding schema context support, set DefaultKeySubject
-		//  to "key" and let the schema service attach the prefix / context.
-		s.keySubject = connectorID + ".key"
-		if s.config.KeySubject != nil {
-			s.keySubject = *s.config.KeySubject
-		}
+		s.keySubject = *s.config.KeySubject
 		if val, ok := config[configSourceSchemaExtractionKeySubject]; ok {
 			s.keySubject = val
 		}
 	}
 
-	encodePayload := *s.config.PayloadEncode
+	encodePayload := *s.config.PayloadEnable
 	if val, ok := config[configSourceSchemaExtractionPayloadEncode]; ok {
 		encodePayload, err = strconv.ParseBool(val)
 		if err != nil {
@@ -270,12 +248,7 @@ func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config confi
 		}
 	}
 	if encodePayload {
-		// TODO: when adding schema context support, set DefaultPayloadSubject
-		//  to "payload" and let the schema service attach the prefix / context.
-		s.payloadSubject = connectorID + ".payload"
-		if s.config.PayloadSubject != nil {
-			s.payloadSubject = *s.config.PayloadSubject
-		}
+		s.payloadSubject = *s.config.PayloadSubject
 		if val, ok := config[configSourceSchemaExtractionPayloadSubject]; ok {
 			s.payloadSubject = val
 		}
@@ -408,4 +381,143 @@ func (s *sourceWithSchemaExtraction) encodeWithSchema(sch schema.Schema, data an
 	}
 
 	return encoded, nil
+}
+
+// -- SourceWithSchemaContext --------------------------------------------------
+
+type SourceWithSchemaContextConfig struct {
+	Enable *bool
+	Name   *string
+}
+
+// Apply sets the default configuration for the SourceWithSchemaExtraction middleware.
+// Apply can be used as a SourceMiddlewareOption.
+func (c SourceWithSchemaContextConfig) Apply(m SourceMiddleware) {
+	if s, ok := m.(*SourceWithSchemaContext); ok {
+		s.Config = c
+	}
+}
+
+func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
+	return config.Parameters{
+		c.EnableParameterName(): config.Parameter{
+			Default: strconv.FormatBool(*c.Enable),
+			Description: "Specifies whether to use a schema context name. If set to false, no schema context name will " +
+				"be used, and schemas will be saved with the subject name specified in the connector " +
+				"(not safe because of name conflicts).",
+			Type: config.ParameterTypeBool,
+		},
+		c.NameParameterName(): config.Parameter{
+			Default: func() string {
+				if c.Name == nil {
+					return ""
+				}
+
+				return *c.Name
+			}(),
+			Description: func() string {
+				d := "Schema context name to be used. Used as a prefix for all schema subject names."
+				if c.Name == nil {
+					d += " Defaults to the connector ID."
+				}
+				return d
+			}(),
+			Type: config.ParameterTypeString,
+		},
+	}
+}
+
+func (c SourceWithSchemaContextConfig) EnableParameterName() string {
+	return "sdk.schema.context.enable"
+}
+
+func (c SourceWithSchemaContextConfig) NameParameterName() string {
+	return "sdk.schema.context.name"
+}
+
+// SourceWithSchemaContext is a middleware that makes it possible to configure
+// the schema context for records read by a source.
+type SourceWithSchemaContext struct {
+	Config SourceWithSchemaContextConfig
+}
+
+// Wrap a Source into the schema middleware. It will apply default configuration
+// values if they are not explicitly set.
+func (s *SourceWithSchemaContext) Wrap(impl Source) Source {
+	if s.Config.Enable == nil {
+		s.Config.Enable = ptr(true)
+	}
+
+	return &sourceWithSchemaContext{
+		Source: impl,
+		mwCfg:  s.Config,
+	}
+}
+
+type sourceWithSchemaContext struct {
+	Source
+	// mwCfg is the default middleware config
+	mwCfg SourceWithSchemaContextConfig
+
+	useContext  bool
+	contextName string
+}
+
+func (s *sourceWithSchemaContext) Parameters() config.Parameters {
+	return mergeParameters(s.Source.Parameters(), s.mwCfg.parameters())
+}
+
+func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Config) error {
+	s.useContext = *s.mwCfg.Enable
+	if useStr, ok := cfg[s.mwCfg.EnableParameterName()]; ok {
+		use, err := strconv.ParseBool(useStr)
+		if err != nil {
+			return fmt.Errorf("could not parse `%v`, input %v: %w", s.mwCfg.EnableParameterName(), useStr, err)
+		}
+		s.useContext = use
+	}
+
+	if s.useContext {
+		// the order of precedence (least to most) is:
+		// 1. connector ID (if no context name is configured anywhere)
+		// 2. default middleware config
+		// 3. user config
+		s.contextName = internal.ConnectorIDFromContext(ctx)
+		if s.mwCfg.Name != nil {
+			s.contextName = *s.mwCfg.Name
+		}
+		if ctxName, ok := cfg[s.mwCfg.NameParameterName()]; ok {
+			s.contextName = ctxName
+		}
+	}
+
+	return s.Source.Configure(sdkschema.WithSchemaContextName(ctx, s.contextName), cfg)
+}
+
+func (s *sourceWithSchemaContext) Open(ctx context.Context, pos opencdc.Position) error {
+	return s.Source.Open(sdkschema.WithSchemaContextName(ctx, s.contextName), pos)
+}
+
+func (s *sourceWithSchemaContext) Read(ctx context.Context) (opencdc.Record, error) {
+	return s.Source.Read(sdkschema.WithSchemaContextName(ctx, s.contextName))
+}
+
+func (s *sourceWithSchemaContext) Teardown(ctx context.Context) error {
+	return s.Source.Teardown(sdkschema.WithSchemaContextName(ctx, s.contextName))
+}
+
+func (s *sourceWithSchemaContext) LifecycleOnCreated(ctx context.Context, config config.Config) error {
+	return s.Source.LifecycleOnCreated(sdkschema.WithSchemaContextName(ctx, s.contextName), config)
+}
+
+func (s *sourceWithSchemaContext) LifecycleOnUpdated(ctx context.Context, configBefore, configAfter config.Config) error {
+	return s.Source.LifecycleOnUpdated(sdkschema.WithSchemaContextName(ctx, s.contextName), configBefore, configAfter)
+}
+
+func (s *sourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config config.Config) error {
+	return s.Source.LifecycleOnDeleted(sdkschema.WithSchemaContextName(ctx, s.contextName), config)
+}
+
+func ptr[T any](t T) *T {
+	return &t
 }
