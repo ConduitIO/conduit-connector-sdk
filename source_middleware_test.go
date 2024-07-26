@@ -17,6 +17,7 @@ package sdk
 import (
 	"context"
 	"errors"
+	"maps"
 	"testing"
 	"time"
 
@@ -26,21 +27,22 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	sdkSchema "github.com/conduitio/conduit-connector-sdk/schema"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/matryer/is"
 	"go.uber.org/mock/gomock"
 )
 
-func TestWithSourceWithSchemaConfig(t *testing.T) {
+// -- SourceWithSchemaExtraction -----------------------------------------------
+
+func TestSourceWithSchemaExtraction(t *testing.T) {
 	is := is.New(t)
 
-	boolPtr := func(b bool) *bool { return &b }
-	strPtr := func(s string) *string { return &s }
 	wantCfg := SourceWithSchemaExtractionConfig{
-		PayloadEncode:  boolPtr(true),
-		KeyEncode:      boolPtr(true),
-		PayloadSubject: strPtr("foo"),
-		KeySubject:     strPtr("bar"),
+		PayloadEnable:  ptr(true),
+		KeyEnable:      ptr(true),
+		PayloadSubject: ptr("foo"),
+		KeySubject:     ptr("bar"),
 	}
 
 	have := &SourceWithSchemaExtraction{}
@@ -49,7 +51,7 @@ func TestWithSourceWithSchemaConfig(t *testing.T) {
 	is.Equal(have.Config, wantCfg)
 }
 
-func TestSourceWithSchema_Parameters(t *testing.T) {
+func TestSourceWithSchemaExtractionConfig_Parameters(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
@@ -70,15 +72,13 @@ func TestSourceWithSchema_Parameters(t *testing.T) {
 	is.Equal(len(got), 6) // expected middleware to inject 5 parameters
 }
 
-func TestSourceWithSchema_Configure(t *testing.T) {
+func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 	ctx := context.Background()
 
 	connectorID := uuid.NewString()
 	ctx = internal.Enrich(ctx, pconnector.PluginConfig{ConnectorID: connectorID})
-	boolPtr := func(b bool) *bool { return &b }
-	strPtr := func(s string) *string { return &s }
 
 	testCases := []struct {
 		name       string
@@ -95,8 +95,8 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		have:       config.Config{},
 
 		wantSchemaType:     schema.TypeAvro,
-		wantPayloadSubject: connectorID + ".payload",
-		wantKeySubject:     connectorID + ".key",
+		wantPayloadSubject: "payload",
+		wantKeySubject:     "key",
 	}, {
 		name:       "invalid schema type",
 		middleware: SourceWithSchemaExtraction{},
@@ -108,8 +108,8 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		name: "disabled by default",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadEncode: boolPtr(false),
-				KeyEncode:     boolPtr(false),
+				PayloadEnable: ptr(false),
+				KeyEnable:     ptr(false),
 			},
 		},
 		have: config.Config{},
@@ -132,8 +132,8 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 		name: "static default payload subject",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadSubject: strPtr("foo"),
-				KeySubject:     strPtr("bar"),
+				PayloadSubject: ptr("foo"),
+				KeySubject:     ptr("bar"),
 			},
 		},
 		have: config.Config{},
@@ -176,7 +176,7 @@ func TestSourceWithSchema_Configure(t *testing.T) {
 	}
 }
 
-func TestSourceWithSchema_Read(t *testing.T) {
+func TestSourceWithSchemaExtractionConfig_Read(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
@@ -379,4 +379,211 @@ func TestSourceWithSchema_Read(t *testing.T) {
 			is.Equal(gotPayloadAfter, wantPayloadAfter)
 		})
 	}
+}
+
+// -- SourceWithSchemaContext --------------------------------------------------
+
+func TestSourceWithSchemaContext_Parameters(t *testing.T) {
+	testCases := []struct {
+		name       string
+		mwCfg      SourceWithSchemaContextConfig
+		wantParams config.Parameters
+	}{
+		{
+			name:  "default middleware config",
+			mwCfg: SourceWithSchemaContextConfig{},
+			wantParams: config.Parameters{
+				"sdk.schema.context.enable": {
+					Default: "true",
+					Description: "Specifies whether to use a schema context name. If set to false, no schema context name " +
+						"will be used, and schemas will be saved with the subject name specified in the connector " +
+						"(not safe because of name conflicts).",
+					Type: config.ParameterTypeBool,
+				},
+				"sdk.schema.context.name": {
+					Default: "",
+					Description: "Schema context name to be used. Used as a prefix for all schema subject names. " +
+						"Defaults to the connector ID.",
+					Type: config.ParameterTypeString,
+				},
+			},
+		},
+		{
+			name: "custom middleware config",
+			mwCfg: SourceWithSchemaContextConfig{
+				Enable: ptr(false),
+				Name:   ptr("foobar"),
+			},
+			wantParams: config.Parameters{
+				"sdk.schema.context.enable": {
+					Default: "false",
+					Description: "Specifies whether to use a schema context name. If set to false, no schema context name " +
+						"will be used, and schemas will be saved with the subject name specified in the connector " +
+						"(not safe because of name conflicts).",
+					Type: config.ParameterTypeBool,
+				},
+				"sdk.schema.context.name": {
+					Default:     "foobar",
+					Description: "Schema context name to be used. Used as a prefix for all schema subject names.",
+					Type:        config.ParameterTypeString,
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			ctrl := gomock.NewController(t)
+			src := NewMockSource(ctrl)
+
+			s := (&SourceWithSchemaContext{
+				Config: tc.mwCfg,
+			}).Wrap(src)
+
+			connectorParams := config.Parameters{
+				"foo": {
+					Default:     "bar",
+					Description: "baz",
+				},
+			}
+
+			src.EXPECT().Parameters().Return(connectorParams)
+			got := s.Parameters()
+
+			want := config.Parameters{}
+			maps.Copy(want, connectorParams)
+			maps.Copy(want, tc.wantParams)
+
+			is.Equal("", cmp.Diff(want, got))
+		})
+	}
+}
+
+func TestSourceWithSchemaContext_Configure(t *testing.T) {
+	connID := "test-connector-id"
+
+	testCases := []struct {
+		name            string
+		middlewareCfg   SourceWithSchemaContextConfig
+		connectorCfg    config.Config
+		wantContextName string
+	}{
+		{
+			name:            "default middleware config, no user config",
+			middlewareCfg:   SourceWithSchemaContextConfig{},
+			connectorCfg:    config.Config{},
+			wantContextName: connID,
+		},
+		{
+			name: "custom context in middleware, no user config",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				Enable: ptr(true),
+				Name:   ptr("foobar"),
+			},
+			connectorCfg:    config.Config{},
+			wantContextName: "foobar",
+		},
+		{
+			name: "middleware config: use context false, no user config",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				Enable: ptr(false),
+				Name:   ptr("foobar"),
+			},
+			connectorCfg:    config.Config{},
+			wantContextName: "",
+		},
+		{
+			name: "user config overrides use context",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				Enable: ptr(false),
+				Name:   ptr("foobar"),
+			},
+			connectorCfg: config.Config{
+				"sdk.schema.context.enable": "true",
+			},
+			wantContextName: "foobar",
+		},
+		{
+			name: "user config overrides context name, non-empty",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				Enable: ptr(true),
+				Name:   ptr("foobar"),
+			},
+			connectorCfg: config.Config{
+				"sdk.schema.context.use":  "true",
+				"sdk.schema.context.name": "user-context-name",
+			},
+			wantContextName: "user-context-name",
+		},
+		{
+			name: "user config overrides context name, empty",
+			middlewareCfg: SourceWithSchemaContextConfig{
+				Enable: ptr(true),
+				Name:   ptr("foobar"),
+			},
+			connectorCfg: config.Config{
+				"sdk.schema.context.use":  "true",
+				"sdk.schema.context.name": "",
+			},
+			wantContextName: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			ctx := internal.ContextWithConnectorID(context.Background(), connID)
+
+			s := NewMockSource(gomock.NewController(t))
+			mw := &SourceWithSchemaContext{}
+
+			tc.middlewareCfg.Apply(mw)
+			underTest := mw.Wrap(s)
+
+			s.EXPECT().
+				Configure(gomock.Any(), tc.connectorCfg).
+				DoAndReturn(func(ctx context.Context, c config.Config) error {
+					gotContextName := sdkSchema.GetSchemaContextName(ctx)
+					is.Equal(tc.wantContextName, gotContextName)
+					return nil
+				})
+
+			err := underTest.Configure(ctx, tc.connectorCfg)
+			is.NoErr(err)
+		})
+	}
+}
+
+func TestSourceWithSchemaContext_ContextValue(t *testing.T) {
+	is := is.New(t)
+	connID := "test-connector-id"
+	connectorCfg := config.Config{
+		"sdk.schema.context.use":  "true",
+		"sdk.schema.context.name": "user-context-name",
+	}
+	wantContextName := "user-context-name"
+	ctx := internal.ContextWithConnectorID(context.Background(), connID)
+
+	s := NewMockSource(gomock.NewController(t))
+	underTest := (&SourceWithSchemaContext{}).Wrap(s)
+
+	s.EXPECT().
+		Configure(gomock.Any(), connectorCfg).
+		DoAndReturn(func(ctx context.Context, _ config.Config) error {
+			is.Equal(wantContextName, sdkSchema.GetSchemaContextName(ctx))
+			return nil
+		})
+	s.EXPECT().
+		Open(gomock.Any(), opencdc.Position{}).
+		DoAndReturn(func(ctx context.Context, _ opencdc.Position) error {
+			is.Equal(wantContextName, sdkSchema.GetSchemaContextName(ctx))
+			return nil
+		})
+
+	err := underTest.Configure(ctx, connectorCfg)
+	is.NoErr(err)
+
+	err = underTest.Open(ctx, opencdc.Position{})
+	is.NoErr(err)
 }
