@@ -117,27 +117,24 @@ type destinationPluginAdapter struct {
 
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req pconnector.DestinationConfigureRequest) (pconnector.DestinationConfigureResponse, error) {
 	ctx = internal.Enrich(ctx, a.cfg)
-
 	ctx = (&destinationWithBatch{}).setBatchConfig(ctx, DestinationWithBatchConfig{})
 
-	var errs []error
-	// Configure connector
-	errs = append(errs, a.impl.Configure(ctx, req.Config))
-	// Configure write strategy
-	errs = append(errs, a.configureWriteStrategy(ctx, req.Config))
+	err := a.impl.Configure(ctx, req.Config)
+	if err != nil {
+		return pconnector.DestinationConfigureResponse{}, err
+	}
 
-	return pconnector.DestinationConfigureResponse{}, errors.Join(errs...)
+	a.configureWriteStrategy(ctx)
+	return pconnector.DestinationConfigureResponse{}, nil
 }
 
-func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config config.Config) error {
+func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context) {
 	a.writeStrategy = &writeStrategySingle{impl: a.impl} // by default we write single records
 
 	batchConfig := (&destinationWithBatch{}).getBatchConfig(ctx)
 	if batchConfig.BatchSize > 1 || batchConfig.BatchDelay > 0 {
 		a.writeStrategy = newWriteStrategyBatch(a.impl, batchConfig.BatchSize, batchConfig.BatchDelay)
 	}
-
-	return nil
 }
 
 func (a *destinationPluginAdapter) Open(ctx context.Context, _ pconnector.DestinationOpenRequest) (pconnector.DestinationOpenResponse, error) {
