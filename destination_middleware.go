@@ -147,6 +147,11 @@ func (d *destinationWithBatch) Parameters() config.Parameters {
 }
 
 func (d *destinationWithBatch) Configure(ctx context.Context, config config.Config) error {
+	err := d.Destination.Configure(ctx, config)
+	if err != nil {
+		return err
+	}
+
 	cfg := d.defaults
 
 	if batchSizeRaw := config[configDestinationBatchSize]; batchSizeRaw != "" {
@@ -180,7 +185,7 @@ func (d *destinationWithBatch) Configure(ctx context.Context, config config.Conf
 	// changing the interface.
 	d.setBatchConfig(ctx, cfg)
 
-	return d.Destination.Configure(ctx, config)
+	return nil
 }
 
 // setBatchEnabled stores the boolean in the context. If the context already
