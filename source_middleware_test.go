@@ -35,7 +35,7 @@ import (
 
 // -- SourceWithSchemaExtraction -----------------------------------------------
 
-func TestSourceWithSchemaExtractionConfig(t *testing.T) {
+func TestSourceWithSchemaExtraction(t *testing.T) {
 	is := is.New(t)
 
 	wantCfg := SourceWithSchemaExtractionConfig{
@@ -555,7 +555,7 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 	}
 }
 
-func TestSourceWithSchemaContext_Open(t *testing.T) {
+func TestSourceWithSchemaContext_ContextValue(t *testing.T) {
 	is := is.New(t)
 	connID := "test-connector-id"
 	connectorCfg := config.Config{

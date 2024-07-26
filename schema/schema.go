@@ -83,6 +83,7 @@ func Get(ctx context.Context, subject string, version int) (schema.Schema, error
 
 type schemaContextNameKey struct{}
 
+// WithSchemaContextName wraps ctx and returns a context that contains the provided schema context name.
 func WithSchemaContextName(ctx context.Context, schemaCtxName string) context.Context {
 	if schemaCtxName == "" {
 		return ctx
@@ -91,6 +92,8 @@ func WithSchemaContextName(ctx context.Context, schemaCtxName string) context.Co
 	return context.WithValue(ctx, schemaContextNameKey{}, schemaCtxName)
 }
 
+// GetSchemaContextName fetches the schema context name from the context.
+// If the context does not contain a schema context name it returns an empty string.
 func GetSchemaContextName(ctx context.Context) string {
 	name := ctx.Value(schemaContextNameKey{})
 	if name != nil {
