@@ -74,7 +74,7 @@ const (
 	configDestinationBatchDelay = "sdk.batch.delay"
 )
 
-type ctxKeyBatchEnabled struct{}
+type ctxKeyBatchConfig struct{}
 
 // DestinationWithBatchConfig is the configuration for the
 // DestinationWithBatch middleware. Fields set to their zero value are
@@ -147,21 +147,38 @@ func (d *destinationWithBatch) Parameters() config.Parameters {
 }
 
 func (d *destinationWithBatch) Configure(ctx context.Context, config config.Config) error {
+	cfg := d.defaults
+
+	if batchSizeRaw := config[configDestinationBatchSize]; batchSizeRaw != "" {
+		batchSizeInt, err := strconv.Atoi(batchSizeRaw)
+		if err != nil {
+			return fmt.Errorf("invalid %q: %w", configDestinationBatchSize, err)
+		}
+		cfg.BatchSize = batchSizeInt
+	}
+
+	if delayRaw := config[configDestinationBatchDelay]; delayRaw != "" {
+		delayDur, err := time.ParseDuration(delayRaw)
+		if err != nil {
+			return fmt.Errorf("invalid %q: %w", configDestinationBatchDelay, err)
+		}
+		cfg.BatchDelay = delayDur
+	}
+
+	if cfg.BatchSize < 0 {
+		return fmt.Errorf("invalid %q: must not be negative", configDestinationBatchSize)
+	}
+	if cfg.BatchDelay < 0 {
+		return fmt.Errorf("invalid %q: must not be negative", configDestinationBatchDelay)
+	}
+
 	// Batching is actually implemented in the plugin adapter because it is the
 	// only place we have access to acknowledgments.
 	// We need to signal back to the adapter that batching is enabled. We do
 	// this by changing a pointer that is stored in the context. It's a bit
 	// hacky, but the only way to propagate a value back to the adapter without
 	// changing the interface.
-	d.setBatchEnabled(ctx, true)
-
-	// set defaults in the config, they will be visible to the caller as well
-	if config[configDestinationBatchSize] == "" {
-		config[configDestinationBatchSize] = strconv.Itoa(d.defaults.BatchSize)
-	}
-	if config[configDestinationBatchDelay] == "" {
-		config[configDestinationBatchDelay] = d.defaults.BatchDelay.String()
-	}
+	d.setBatchConfig(ctx, cfg)
 
 	return d.Destination.Configure(ctx, config)
 }
@@ -171,22 +188,22 @@ func (d *destinationWithBatch) Configure(ctx context.Context, config config.Conf
 // same context, otherwise it will return a new context with the stored value.
 // This is used to signal to destinationPluginAdapter if the Destination is
 // wrapped into DestinationWithBatchConfig middleware.
-func (*destinationWithBatch) setBatchEnabled(ctx context.Context, enabled bool) context.Context {
-	flag, ok := ctx.Value(ctxKeyBatchEnabled{}).(*bool)
+func (*destinationWithBatch) setBatchConfig(ctx context.Context, cfg DestinationWithBatchConfig) context.Context {
+	ctxCfg, ok := ctx.Value(ctxKeyBatchConfig{}).(*DestinationWithBatchConfig)
 	if ok {
-		*flag = enabled
+		*ctxCfg = cfg
 	} else {
-		ctx = context.WithValue(ctx, ctxKeyBatchEnabled{}, &enabled)
+		ctx = context.WithValue(ctx, ctxKeyBatchConfig{}, &cfg)
 	}
 	return ctx
 }
 
-func (*destinationWithBatch) getBatchEnabled(ctx context.Context) bool {
-	flag, ok := ctx.Value(ctxKeyBatchEnabled{}).(*bool)
+func (*destinationWithBatch) getBatchConfig(ctx context.Context) DestinationWithBatchConfig {
+	ctxCfg, ok := ctx.Value(ctxKeyBatchConfig{}).(*DestinationWithBatchConfig)
 	if !ok {
-		return false
+		return DestinationWithBatchConfig{}
 	}
-	return *flag
+	return *ctxCfg
 }
 
 // -- DestinationWithRateLimit -------------------------------------------------

@@ -56,14 +56,14 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 		name       string
 		middleware DestinationWithBatch
 		have       config.Config
-		want       config.Config
+		want       DestinationWithBatchConfig
 	}{{
 		name:       "empty config",
 		middleware: DestinationWithBatch{},
 		have:       config.Config{},
-		want: config.Config{
-			configDestinationBatchSize:  "0",
-			configDestinationBatchDelay: "0s",
+		want: DestinationWithBatchConfig{
+			BatchSize:  0,
+			BatchDelay: 0,
 		},
 	}, {
 		name: "empty config, custom defaults",
@@ -74,9 +74,9 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 			},
 		},
 		have: config.Config{},
-		want: config.Config{
-			configDestinationBatchSize:  "5",
-			configDestinationBatchDelay: "1s",
+		want: DestinationWithBatchConfig{
+			BatchSize:  5,
+			BatchDelay: time.Second * 1,
 		},
 	}, {
 		name: "config with values",
@@ -90,9 +90,9 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 			configDestinationBatchSize:  "12",
 			configDestinationBatchDelay: "2s",
 		},
-		want: config.Config{
-			configDestinationBatchSize:  "12",
-			configDestinationBatchDelay: "2s",
+		want: DestinationWithBatchConfig{
+			BatchSize:  12,
+			BatchDelay: time.Second * 2,
 		},
 	}}
 
@@ -101,14 +101,13 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 			is := is.New(t)
 			d := tt.middleware.Wrap(dst)
 
-			ctx := (&destinationWithBatch{}).setBatchEnabled(context.Background(), false)
+			ctx := (&destinationWithBatch{}).setBatchConfig(context.Background(), DestinationWithBatchConfig{})
 			dst.EXPECT().Configure(ctx, gomock.AssignableToTypeOf(config.Config{})).Return(nil)
 
 			err := d.Configure(ctx, tt.have)
 
 			is.NoErr(err)
-			is.Equal(tt.have, tt.want) // expected Configure to inject default parameters
-			is.True((&destinationWithBatch{}).getBatchEnabled(ctx))
+			is.Equal(tt.want, (&destinationWithBatch{}).getBatchConfig(ctx))
 		})
 	}
 }
