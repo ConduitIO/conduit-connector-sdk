@@ -551,7 +551,20 @@ func (c DestinationWithSchemaExtractionConfig) parameters() config.Parameters {
 	}
 }
 
-// DestinationWithSchemaExtraction is a middleware that TODO.
+// DestinationWithSchemaExtraction is a middleware that extracts and decodes the
+// key and/or payload of a record using a schema. It takes the schema subject and
+// version from the record metadata, fetches the schema from the schema service,
+// and decodes the key and/or payload using the schema.
+// If the schema subject and version is not found in the record metadata, it will
+// log a warning and skip decoding the key and/or payload. This middleware is
+// useful when the source connector sends the data with the schema attached.
+// This middleware is the counterpart of SourceWithSchemaExtraction.
+//
+// It adds two parameters to the destination config:
+//   - `sdk.schema.extract.key.enabled` - Whether to extract and decode the
+//     record key with a schema.
+//   - `sdk.schema.extract.payload.enabled` - Whether to extract and decode the
+//     record payload with a schema.
 type DestinationWithSchemaExtraction struct {
 	Config DestinationWithSchemaExtractionConfig
 }
