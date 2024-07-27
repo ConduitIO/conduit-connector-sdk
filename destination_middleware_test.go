@@ -22,10 +22,15 @@ import (
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
+	"github.com/conduitio/conduit-connector-sdk/internal"
+	"github.com/google/uuid"
 	"github.com/matryer/is"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/time/rate"
 )
+
+// -- DestinationWithBatch -----------------------------------------------------
 
 func TestDestinationWithBatch_Parameters(t *testing.T) {
 	is := is.New(t)
@@ -111,6 +116,8 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 		})
 	}
 }
+
+// -- DestinationWithRateLimit -------------------------------------------------
 
 func TestDestinationWithRateLimit_Parameters(t *testing.T) {
 	is := is.New(t)
@@ -296,6 +303,8 @@ func TestDestinationWithRateLimit_Write_CancelledContext(t *testing.T) {
 	is.True(errors.Is(err, ctx.Err()))
 }
 
+// -- DestinationWithRecordFormat ----------------------------------------------
+
 func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
@@ -336,6 +345,111 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 			is.NoErr(err)
 
 			is.Equal(d.serializer, tt.wantSerializer)
+		})
+	}
+}
+
+// -- DestinationWithSchemaExtraction ------------------------------------------
+
+func TestDestinationWithSchemaExtractionConfig_Apply(t *testing.T) {
+	is := is.New(t)
+
+	wantCfg := DestinationWithSchemaExtractionConfig{
+		PayloadEnabled: ptr(true),
+		KeyEnabled:     ptr(true),
+	}
+
+	have := &DestinationWithSchemaExtraction{}
+	wantCfg.Apply(have)
+
+	is.Equal(have.Config, wantCfg)
+}
+
+func TestDestinationWithSchemaExtraction_Parameters(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	src := NewMockDestination(ctrl)
+
+	s := (&DestinationWithSchemaExtraction{}).Wrap(src)
+
+	want := config.Parameters{
+		"foo": {
+			Default:     "bar",
+			Description: "baz",
+		},
+	}
+
+	src.EXPECT().Parameters().Return(want)
+	got := s.Parameters()
+
+	is.Equal(got["foo"], want["foo"])
+	is.Equal(len(got), 3) // expected middleware to inject 2 parameters
+}
+
+func TestDestinationWithSchemaExtraction_Configure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	src := NewMockDestination(ctrl)
+	ctx := context.Background()
+
+	connectorID := uuid.NewString()
+	ctx = internal.Enrich(ctx, pconnector.PluginConfig{ConnectorID: connectorID})
+
+	testCases := []struct {
+		name       string
+		middleware DestinationWithSchemaExtraction
+		have       config.Config
+
+		wantErr            error
+		wantPayloadEnabled bool
+		wantKeyEnabled     bool
+	}{{
+		name:       "empty config",
+		middleware: DestinationWithSchemaExtraction{},
+		have:       config.Config{},
+
+		wantPayloadEnabled: true,
+		wantKeyEnabled:     true,
+	}, {
+		name: "disabled by default",
+		middleware: DestinationWithSchemaExtraction{
+			Config: DestinationWithSchemaExtractionConfig{
+				PayloadEnabled: ptr(false),
+				KeyEnabled:     ptr(false),
+			},
+		},
+		have: config.Config{},
+
+		wantPayloadEnabled: false,
+		wantKeyEnabled:     false,
+	}, {
+		name:       "disabled by config",
+		middleware: DestinationWithSchemaExtraction{},
+		have: config.Config{
+			configDestinationWithSchemaExtractionPayloadEnabled: "false",
+			configDestinationWithSchemaExtractionKeyEnabled:     "false",
+		},
+
+		wantPayloadEnabled: false,
+		wantKeyEnabled:     false,
+	}}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			is := is.New(t)
+			s := tt.middleware.Wrap(src).(*destinationWithSchemaExtraction)
+
+			src.EXPECT().Configure(ctx, tt.have).Return(nil)
+
+			err := s.Configure(ctx, tt.have)
+			if tt.wantErr != nil {
+				is.True(errors.Is(err, tt.wantErr))
+				return
+			}
+
+			is.NoErr(err)
+
+			is.Equal(s.payloadEnabled, tt.wantPayloadEnabled)
+			is.Equal(s.keyEnabled, tt.wantKeyEnabled)
 		})
 	}
 }
