@@ -16,13 +16,17 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
+	"github.com/conduitio/conduit-commons/schema"
+	sdkSchema "github.com/conduitio/conduit-connector-sdk/schema"
 	"golang.org/x/time/rate"
 )
 
@@ -497,4 +501,222 @@ func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []opencdc.
 		recs[i].SetSerializer(d.serializer)
 	}
 	return d.Destination.Write(ctx, recs)
+}
+
+// -- DestinationWithSchemaExtraction ------------------------------------------
+
+const (
+	configDestinationWithSchemaExtractionPayloadEnabled = "sdk.schema.extract.payload.enabled"
+	configDestinationWithSchemaExtractionKeyEnabled     = "sdk.schema.extract.key.enabled"
+)
+
+type DestinationWithSchemaExtractionConfig struct {
+	// Whether to extract and decode the record payload with a schema.
+	// If unset, defaults to true.
+	PayloadEnabled *bool
+	// Whether to extract and decode the record key with a schema.
+	// If unset, defaults to true.
+	KeyEnabled *bool
+}
+
+// Apply sets the default configuration for the DestinationWithSchemaExtraction middleware.
+// Apply can be used as a DestinationMiddlewareOption.
+func (c DestinationWithSchemaExtractionConfig) Apply(m DestinationMiddleware) {
+	if d, ok := m.(*DestinationWithSchemaExtraction); ok {
+		d.Config = c
+	}
+}
+
+func (c DestinationWithSchemaExtractionConfig) SchemaPayloadEnabledParameterName() string {
+	return configDestinationWithSchemaExtractionPayloadEnabled
+}
+
+func (c DestinationWithSchemaExtractionConfig) SchemaKeyEnabledParameterName() string {
+	return configDestinationWithSchemaExtractionKeyEnabled
+}
+
+func (c DestinationWithSchemaExtractionConfig) parameters() config.Parameters {
+	return config.Parameters{
+		configDestinationWithSchemaExtractionKeyEnabled: {
+			Default:     strconv.FormatBool(*c.KeyEnabled),
+			Type:        config.ParameterTypeBool,
+			Description: "Whether to extract and decode the record key with a schema.",
+		},
+		configDestinationWithSchemaExtractionPayloadEnabled: {
+			Default:     strconv.FormatBool(*c.PayloadEnabled),
+			Type:        config.ParameterTypeBool,
+			Description: "Whether to extract and decode the record payload with a schema.",
+		},
+	}
+}
+
+// DestinationWithSchemaExtraction is a middleware that TODO.
+type DestinationWithSchemaExtraction struct {
+	Config DestinationWithSchemaExtractionConfig
+}
+
+// Wrap a Destination into the schema middleware. It will apply default configuration
+// values if they are not explicitly set.
+func (s *DestinationWithSchemaExtraction) Wrap(impl Destination) Destination {
+	if s.Config.KeyEnabled == nil {
+		s.Config.KeyEnabled = ptr(true)
+	}
+	if s.Config.PayloadEnabled == nil {
+		s.Config.PayloadEnabled = ptr(true)
+	}
+	return &destinationWithSchemaExtraction{
+		Destination:         impl,
+		defaults:            s.Config,
+		subjectVersionCache: make(map[string]map[int]schema.Schema),
+	}
+}
+
+// destinationWithSchemaExtraction is the actual middleware implementation.
+type destinationWithSchemaExtraction struct {
+	Destination
+	defaults DestinationWithSchemaExtractionConfig
+
+	payloadEnabled bool
+	keyEnabled     bool
+
+	subjectVersionCache map[string]map[int]schema.Schema
+	payloadWarnOnce     sync.Once
+	keyWarnOnce         sync.Once
+}
+
+func (d *destinationWithSchemaExtraction) Parameters() config.Parameters {
+	return mergeParameters(d.Destination.Parameters(), d.defaults.parameters())
+}
+
+func (d *destinationWithSchemaExtraction) Configure(ctx context.Context, config config.Config) error {
+	err := d.Destination.Configure(ctx, config)
+	if err != nil {
+		return err
+	}
+
+	d.keyEnabled = *d.defaults.KeyEnabled
+	if val, ok := config[configDestinationWithSchemaExtractionKeyEnabled]; ok {
+		d.keyEnabled, err = strconv.ParseBool(val)
+		if err != nil {
+			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configDestinationWithSchemaExtractionKeyEnabled, err)
+		}
+	}
+
+	d.payloadEnabled = *d.defaults.PayloadEnabled
+	if val, ok := config[configDestinationWithSchemaExtractionPayloadEnabled]; ok {
+		d.payloadEnabled, err = strconv.ParseBool(val)
+		if err != nil {
+			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configDestinationWithSchemaExtractionPayloadEnabled, err)
+		}
+	}
+
+	return nil
+}
+
+func (d *destinationWithSchemaExtraction) Write(ctx context.Context, records []opencdc.Record) (int, error) {
+	if d.keyEnabled {
+		for i := range records {
+			if err := d.decodeKey(ctx, &records[i]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if d.payloadEnabled {
+		for i := range records {
+			if err := d.decodePayload(ctx, &records[i]); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	return d.Destination.Write(ctx, records)
+}
+
+func (d *destinationWithSchemaExtraction) decodeKey(ctx context.Context, rec *opencdc.Record) error {
+	subject, errSubject := rec.Metadata.GetKeySchemaSubject()
+	version, errVersion := rec.Metadata.GetKeySchemaVersion()
+	switch {
+	case errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound) &&
+		errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
+		// log warning once, to avoid spamming the logs
+		d.keyWarnOnce.Do(func() {
+			Logger(ctx).Warn().Msgf(`record does not have an attached schema for the key, consider disabling the destination schema key decoding using "%s: false"`, configDestinationWithSchemaExtractionKeyEnabled)
+		})
+		return nil
+	case errSubject != nil && !errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound):
+		return fmt.Errorf("failed to get key schema subject from metadata: %w", errSubject)
+	case errVersion != nil && !errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
+		return fmt.Errorf("failed to get key schema version from metadata: %w", errVersion)
+	}
+
+	decodedKey, err := d.decode(ctx, rec.Key, subject, version)
+	if err != nil {
+		return fmt.Errorf("failed to decode key: %w", err)
+	}
+	rec.Key = decodedKey
+	return nil
+}
+
+func (d *destinationWithSchemaExtraction) decodePayload(ctx context.Context, rec *opencdc.Record) error {
+	subject, errSubject := rec.Metadata.GetPayloadSchemaSubject()
+	version, errVersion := rec.Metadata.GetPayloadSchemaVersion()
+	switch {
+	case errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound) &&
+		errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
+		// log warning once, to avoid spamming the logs
+		d.payloadWarnOnce.Do(func() {
+			Logger(ctx).Warn().Msgf(`record does not have an attached schema for the payload, consider disabling the destination schema payload decoding using "%s: false"`, configDestinationWithSchemaExtractionPayloadEnabled)
+		})
+		return nil
+	case errSubject != nil && !errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound):
+		return fmt.Errorf("failed to get payload schema subject from metadata: %w", errSubject)
+	case errVersion != nil && !errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
+		return fmt.Errorf("failed to get payload schema version from metadata: %w", errVersion)
+	}
+
+	decodedPayloadBefore, err := d.decode(ctx, rec.Payload.Before, subject, version)
+	if err != nil {
+		return fmt.Errorf("failed to decode payload.before: %w", err)
+	}
+	decodedPayloadAfter, err := d.decode(ctx, rec.Payload.After, subject, version)
+	if err != nil {
+		return fmt.Errorf("failed to decode payload.after: %w", err)
+	}
+
+	rec.Payload.Before = decodedPayloadBefore
+	rec.Payload.After = decodedPayloadAfter
+	return nil
+}
+
+func (d *destinationWithSchemaExtraction) decode(ctx context.Context, data opencdc.Data, subject string, version int) (opencdc.StructuredData, error) {
+	switch data := data.(type) {
+	case opencdc.StructuredData:
+		return data, nil // already decoded
+	case nil:
+		return nil, nil //nolint:nilnil // nothing to decode
+	case opencdc.RawData: // let's decode it
+	default:
+		return nil, fmt.Errorf("unexpected data type %T", data)
+	}
+
+	// check if we have the schema in the cache
+	if _, ok := d.subjectVersionCache[subject]; !ok {
+		d.subjectVersionCache[subject] = make(map[int]schema.Schema)
+	}
+	if _, ok := d.subjectVersionCache[subject][version]; !ok {
+		sch, err := sdkSchema.Get(ctx, subject, version)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get schema for %s:%d: %w", subject, version, err)
+		}
+		d.subjectVersionCache[subject][version] = sch
+	}
+
+	sch := d.subjectVersionCache[subject][version]
+	var structuredData opencdc.StructuredData
+	err := sch.Unmarshal(data.Bytes(), &structuredData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal bytes with schema: %w", err)
+	}
+
+	return structuredData, nil
 }
