@@ -39,8 +39,8 @@ func TestSourceWithSchemaExtraction(t *testing.T) {
 	is := is.New(t)
 
 	wantCfg := SourceWithSchemaExtractionConfig{
-		PayloadEnable:  ptr(true),
-		KeyEnable:      ptr(true),
+		PayloadEnabled: ptr(true),
+		KeyEnabled:     ptr(true),
 		PayloadSubject: ptr("foo"),
 		KeySubject:     ptr("bar"),
 	}
@@ -108,8 +108,8 @@ func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
 		name: "disabled by default",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadEnable: ptr(false),
-				KeyEnable:     ptr(false),
+				PayloadEnabled: ptr(false),
+				KeyEnabled:     ptr(false),
 			},
 		},
 		have: config.Config{},
@@ -121,8 +121,8 @@ func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
 		name:       "disabled by config",
 		middleware: SourceWithSchemaExtraction{},
 		have: config.Config{
-			configSourceSchemaExtractionPayloadEncode: "false",
-			configSourceSchemaExtractionKeyEncode:     "false",
+			configSourceSchemaExtractionPayloadEnabled: "false",
+			configSourceSchemaExtractionKeyEnabled:     "false",
 		},
 
 		wantSchemaType:     schema.TypeAvro,
@@ -393,7 +393,7 @@ func TestSourceWithSchemaContext_Parameters(t *testing.T) {
 			name:  "default middleware config",
 			mwCfg: SourceWithSchemaContextConfig{},
 			wantParams: config.Parameters{
-				"sdk.schema.context.enable": {
+				"sdk.schema.context.enabled": {
 					Default: "true",
 					Description: "Specifies whether to use a schema context name. If set to false, no schema context name " +
 						"will be used, and schemas will be saved with the subject name specified in the connector " +
@@ -411,11 +411,11 @@ func TestSourceWithSchemaContext_Parameters(t *testing.T) {
 		{
 			name: "custom middleware config",
 			mwCfg: SourceWithSchemaContextConfig{
-				Enable: ptr(false),
-				Name:   ptr("foobar"),
+				Enabled: ptr(false),
+				Name:    ptr("foobar"),
 			},
 			wantParams: config.Parameters{
-				"sdk.schema.context.enable": {
+				"sdk.schema.context.enabled": {
 					Default: "false",
 					Description: "Specifies whether to use a schema context name. If set to false, no schema context name " +
 						"will be used, and schemas will be saved with the subject name specified in the connector " +
@@ -478,8 +478,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "custom context in middleware, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enable: ptr(true),
-				Name:   ptr("foobar"),
+				Enabled: ptr(true),
+				Name:    ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "foobar",
@@ -487,8 +487,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "middleware config: use context false, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enable: ptr(false),
-				Name:   ptr("foobar"),
+				Enabled: ptr(false),
+				Name:    ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "",
@@ -496,19 +496,19 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides use context",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enable: ptr(false),
-				Name:   ptr("foobar"),
+				Enabled: ptr(false),
+				Name:    ptr("foobar"),
 			},
 			connectorCfg: config.Config{
-				"sdk.schema.context.enable": "true",
+				"sdk.schema.context.enabled": "true",
 			},
 			wantContextName: "foobar",
 		},
 		{
 			name: "user config overrides context name, non-empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enable: ptr(true),
-				Name:   ptr("foobar"),
+				Enabled: ptr(true),
+				Name:    ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",
@@ -519,8 +519,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides context name, empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enable: ptr(true),
-				Name:   ptr("foobar"),
+				Enabled: ptr(true),
+				Name:    ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",
