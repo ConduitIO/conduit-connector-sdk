@@ -47,8 +47,8 @@ var (
 // all sources unless there's a good reason not to.
 func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware {
 	middleware := []SourceMiddleware{
-		&SourceWithSchemaExtraction{},
 		&SourceWithSchemaContext{},
+		&SourceWithSchemaExtraction{},
 	}
 
 	// apply options to all middleware
@@ -62,8 +62,9 @@ func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware 
 
 // SourceWithMiddleware wraps the source into the supplied middleware.
 func SourceWithMiddleware(s Source, middleware ...SourceMiddleware) Source {
-	for _, m := range middleware {
-		s = m.Wrap(s)
+	// apply middleware in reverse order to preserve the order as specified
+	for i := len(middleware) - 1; i >= 0; i-- {
+		s = middleware[i].Wrap(s)
 	}
 	return s
 }
@@ -484,10 +485,10 @@ func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Conf
 	}
 
 	if s.useContext {
-		// the order of precedence (least to most) is:
-		// 1. connector ID (if no context name is configured anywhere)
+		// The order of precedence is (from highest to lowest):
+		// 1. user config
 		// 2. default middleware config
-		// 3. user config
+		// 3. connector ID (if no context name is configured anywhere)
 		s.contextName = internal.ConnectorIDFromContext(ctx)
 		if s.mwCfg.Name != nil {
 			s.contextName = *s.mwCfg.Name

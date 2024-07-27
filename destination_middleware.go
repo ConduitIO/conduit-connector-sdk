@@ -65,8 +65,9 @@ func DefaultDestinationMiddleware(opts ...DestinationMiddlewareOption) []Destina
 
 // DestinationWithMiddleware wraps the destination into the supplied middleware.
 func DestinationWithMiddleware(d Destination, middleware ...DestinationMiddleware) Destination {
-	for _, m := range middleware {
-		d = m.Wrap(d)
+	// apply middleware in reverse order to preserve the order as specified
+	for i := len(middleware) - 1; i >= 0; i-- {
+		d = middleware[i].Wrap(d)
 	}
 	return d
 }
