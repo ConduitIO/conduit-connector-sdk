@@ -44,6 +44,7 @@ var (
 	_ DestinationMiddlewareOption = DestinationWithBatchConfig{}.Apply
 	_ DestinationMiddlewareOption = DestinationWithRecordFormatConfig{}.Apply
 	_ DestinationMiddlewareOption = DestinationWithRateLimitConfig{}.Apply
+	_ DestinationMiddlewareOption = DestinationWithSchemaExtractionConfig{}.Apply
 )
 
 // DefaultDestinationMiddleware returns a slice of middleware that should be
@@ -53,6 +54,7 @@ func DefaultDestinationMiddleware(opts ...DestinationMiddlewareOption) []Destina
 		&DestinationWithRateLimit{},
 		&DestinationWithRecordFormat{},
 		&DestinationWithBatch{},
+		&DestinationWithSchemaExtraction{},
 	}
 	// apply options to all middleware
 	for _, m := range middleware {
