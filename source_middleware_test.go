@@ -35,7 +35,7 @@ import (
 
 // -- SourceWithSchemaExtraction -----------------------------------------------
 
-func TestSourceWithSchemaExtraction(t *testing.T) {
+func TestSourceWithSchemaExtractionConfig_Apply(t *testing.T) {
 	is := is.New(t)
 
 	wantCfg := SourceWithSchemaExtractionConfig{
@@ -51,7 +51,7 @@ func TestSourceWithSchemaExtraction(t *testing.T) {
 	is.Equal(have.Config, wantCfg)
 }
 
-func TestSourceWithSchemaExtractionConfig_Parameters(t *testing.T) {
+func TestSourceWithSchemaExtraction_Parameters(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
@@ -72,7 +72,7 @@ func TestSourceWithSchemaExtractionConfig_Parameters(t *testing.T) {
 	is.Equal(len(got), 6) // expected middleware to inject 5 parameters
 }
 
-func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
+func TestSourceWithSchemaExtraction_Configure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 	ctx := context.Background()
@@ -176,7 +176,7 @@ func TestSourceWithSchemaExtractionConfig_Configure(t *testing.T) {
 	}
 }
 
-func TestSourceWithSchemaExtractionConfig_Read(t *testing.T) {
+func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
