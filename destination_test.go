@@ -172,7 +172,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 	dst := NewMockDestination(ctrl)
 
 	dstPlugin := NewDestinationPlugin(
-		DestinationWithMiddleware(dst, DestinationWithBatch{}),
+		DestinationWithMiddleware(dst, &DestinationWithBatch{}),
 		pconnector.PluginConfig{},
 	).(*destinationPluginAdapter)
 
@@ -244,7 +244,7 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 	dst := NewMockDestination(ctrl)
 
 	dstPlugin := NewDestinationPlugin(
-		DestinationWithMiddleware(dst, DestinationWithBatch{}),
+		DestinationWithMiddleware(dst, &DestinationWithBatch{}),
 		pconnector.PluginConfig{},
 	).(*destinationPluginAdapter)
 

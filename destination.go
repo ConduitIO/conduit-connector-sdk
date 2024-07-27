@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"time"
 
 	"github.com/conduitio/conduit-commons/ccontext"
@@ -118,60 +117,24 @@ type destinationPluginAdapter struct {
 
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req pconnector.DestinationConfigureRequest) (pconnector.DestinationConfigureResponse, error) {
 	ctx = internal.Enrich(ctx, a.cfg)
+	ctx = (&destinationWithBatch{}).setBatchConfig(ctx, DestinationWithBatchConfig{})
 
-	ctx = DestinationWithBatch{}.setBatchEnabled(ctx, false)
+	err := a.impl.Configure(ctx, req.Config)
+	if err != nil {
+		return pconnector.DestinationConfigureResponse{}, err
+	}
 
-	var errs []error
-	// Configure connector
-	errs = append(errs, a.impl.Configure(ctx, req.Config))
-	// Configure write strategy
-	errs = append(errs, a.configureWriteStrategy(ctx, req.Config))
-
-	return pconnector.DestinationConfigureResponse{}, errors.Join(errs...)
+	a.configureWriteStrategy(ctx)
+	return pconnector.DestinationConfigureResponse{}, nil
 }
 
-func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context, config config.Config) error {
+func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context) {
 	a.writeStrategy = &writeStrategySingle{impl: a.impl} // by default we write single records
 
-	batchEnabled := DestinationWithBatch{}.getBatchEnabled(ctx)
-	if !batchEnabled {
-		// batching disabled, just write single records
-		return nil
+	batchConfig := (&destinationWithBatch{}).getBatchConfig(ctx)
+	if batchConfig.BatchSize > 1 || batchConfig.BatchDelay > 0 {
+		a.writeStrategy = newWriteStrategyBatch(a.impl, batchConfig.BatchSize, batchConfig.BatchDelay)
 	}
-
-	var batchSize int
-	var batchDelay time.Duration
-
-	batchSizeRaw := config[configDestinationBatchSize]
-	if batchSizeRaw != "" {
-		batchSizeInt, err := strconv.Atoi(batchSizeRaw)
-		if err != nil {
-			return fmt.Errorf("invalid %q: %w", configDestinationBatchSize, err)
-		}
-		batchSize = batchSizeInt
-	}
-
-	delayRaw := config[configDestinationBatchDelay]
-	if delayRaw != "" {
-		delayDur, err := time.ParseDuration(delayRaw)
-		if err != nil {
-			return fmt.Errorf("invalid %q: %w", configDestinationBatchDelay, err)
-		}
-		batchDelay = delayDur
-	}
-
-	if batchSize < 0 {
-		return fmt.Errorf("invalid %q: must not be negative", configDestinationBatchSize)
-	}
-	if batchDelay < 0 {
-		return fmt.Errorf("invalid %q: must not be negative", configDestinationBatchDelay)
-	}
-
-	if batchSize > 0 || batchDelay > 0 {
-		a.writeStrategy = newWriteStrategyBatch(a.impl, batchSize, batchDelay)
-	}
-
-	return nil
 }
 
 func (a *destinationPluginAdapter) Open(ctx context.Context, _ pconnector.DestinationOpenRequest) (pconnector.DestinationOpenResponse, error) {
