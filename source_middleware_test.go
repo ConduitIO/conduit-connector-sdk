@@ -182,9 +182,6 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 	src := NewMockSource(ctrl)
 	ctx := context.Background()
 
-	connectorID := uuid.NewString()
-	ctx = internal.Enrich(ctx, pconnector.PluginConfig{ConnectorID: connectorID})
-
 	s := (&SourceWithSchemaExtraction{}).Wrap(src)
 
 	src.EXPECT().Configure(ctx, gomock.Any()).Return(nil)

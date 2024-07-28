@@ -665,11 +665,14 @@ func (d *destinationWithSchemaExtraction) decodeKey(ctx context.Context, rec *op
 		return fmt.Errorf("failed to get key schema version from metadata: %w", errVersion)
 	}
 
-	decodedKey, err := d.decode(ctx, rec.Key, subject, version)
-	if err != nil {
-		return fmt.Errorf("failed to decode key: %w", err)
+	if rec.Key != nil {
+		decodedKey, err := d.decode(ctx, rec.Key, subject, version)
+		if err != nil {
+			return fmt.Errorf("failed to decode key: %w", err)
+		}
+		rec.Key = decodedKey
 	}
-	rec.Key = decodedKey
+
 	return nil
 }
 
@@ -690,17 +693,21 @@ func (d *destinationWithSchemaExtraction) decodePayload(ctx context.Context, rec
 		return fmt.Errorf("failed to get payload schema version from metadata: %w", errVersion)
 	}
 
-	decodedPayloadBefore, err := d.decode(ctx, rec.Payload.Before, subject, version)
-	if err != nil {
-		return fmt.Errorf("failed to decode payload.before: %w", err)
+	if rec.Payload.Before != nil {
+		decodedPayloadBefore, err := d.decode(ctx, rec.Payload.Before, subject, version)
+		if err != nil {
+			return fmt.Errorf("failed to decode payload.before: %w", err)
+		}
+		rec.Payload.Before = decodedPayloadBefore
 	}
-	decodedPayloadAfter, err := d.decode(ctx, rec.Payload.After, subject, version)
-	if err != nil {
-		return fmt.Errorf("failed to decode payload.after: %w", err)
+	if rec.Payload.After != nil {
+		decodedPayloadAfter, err := d.decode(ctx, rec.Payload.After, subject, version)
+		if err != nil {
+			return fmt.Errorf("failed to decode payload.after: %w", err)
+		}
+		rec.Payload.After = decodedPayloadAfter
 	}
 
-	rec.Payload.Before = decodedPayloadBefore
-	rec.Payload.After = decodedPayloadAfter
 	return nil
 }
 
@@ -708,8 +715,6 @@ func (d *destinationWithSchemaExtraction) decode(ctx context.Context, data openc
 	switch data := data.(type) {
 	case opencdc.StructuredData:
 		return data, nil // already decoded
-	case nil:
-		return nil, nil //nolint:nilnil // nothing to decode
 	case opencdc.RawData: // let's decode it
 	default:
 		return nil, fmt.Errorf("unexpected data type %T", data)
