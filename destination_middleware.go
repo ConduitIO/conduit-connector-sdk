@@ -633,6 +633,9 @@ func (d *destinationWithSchemaExtraction) Write(ctx context.Context, records []o
 	if d.keyEnabled {
 		for i := range records {
 			if err := d.decodeKey(ctx, &records[i]); err != nil {
+				if len(records) > 0 {
+					err = fmt.Errorf("record %d: %w", i, err)
+				}
 				return 0, err
 			}
 		}
@@ -640,6 +643,9 @@ func (d *destinationWithSchemaExtraction) Write(ctx context.Context, records []o
 	if d.payloadEnabled {
 		for i := range records {
 			if err := d.decodePayload(ctx, &records[i]); err != nil {
+				if len(records) > 0 {
+					err = fmt.Errorf("record %d: %w", i, err)
+				}
 				return 0, err
 			}
 		}
