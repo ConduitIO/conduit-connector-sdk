@@ -26,7 +26,7 @@ import (
 	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
-	sdkSchema "github.com/conduitio/conduit-connector-sdk/schema"
+	sdkschema "github.com/conduitio/conduit-connector-sdk/schema"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/matryer/is"
@@ -326,7 +326,7 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				version, err := got.Metadata.GetKeySchemaVersion()
 				is.NoErr(err)
 
-				sch, err := sdkSchema.Get(ctx, subject, version)
+				sch, err := sdkschema.Get(ctx, subject, version)
 				is.NoErr(err)
 
 				var sd opencdc.StructuredData
@@ -349,7 +349,7 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				version, err := got.Metadata.GetPayloadSchemaVersion()
 				is.NoErr(err)
 
-				sch, err := sdkSchema.Get(ctx, subject, version)
+				sch, err := sdkschema.Get(ctx, subject, version)
 				is.NoErr(err)
 
 				if isPayloadBeforeStructured {
@@ -541,7 +541,7 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 			s.EXPECT().
 				Configure(gomock.Any(), tc.connectorCfg).
 				DoAndReturn(func(ctx context.Context, c config.Config) error {
-					gotContextName := sdkSchema.GetSchemaContextName(ctx)
+					gotContextName := sdkschema.GetSchemaContextName(ctx)
 					is.Equal(tc.wantContextName, gotContextName)
 					return nil
 				})
@@ -568,13 +568,13 @@ func TestSourceWithSchemaContext_ContextValue(t *testing.T) {
 	s.EXPECT().
 		Configure(gomock.Any(), connectorCfg).
 		DoAndReturn(func(ctx context.Context, _ config.Config) error {
-			is.Equal(wantContextName, sdkSchema.GetSchemaContextName(ctx))
+			is.Equal(wantContextName, sdkschema.GetSchemaContextName(ctx))
 			return nil
 		})
 	s.EXPECT().
 		Open(gomock.Any(), opencdc.Position{}).
 		DoAndReturn(func(ctx context.Context, _ opencdc.Position) error {
-			is.Equal(wantContextName, sdkSchema.GetSchemaContextName(ctx))
+			is.Equal(wantContextName, sdkschema.GetSchemaContextName(ctx))
 			return nil
 		})
 

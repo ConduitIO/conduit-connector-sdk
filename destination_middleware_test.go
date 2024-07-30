@@ -28,7 +28,7 @@ import (
 	"github.com/conduitio/conduit-commons/schema/avro"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
-	sdkSchema "github.com/conduitio/conduit-connector-sdk/schema"
+	sdkschema "github.com/conduitio/conduit-connector-sdk/schema"
 	"github.com/google/uuid"
 	"github.com/matryer/is"
 	"go.uber.org/mock/gomock"
@@ -480,7 +480,7 @@ func TestDestinationWithSchemaExtraction_Write(t *testing.T) {
 
 	srd, err := avro.SerdeForType(testStructuredData)
 	is.NoErr(err)
-	sch, err := sdkSchema.Create(ctx, schema.TypeAvro, "TestDestinationWithSchemaExtraction_Write", []byte(srd.String()))
+	sch, err := sdkschema.Create(ctx, schema.TypeAvro, "TestDestinationWithSchemaExtraction_Write", []byte(srd.String()))
 	is.NoErr(err)
 
 	b, err := sch.Marshal(testStructuredData)

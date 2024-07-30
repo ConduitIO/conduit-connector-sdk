@@ -26,7 +26,7 @@ import (
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-commons/schema"
-	sdkSchema "github.com/conduitio/conduit-connector-sdk/schema"
+	sdkschema "github.com/conduitio/conduit-connector-sdk/schema"
 	"golang.org/x/time/rate"
 )
 
@@ -725,7 +725,7 @@ func (d *destinationWithSchemaExtraction) decode(ctx context.Context, data openc
 		d.subjectVersionCache[subject] = make(map[int]schema.Schema)
 	}
 	if _, ok := d.subjectVersionCache[subject][version]; !ok {
-		sch, err := sdkSchema.Get(ctx, subject, version)
+		sch, err := sdkschema.Get(ctx, subject, version)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get schema for %s:%d: %w", subject, version, err)
 		}
