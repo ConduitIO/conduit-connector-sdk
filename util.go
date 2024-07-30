@@ -34,6 +34,10 @@ var Util = struct {
 	// convenient function. It is intended to be used in the Configure method of a
 	// connector to parse the configuration map.
 	//
+	// The configuration parameters should be provided through NewSource().Parameters()
+	// or NewDestination().Parameters() so that parameters from SDK middlewares are
+	// included too.
+	//
 	// The function does the following:
 	//   - Removes leading and trailing spaces from all keys and values in the
 	//     configuration.
