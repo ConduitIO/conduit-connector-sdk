@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"github.com/conduitio/conduit-commons/schema"
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 	"github.com/conduitio/conduit-connector-protocol/pconnutils/v1/client"
 	"github.com/conduitio/conduit-connector-sdk/internal"
@@ -31,10 +30,9 @@ func init() {
 }
 
 var (
-	ErrSchemaNotFound       = pconduit.ErrSchemaNotFound
-	ErrInvalidSchemaSubject = pconduit.ErrInvalidSchemaSubject
-	ErrInvalidSchemaType    = pconduit.ErrInvalidSchemaType
-	ErrInvalidSchemaBytes   = pconduit.ErrInvalidSchemaBytes
+	ErrSubjectNotFound = pconnutils.ErrSubjectNotFound
+	ErrVersionNotFound = pconnutils.ErrVersionNotFound
+	ErrInvalidSchema   = pconnutils.ErrInvalidSchema
 )
 
 // Service is the schema service client that can be used to interact with the schema service.

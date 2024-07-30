@@ -16,9 +16,9 @@ package internal
 
 import (
 	"context"
-	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
+	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 )
 
 // -- Connector ID ----------------------------------------------------------

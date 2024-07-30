@@ -39,7 +39,7 @@ func newInMemoryService() pconnutils.SchemaService {
 
 func (s *inMemoryService) CreateSchema(_ context.Context, request pconnutils.CreateSchemaRequest) (pconnutils.CreateSchemaResponse, error) {
 	if request.Type != schema.TypeAvro {
-		return pconnutils.CreateSchemaResponse{}, ErrInvalidSchemaType
+		return pconnutils.CreateSchemaResponse{}, fmt.Errorf("unsupported schema type: %s", request.Type)
 	}
 
 	s.m.Lock()
@@ -62,11 +62,11 @@ func (s *inMemoryService) GetSchema(_ context.Context, request pconnutils.GetSch
 
 	versions, ok := s.schemas[request.Subject]
 	if !ok {
-		return pconnutils.GetSchemaResponse{}, fmt.Errorf("subject %v: %w", request.Subject, ErrSchemaNotFound)
+		return pconnutils.GetSchemaResponse{}, fmt.Errorf("subject %v: %w", request.Subject, ErrSubjectNotFound)
 	}
 
 	if len(versions) < request.Version {
-		return pconnutils.GetSchemaResponse{}, fmt.Errorf("version %v: %w", request.Version, ErrSchemaNotFound)
+		return pconnutils.GetSchemaResponse{}, fmt.Errorf("version %v: %w", request.Version, ErrVersionNotFound)
 	}
 
 	return pconnutils.GetSchemaResponse{Schema: versions[request.Version-1]}, nil
