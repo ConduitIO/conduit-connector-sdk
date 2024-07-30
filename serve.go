@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-protocol/pconnector/server"
+	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 )
 
@@ -81,17 +81,17 @@ func serve(c Connector) error {
 }
 
 func getPluginConfig() (pconnector.PluginConfig, error) {
-	token := os.Getenv(pconduit.EnvConduitConnectorToken)
+	token := os.Getenv(pconnutils.EnvConduitConnectorToken)
 	if token == "" {
-		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorToken, "v0.11.0")
+		return pconnector.PluginConfig{}, missingEnvError(pconnutils.EnvConduitConnectorToken, "v0.11.0")
 	}
 
-	connectorID := os.Getenv(pconduit.EnvConduitConnectorID)
+	connectorID := os.Getenv(pconnutils.EnvConduitConnectorID)
 	if connectorID == "" {
-		return pconnector.PluginConfig{}, missingEnvError(pconduit.EnvConduitConnectorID, "v0.11.0")
+		return pconnector.PluginConfig{}, missingEnvError(pconnutils.EnvConduitConnectorID, "v0.11.0")
 	}
 
-	logLevel := os.Getenv(pconduit.EnvConduitLogLevel)
+	logLevel := os.Getenv(pconnutils.EnvConduitLogLevel)
 
 	return pconnector.PluginConfig{
 		Token:       token,
@@ -104,9 +104,9 @@ func getPluginConfig() (pconnector.PluginConfig, error) {
 // The values are fetched from environment variables provided by conduit-connector-protocol.
 // The function returns an error if the environment variables are not specified or empty.
 func connectorUtilitiesGRPCTarget() (string, error) {
-	target := os.Getenv(pconduit.EnvConduitConnectorUtilitiesGRPCTarget)
+	target := os.Getenv(pconnutils.EnvConduitConnectorUtilitiesGRPCTarget)
 	if target == "" {
-		return "", missingEnvError(pconduit.EnvConduitConnectorUtilitiesGRPCTarget, "v0.11.0")
+		return "", missingEnvError(pconnutils.EnvConduitConnectorUtilitiesGRPCTarget, "v0.11.0")
 	}
 
 	return target, nil

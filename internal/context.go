@@ -16,8 +16,8 @@ package internal
 
 import (
 	"context"
+	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 )
 
@@ -68,7 +68,7 @@ func Enrich(ctx context.Context, cfg pconnector.PluginConfig) context.Context {
 	// The connector ID is expected to be used more often than the log level.
 	ctx = ContextWithLogLevel(ctx, cfg.LogLevel)
 	ctx = ContextWithConnectorID(ctx, cfg.ConnectorID)
-	ctx = pconduit.ContextWithConnectorToken(ctx, cfg.Token)
+	ctx = pconnutils.ContextWithConnectorToken(ctx, cfg.Token)
 
 	return ctx
 }
