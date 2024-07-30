@@ -658,17 +658,17 @@ func (d *destinationWithSchemaExtraction) decodeKey(ctx context.Context, rec *op
 	subject, errSubject := rec.Metadata.GetKeySchemaSubject()
 	version, errVersion := rec.Metadata.GetKeySchemaVersion()
 	switch {
-	case errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound) &&
+	case errSubject != nil && !errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound):
+		return fmt.Errorf("failed to get key schema subject from metadata: %w", errSubject)
+	case errVersion != nil && !errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
+		return fmt.Errorf("failed to get key schema version from metadata: %w", errVersion)
+	case errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound) ||
 		errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
 		// log warning once, to avoid spamming the logs
 		d.keyWarnOnce.Do(func() {
 			Logger(ctx).Warn().Msgf(`record does not have an attached schema for the key, consider disabling the destination schema key decoding using "%s: false"`, configDestinationWithSchemaExtractionKeyEnabled)
 		})
 		return nil
-	case errSubject != nil && !errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound):
-		return fmt.Errorf("failed to get key schema subject from metadata: %w", errSubject)
-	case errVersion != nil && !errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
-		return fmt.Errorf("failed to get key schema version from metadata: %w", errVersion)
 	}
 
 	if rec.Key != nil {
@@ -686,17 +686,17 @@ func (d *destinationWithSchemaExtraction) decodePayload(ctx context.Context, rec
 	subject, errSubject := rec.Metadata.GetPayloadSchemaSubject()
 	version, errVersion := rec.Metadata.GetPayloadSchemaVersion()
 	switch {
-	case errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound) &&
+	case errSubject != nil && !errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound):
+		return fmt.Errorf("failed to get payload schema subject from metadata: %w", errSubject)
+	case errVersion != nil && !errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
+		return fmt.Errorf("failed to get payload schema version from metadata: %w", errVersion)
+	case errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound) ||
 		errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
 		// log warning once, to avoid spamming the logs
 		d.payloadWarnOnce.Do(func() {
 			Logger(ctx).Warn().Msgf(`record does not have an attached schema for the payload, consider disabling the destination schema payload decoding using "%s: false"`, configDestinationWithSchemaExtractionPayloadEnabled)
 		})
 		return nil
-	case errSubject != nil && !errors.Is(errSubject, opencdc.ErrMetadataFieldNotFound):
-		return fmt.Errorf("failed to get payload schema subject from metadata: %w", errSubject)
-	case errVersion != nil && !errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
-		return fmt.Errorf("failed to get payload schema version from metadata: %w", errVersion)
 	}
 
 	if rec.Payload.Before != nil {
