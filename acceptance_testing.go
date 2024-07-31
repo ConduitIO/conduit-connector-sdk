@@ -512,7 +512,7 @@ func (a acceptanceTest) TestSpecifier_Exists(t *testing.T) {
 func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 	a.skipIfNoSpecification(t)
 	is := is.NewRelaxed(t) // allow multiple failures for this test
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	spec := a.driver.Connector().NewSpecification()
 
@@ -545,7 +545,7 @@ func (a acceptanceTest) TestSpecifier_Specify_Success(t *testing.T) {
 func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	source := a.driver.Connector().NewSource()
 	params := source.Parameters()
@@ -566,7 +566,7 @@ func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := a.context(t)
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	source := a.driver.Connector().NewSource()
 	err := source.Configure(ctx, a.driver.SourceConfig(t))
@@ -616,7 +616,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionSnapshot(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := a.context(t)
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	// Write expectations before source is started, this means the source will
 	// have to first read the existing data (i.e. snapshot), but we will
@@ -668,7 +668,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := a.context(t)
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
@@ -716,7 +716,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := a.context(t)
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	positions := make(map[string]bool)
 	isUniquePositions := func(t *testing.T, records []opencdc.Record) {
@@ -764,7 +764,7 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 	a.skipIfNoSource(t)
 	is := is.New(t)
 	ctx := a.context(t)
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	source, sourceCleanup := a.openSource(ctx, t, nil) // listen from beginning
 	defer sourceCleanup()
@@ -779,7 +779,7 @@ func (a acceptanceTest) TestSource_Read_Timeout(t *testing.T) {
 func (a acceptanceTest) TestDestination_Parameters_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	dest := a.driver.Connector().NewDestination()
 	params := dest.Parameters()
@@ -800,7 +800,7 @@ func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
 	ctx := a.context(t)
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	dest := a.driver.Connector().NewDestination()
 	err := dest.Configure(ctx, a.driver.DestinationConfig(t))
@@ -850,7 +850,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	a.skipIfNoDestination(t)
 	is := is.New(t)
 	ctx := a.context(t)
-	defer goleak.VerifyNone(t, a.driver.GoleakOptions(t)...)
+	defer a.verifyGoleaks(t)
 
 	dest, cleanup := a.openDestination(ctx, t)
 	defer cleanup()
@@ -866,6 +866,13 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 
 	got := a.driver.ReadFromDestination(t, want)
 	a.isEqualRecords(is, want, got)
+}
+
+func (a acceptanceTest) verifyGoleaks(t *testing.T) {
+	opts := a.driver.GoleakOptions(t)
+	// always ignore goroutine spawned in go-cache, used in conduit-commons/schema
+	opts = append(opts, goleak.IgnoreAnyFunction("github.com/twmb/go-cache/cache.New[...].func1"))
+	goleak.VerifyNone(t, opts...)
 }
 
 func (a acceptanceTest) skipIfNoSpecification(t *testing.T) {
