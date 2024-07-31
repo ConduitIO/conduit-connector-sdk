@@ -28,6 +28,7 @@ func TestInMemoryService(t *testing.T) {
 	ctx := context.Background()
 
 	want1 := schema.Schema{
+		ID:      1,
 		Subject: "test-subject",
 		Version: 1,
 		Type:    schema.TypeAvro,
@@ -41,6 +42,7 @@ func TestInMemoryService(t *testing.T) {
 
 	// Create second version
 	want2 := schema.Schema{
+		ID:      2,
 		Subject: want1.Subject,
 		Version: 2,
 		Type:    want1.Type,
