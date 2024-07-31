@@ -77,8 +77,8 @@ github.com/ckaznocha/intrange v0.1.2 h1:3Y4JAxcMntgb/wABQ6e8Q8leMd26JbX2790lIss9
 github.com/ckaznocha/intrange v0.1.2/go.mod h1:RWffCw/vKBwHeOEwWdCikAtY0q4gGt8VhJZEEA5n+RE=
 github.com/conduitio/conduit-commons v0.2.1-0.20240717151024-0c8d1f406cb2 h1:0Ba/B4lyxeGIVk4zvVGRx1kAdLuXK+8st/LyMKZCmu4=
 github.com/conduitio/conduit-commons v0.2.1-0.20240717151024-0c8d1f406cb2/go.mod h1:w0eHaH81yoab8VcrrTjFGNGRQMx45RnXWobKMpKjgrM=
-github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240724140503-f2dd0a3e4d36 h1:/tUV6UUdWRiJQV6gLMYmvwOkjJjwd74H3YAibU3vhK4=
-github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240724140503-f2dd0a3e4d36/go.mod h1:hjnONUqZv2Lb+W9hUP2fSP8gjvlM2WJiUw47n4dDqBA=
+github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240730102156-29a2e67ad980 h1:Hwg9Ho0Rvrg0rVype0yQA7jJtGrG4zY6RQzvcXAi4Kk=
+github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240730102156-29a2e67ad980/go.mod h1:GyI6kkdR55JGM/96v5OSI7vlVodur3L22SY+OJbPd0s=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/cpuguy83/go-md2man/v2 v2.0.4/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/curioswitch/go-reassign v0.2.0 h1:G9UZyOcpk/d7Gd6mqYgd8XYWFMw/znxwGDUstnC9DIo=

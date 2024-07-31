@@ -19,8 +19,8 @@ import (
 	"fmt"
 
 	"github.com/conduitio/conduit-commons/schema"
-	"github.com/conduitio/conduit-connector-protocol/pconduit"
-	"github.com/conduitio/conduit-connector-protocol/pconduit/v1/client"
+	"github.com/conduitio/conduit-connector-protocol/pconnutils"
+	"github.com/conduitio/conduit-connector-protocol/pconnutils/v1/client"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"google.golang.org/grpc"
 )
@@ -30,10 +30,9 @@ func init() {
 }
 
 var (
-	ErrSchemaNotFound       = pconduit.ErrSchemaNotFound
-	ErrInvalidSchemaSubject = pconduit.ErrInvalidSchemaSubject
-	ErrInvalidSchemaType    = pconduit.ErrInvalidSchemaType
-	ErrInvalidSchemaBytes   = pconduit.ErrInvalidSchemaBytes
+	ErrSubjectNotFound = pconnutils.ErrSubjectNotFound
+	ErrVersionNotFound = pconnutils.ErrVersionNotFound
+	ErrInvalidSchema   = pconnutils.ErrInvalidSchema
 )
 
 // Service is the schema service client that can be used to interact with the schema service.
@@ -42,7 +41,7 @@ var Service = newInMemoryService()
 
 // Create creates a new schema with the given name and bytes. The schema type must be Avro.
 func Create(ctx context.Context, typ schema.Type, subject string, bytes []byte) (schema.Schema, error) {
-	resp, err := Service.CreateSchema(ctx, pconduit.CreateSchemaRequest{
+	resp, err := Service.CreateSchema(ctx, pconnutils.CreateSchemaRequest{
 		Subject: qualifiedSubject(ctx, subject),
 		Type:    typ,
 		Bytes:   bytes,
@@ -68,7 +67,7 @@ func qualifiedSubject(ctx context.Context, subject string) string {
 
 // Get retrieves the schema with the given name and version. If the schema does not exist, an error is returned.
 func Get(ctx context.Context, subject string, version int) (schema.Schema, error) {
-	resp, err := Service.GetSchema(ctx, pconduit.GetSchemaRequest{
+	resp, err := Service.GetSchema(ctx, pconnutils.GetSchemaRequest{
 		Subject: subject,
 		Version: version,
 	})
