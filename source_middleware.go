@@ -16,6 +16,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -292,28 +293,60 @@ func (s *sourceWithSchemaExtraction) encodeKey(ctx context.Context, rec *opencdc
 		return nil
 	}
 
-	subject := s.keySubject
-	if rec.Metadata != nil {
-		if collection, err := rec.Metadata.GetCollection(); err == nil {
-			subject = collection + "." + subject
-		}
+	if rec.Metadata == nil {
+		// ensure we have a metadata value, to make it safe for retrieving and setting values
+		rec.Metadata = opencdc.Metadata{}
+	}
+	sch, err := s.schemaForKey(ctx, *rec)
+	if err != nil {
+		return err // already wrapped
 	}
 
-	sch, err := s.schemaForType(ctx, rec.Key, subject)
-	if err != nil {
-		return fmt.Errorf("failed to extract schema for key: %w", err)
-	}
 	encoded, err := s.encodeWithSchema(sch, rec.Key)
 	if err != nil {
 		return fmt.Errorf("failed to encode key: %w", err)
 	}
 
 	rec.Key = opencdc.RawData(encoded)
-	if rec.Metadata == nil {
-		rec.Metadata = opencdc.Metadata{}
-	}
 	schema.AttachKeySchemaToRecord(*rec, sch)
 	return nil
+}
+
+func (s *sourceWithSchemaExtraction) schemaForKey(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+	subject, err := rec.Metadata.GetKeySchemaSubject()
+	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
+		return schema.Schema{}, fmt.Errorf("failed to get key schema subject: %w", err)
+	}
+
+	version, err := rec.Metadata.GetKeySchemaVersion()
+	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
+		return schema.Schema{}, fmt.Errorf("failed to get key schema version: %w", err)
+	}
+
+	switch {
+	case subject != "" && version > 0:
+		// The connector has attached the schema subject and version, we can use
+		// it to retrieve the schema from the schema service.
+		// TODO cache
+		return sdkschema.Get(ctx, subject, version)
+	case subject != "" || version > 0:
+		// The connector has attached either the schema subject or version, but
+		// not both, this isn't valid.
+		return schema.Schema{}, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected key schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataKeySchemaSubject, subject, opencdc.MetadataKeySchemaVersion, version)
+	}
+
+	// No schema subject or version is attached, we need to extract the schema.
+	subject = s.keySubject
+	if collection, err := rec.Metadata.GetCollection(); err == nil {
+		subject = collection + "." + subject
+	}
+
+	sch, err := s.schemaForType(ctx, rec.Key, subject)
+	if err != nil {
+		return schema.Schema{}, fmt.Errorf("failed to extract schema for key: %w", err)
+	}
+
+	return sch, nil
 }
 
 func (s *sourceWithSchemaExtraction) encodePayload(ctx context.Context, rec *opencdc.Record) error {
@@ -330,20 +363,11 @@ func (s *sourceWithSchemaExtraction) encodePayload(ctx context.Context, rec *ope
 		return nil
 	}
 
-	val := rec.Payload.After
-	if !afterIsStructured {
-		// use before as a fallback
-		val = rec.Payload.Before
+	if rec.Metadata == nil {
+		// ensure we have a metadata value, to make it safe for retrieving and setting values
+		rec.Metadata = opencdc.Metadata{}
 	}
-
-	subject := s.payloadSubject
-	if rec.Metadata != nil {
-		if collection, err := rec.Metadata.GetCollection(); err == nil {
-			subject = collection + "." + subject
-		}
-	}
-
-	sch, err := s.schemaForType(ctx, val, subject)
+	sch, err := s.schemaForPayload(ctx, *rec)
 	if err != nil {
 		return fmt.Errorf("failed to extract schema for payload: %w", err)
 	}
@@ -363,11 +387,51 @@ func (s *sourceWithSchemaExtraction) encodePayload(ctx context.Context, rec *ope
 		}
 		rec.Payload.After = opencdc.RawData(encoded)
 	}
-	if rec.Metadata == nil {
-		rec.Metadata = opencdc.Metadata{}
-	}
 	schema.AttachPayloadSchemaToRecord(*rec, sch)
 	return nil
+}
+
+func (s *sourceWithSchemaExtraction) schemaForPayload(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+	subject, err := rec.Metadata.GetPayloadSchemaSubject()
+	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
+		return schema.Schema{}, fmt.Errorf("failed to get payload schema subject: %w", err)
+	}
+
+	version, err := rec.Metadata.GetPayloadSchemaVersion()
+	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
+		return schema.Schema{}, fmt.Errorf("failed to get payload schema version: %w", err)
+	}
+
+	switch {
+	case subject != "" && version > 0:
+		// The connector has attached the schema subject and version, we can use
+		// it to retrieve the schema from the schema service.
+		// TODO cache
+		return sdkschema.Get(ctx, subject, version)
+	case subject != "" || version > 0:
+		// The connector has attached either the schema subject or version, but
+		// not both, this isn't valid.
+		return schema.Schema{}, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected payload schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataPayloadSchemaSubject, subject, opencdc.MetadataPayloadSchemaVersion, version)
+	}
+
+	// No schema subject or version is attached, we need to extract the schema.
+	subject = s.payloadSubject
+	if collection, err := rec.Metadata.GetCollection(); err == nil {
+		subject = collection + "." + subject
+	}
+
+	val := rec.Payload.After
+	if _, ok := val.(opencdc.StructuredData); !ok {
+		// use before as a fallback
+		val = rec.Payload.Before
+	}
+
+	sch, err := s.schemaForType(ctx, val, subject)
+	if err != nil {
+		return schema.Schema{}, fmt.Errorf("failed to extract schema for payload: %w", err)
+	}
+
+	return sch, nil
 }
 
 func (s *sourceWithSchemaExtraction) schemaForType(ctx context.Context, data any, subject string) (schema.Schema, error) {

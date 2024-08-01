@@ -48,6 +48,7 @@ issues:
         - errname
         - forcetypeassert
         - dupl
+        - maintidx
 
 linters:
   # please, do not use `enable-all`: it's deprecated and will be removed soon.
