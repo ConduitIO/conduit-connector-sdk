@@ -30,7 +30,7 @@ func Logger(ctx context.Context) *zerolog.Logger {
 
 // initStandaloneModeLogger will create a default context logger that can be
 // used by the plugin in standalone mode. Should not be called in builtin mode.
-func initStandaloneModeLogger() {
+func initStandaloneModeLogger(level zerolog.Level) {
 	// adjust field names to have parity with hclog, go-plugin uses hclog to
 	// parse log messages
 	zerolog.LevelFieldName = "@level"
@@ -39,6 +39,7 @@ func initStandaloneModeLogger() {
 	zerolog.MessageFieldName = "@message"
 
 	logger := zerolog.New(os.Stderr)
+	logger = logger.Level(level)
 
 	zerolog.DefaultContextLogger = &logger
 }
