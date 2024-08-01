@@ -473,7 +473,7 @@ func TestDestinationWithSchemaExtraction_Write(t *testing.T) {
 
 	testStructuredData := opencdc.StructuredData{
 		"foo":   "bar",
-		"int":   1,
+		"long":  int64(1),
 		"float": 2.34,
 		"time":  time.Now().UTC().Truncate(time.Microsecond), // avro precision is microseconds
 	}
