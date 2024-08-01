@@ -115,16 +115,15 @@ func connectorUtilitiesGRPCTarget() (string, error) {
 
 // connectorLogLevel returns the log level to be used by the connector. The value
 // is fetched from the environment variable provided by conduit-connector-protocol.
-// The function returns 0 if the environment variable is not specified or empty.
+// The function returns the TRACE level if the environment variable is not
+// specified or empty (that's the zerolog default).
 func connectorLogLevel() zerolog.Level {
 	level := os.Getenv(pconnutils.EnvConduitLogLevel)
-	if level == "" {
-		return 0
-	}
 
 	l, err := zerolog.ParseLevel(level)
 	if err != nil {
-		return 0
+		// Default to TRACE, logs will get filtered by Conduit.
+		return zerolog.TraceLevel
 	}
 
 	return l
