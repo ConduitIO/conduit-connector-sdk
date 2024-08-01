@@ -23,7 +23,6 @@ import (
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-commons/rabin"
 	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	sdkschema "github.com/conduitio/conduit-connector-sdk/schema"
@@ -197,9 +196,8 @@ func (s *SourceWithSchemaExtraction) Wrap(impl Source) Source {
 	}
 
 	return &sourceWithSchemaExtraction{
-		Source:           impl,
-		defaults:         s.Config,
-		fingerprintCache: make(map[uint64]map[string]schema.Schema),
+		Source:   impl,
+		defaults: s.Config,
 	}
 }
 
@@ -212,9 +210,8 @@ type sourceWithSchemaExtraction struct {
 	payloadSubject string
 	keySubject     string
 
-	fingerprintCache map[uint64]map[string]schema.Schema
-	payloadWarnOnce  sync.Once
-	keyWarnOnce      sync.Once
+	payloadWarnOnce sync.Once
+	keyWarnOnce     sync.Once
 }
 
 func (s *sourceWithSchemaExtraction) Parameters() config.Parameters {
@@ -327,7 +324,6 @@ func (s *sourceWithSchemaExtraction) schemaForKey(ctx context.Context, rec openc
 	case subject != "" && version > 0:
 		// The connector has attached the schema subject and version, we can use
 		// it to retrieve the schema from the schema service.
-		// TODO cache
 		return sdkschema.Get(ctx, subject, version)
 	case subject != "" || version > 0:
 		// The connector has attached either the schema subject or version, but
@@ -406,7 +402,6 @@ func (s *sourceWithSchemaExtraction) schemaForPayload(ctx context.Context, rec o
 	case subject != "" && version > 0:
 		// The connector has attached the schema subject and version, we can use
 		// it to retrieve the schema from the schema service.
-		// TODO cache
 		return sdkschema.Get(ctx, subject, version)
 	case subject != "" || version > 0:
 		// The connector has attached either the schema subject or version, but
@@ -439,21 +434,10 @@ func (s *sourceWithSchemaExtraction) schemaForType(ctx context.Context, data any
 	if err != nil {
 		return schema.Schema{}, fmt.Errorf("failed to create schema for value: %w", err)
 	}
-	schemaBytes := []byte(srd.String())
-	fp := rabin.Bytes(schemaBytes)
 
-	schemas, ok := s.fingerprintCache[fp]
-	if !ok {
-		schemas = make(map[string]schema.Schema)
-		s.fingerprintCache[fp] = schemas
-	}
-	sch, ok := schemas[subject]
-	if !ok {
-		sch, err = sdkschema.Create(ctx, s.schemaType, subject, schemaBytes)
-		if err != nil {
-			return schema.Schema{}, fmt.Errorf("failed to create schema: %w", err)
-		}
-		schemas[subject] = sch
+	sch, err := sdkschema.Create(ctx, s.schemaType, subject, []byte(srd.String()))
+	if err != nil {
+		return schema.Schema{}, fmt.Errorf("failed to create schema: %w", err)
 	}
 
 	return sch, nil

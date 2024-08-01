@@ -37,7 +37,7 @@ var (
 
 // Service is the schema service client that can be used to interact with the schema service.
 // It is initialized with an in-memory service by default.
-var Service = newInMemoryService()
+var Service = newCachedSchemaService(newInMemoryService())
 
 // Create creates a new schema with the given name and bytes. The schema type must be Avro.
 func Create(ctx context.Context, typ schema.Type, subject string, bytes []byte) (schema.Schema, error) {
@@ -108,6 +108,6 @@ type standaloneInitializer struct{}
 
 // Init initializes the schema service client with the given gRPC connection.
 func (standaloneInitializer) Init(conn *grpc.ClientConn) error {
-	Service = client.NewSchemaServiceClient(conn)
+	Service = newCachedSchemaService(client.NewSchemaServiceClient(conn))
 	return nil
 }
