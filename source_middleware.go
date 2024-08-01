@@ -143,7 +143,7 @@ func (c SourceWithSchemaExtractionConfig) parameters() config.Parameters {
 		configSourceSchemaExtractionPayloadSubject: {
 			Default:     *c.PayloadSubject,
 			Type:        config.ParameterTypeString,
-			Description: `The subject of the payload schema. Defaults to "payload".`,
+			Description: `The subject of the payload schema. If the record metadata contains the field "opencdc.collection" it is prepended to the subject name and separated with a dot.`,
 		},
 		configSourceSchemaExtractionKeyEnabled: {
 			Default:     strconv.FormatBool(*c.KeyEnabled),
@@ -153,7 +153,7 @@ func (c SourceWithSchemaExtractionConfig) parameters() config.Parameters {
 		configSourceSchemaExtractionKeySubject: {
 			Default:     *c.KeySubject,
 			Type:        config.ParameterTypeString,
-			Description: `The subject of the key schema. Defaults to "key".`,
+			Description: `The subject of the key schema. If the record metadata contains the field "opencdc.collection" it is prepended to the subject name and separated with a dot.`,
 		},
 	}
 }
@@ -198,7 +198,7 @@ func (s *SourceWithSchemaExtraction) Wrap(impl Source) Source {
 	return &sourceWithSchemaExtraction{
 		Source:           impl,
 		defaults:         s.Config,
-		fingerprintCache: make(map[uint64]schema.Schema),
+		fingerprintCache: make(map[uint64]map[string]schema.Schema),
 	}
 }
 
@@ -211,7 +211,7 @@ type sourceWithSchemaExtraction struct {
 	payloadSubject string
 	keySubject     string
 
-	fingerprintCache map[uint64]schema.Schema
+	fingerprintCache map[uint64]map[string]schema.Schema
 	payloadWarnOnce  sync.Once
 	keyWarnOnce      sync.Once
 }
@@ -292,7 +292,14 @@ func (s *sourceWithSchemaExtraction) encodeKey(ctx context.Context, rec *opencdc
 		return nil
 	}
 
-	sch, err := s.schemaForType(ctx, rec.Key, s.keySubject)
+	subject := s.keySubject
+	if rec.Metadata != nil {
+		if collection, err := rec.Metadata.GetCollection(); err == nil {
+			subject = collection + "." + subject
+		}
+	}
+
+	sch, err := s.schemaForType(ctx, rec.Key, subject)
 	if err != nil {
 		return fmt.Errorf("failed to extract schema for key: %w", err)
 	}
@@ -329,7 +336,14 @@ func (s *sourceWithSchemaExtraction) encodePayload(ctx context.Context, rec *ope
 		val = rec.Payload.Before
 	}
 
-	sch, err := s.schemaForType(ctx, val, s.payloadSubject)
+	subject := s.payloadSubject
+	if rec.Metadata != nil {
+		if collection, err := rec.Metadata.GetCollection(); err == nil {
+			subject = collection + "." + subject
+		}
+	}
+
+	sch, err := s.schemaForType(ctx, val, subject)
 	if err != nil {
 		return fmt.Errorf("failed to extract schema for payload: %w", err)
 	}
@@ -364,13 +378,18 @@ func (s *sourceWithSchemaExtraction) schemaForType(ctx context.Context, data any
 	schemaBytes := []byte(srd.String())
 	fp := rabin.Bytes(schemaBytes)
 
-	sch, ok := s.fingerprintCache[fp]
+	schemas, ok := s.fingerprintCache[fp]
+	if !ok {
+		schemas = make(map[string]schema.Schema)
+		s.fingerprintCache[fp] = schemas
+	}
+	sch, ok := schemas[subject]
 	if !ok {
 		sch, err = sdkschema.Create(ctx, s.schemaType, subject, schemaBytes)
 		if err != nil {
 			return schema.Schema{}, fmt.Errorf("failed to create schema: %w", err)
 		}
-		s.fingerprintCache[sch.Fingerprint()] = sch
+		schemas[subject] = sch
 	}
 
 	return sch, nil
