@@ -37,14 +37,16 @@ type DestinationMiddleware interface {
 
 // DestinationMiddlewareOption can be used to change the behavior of the default
 // destination middleware created with DefaultDestinationMiddleware.
-type DestinationMiddlewareOption func(DestinationMiddleware)
+type DestinationMiddlewareOption interface {
+	Apply(DestinationMiddleware)
+}
 
 // Available destination middleware options.
 var (
-	_ DestinationMiddlewareOption = DestinationWithBatchConfig{}.Apply
-	_ DestinationMiddlewareOption = DestinationWithRecordFormatConfig{}.Apply
-	_ DestinationMiddlewareOption = DestinationWithRateLimitConfig{}.Apply
-	_ DestinationMiddlewareOption = DestinationWithSchemaExtractionConfig{}.Apply
+	_ DestinationMiddlewareOption = DestinationWithBatchConfig{}
+	_ DestinationMiddlewareOption = DestinationWithRecordFormatConfig{}
+	_ DestinationMiddlewareOption = DestinationWithRateLimitConfig{}
+	_ DestinationMiddlewareOption = DestinationWithSchemaExtractionConfig{}
 )
 
 // DefaultDestinationMiddleware returns a slice of middleware that should be
@@ -59,7 +61,7 @@ func DefaultDestinationMiddleware(opts ...DestinationMiddlewareOption) []Destina
 	// apply options to all middleware
 	for _, m := range middleware {
 		for _, opt := range opts {
-			opt(m)
+			opt.Apply(m)
 		}
 	}
 	return middleware
@@ -86,6 +88,8 @@ type ctxKeyBatchConfig struct{}
 // DestinationWithBatchConfig is the configuration for the
 // DestinationWithBatch middleware. Fields set to their zero value are
 // ignored and will be set to the default value.
+//
+// DestinationWithBatchConfig can be used as a DestinationMiddlewareOption.
 type DestinationWithBatchConfig struct {
 	// BatchSize is the default value for the batch size.
 	BatchSize int
@@ -94,7 +98,6 @@ type DestinationWithBatchConfig struct {
 }
 
 // Apply sets the default configuration for the DestinationWithBatch middleware.
-// Apply can be used as a DestinationMiddlewareOption.
 func (c DestinationWithBatchConfig) Apply(m DestinationMiddleware) {
 	if d, ok := m.(*DestinationWithBatch); ok {
 		d.Config = c
@@ -228,6 +231,8 @@ const (
 // DestinationWithRateLimitConfig is the configuration for the
 // DestinationWithRateLimit middleware. Fields set to their zero value are
 // ignored and will be set to the default value.
+//
+// DestinationWithRateLimitConfig can be used as a DestinationMiddlewareOption.
 type DestinationWithRateLimitConfig struct {
 	// RatePerSecond is the default value for the rate per second.
 	RatePerSecond float64
@@ -236,7 +241,6 @@ type DestinationWithRateLimitConfig struct {
 }
 
 // Apply sets the default configuration for the DestinationWithRateLimit middleware.
-// Apply can be used as a DestinationMiddlewareOption.
 func (c DestinationWithRateLimitConfig) Apply(m DestinationMiddleware) {
 	if d, ok := m.(*DestinationWithRateLimit); ok {
 		d.Config = c
@@ -350,6 +354,11 @@ const (
 	configDestinationRecordFormatOptions = "sdk.record.format.options"
 )
 
+// DestinationWithRecordFormatConfig is the configuration for the
+// DestinationWithRecordFormat middleware. Fields set to their zero value are
+// ignored and will be set to the default value.
+//
+// DestinationWithRecordFormatConfig can be used as a DestinationMiddlewareOption.
 type DestinationWithRecordFormatConfig struct {
 	// DefaultRecordFormat is the default record format.
 	DefaultRecordFormat string
@@ -357,7 +366,6 @@ type DestinationWithRecordFormatConfig struct {
 }
 
 // Apply sets the default configuration for the DestinationWithRecordFormat middleware.
-// Apply can be used as a DestinationMiddlewareOption.
 func (c DestinationWithRecordFormatConfig) Apply(m DestinationMiddleware) {
 	if d, ok := m.(*DestinationWithRecordFormat); ok {
 		d.Config = c
@@ -513,6 +521,11 @@ const (
 	configDestinationWithSchemaExtractionKeyEnabled     = "sdk.schema.extract.key.enabled"
 )
 
+// DestinationWithSchemaExtractionConfig is the configuration for the
+// DestinationWithSchemaExtraction middleware. Fields set to their zero value are
+// ignored and will be set to the default value.
+//
+// DestinationWithSchemaExtractionConfig can be used as a DestinationMiddlewareOption.
 type DestinationWithSchemaExtractionConfig struct {
 	// Whether to extract and decode the record payload with a schema.
 	// If unset, defaults to true.
@@ -523,7 +536,6 @@ type DestinationWithSchemaExtractionConfig struct {
 }
 
 // Apply sets the default configuration for the DestinationWithSchemaExtraction middleware.
-// Apply can be used as a DestinationMiddlewareOption.
 func (c DestinationWithSchemaExtractionConfig) Apply(m DestinationMiddleware) {
 	if d, ok := m.(*DestinationWithSchemaExtraction); ok {
 		d.Config = c

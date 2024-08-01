@@ -35,12 +35,14 @@ type SourceMiddleware interface {
 
 // SourceMiddlewareOption can be used to change the behavior of the default source
 // middleware created with DefaultSourceMiddleware.
-type SourceMiddlewareOption func(SourceMiddleware)
+type SourceMiddlewareOption interface {
+	Apply(SourceMiddleware)
+}
 
 // Available source middleware options.
 var (
-	_ SourceMiddlewareOption = SourceWithSchemaExtractionConfig{}.Apply
-	_ SourceMiddlewareOption = SourceWithSchemaContextConfig{}.Apply
+	_ SourceMiddlewareOption = SourceWithSchemaExtractionConfig{}
+	_ SourceMiddlewareOption = SourceWithSchemaContextConfig{}
 )
 
 // DefaultSourceMiddleware returns a slice of middleware that should be added to
@@ -54,7 +56,7 @@ func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware 
 	// apply options to all middleware
 	for _, m := range middleware {
 		for _, opt := range opts {
-			opt(m)
+			opt.Apply(m)
 		}
 	}
 	return middleware
@@ -82,6 +84,8 @@ const (
 // SourceWithSchemaExtractionConfig is the configuration for the
 // SourceWithSchemaExtraction middleware. Fields set to their zero value are
 // ignored and will be set to the default value.
+//
+// SourceWithSchemaExtractionConfig can be used as a SourceMiddlewareOption.
 type SourceWithSchemaExtractionConfig struct {
 	// The type of the payload schema. Defaults to Avro.
 	SchemaType schema.Type
@@ -98,7 +102,6 @@ type SourceWithSchemaExtractionConfig struct {
 }
 
 // Apply sets the default configuration for the SourceWithSchemaExtraction middleware.
-// Apply can be used as a SourceMiddlewareOption.
 func (c SourceWithSchemaExtractionConfig) Apply(m SourceMiddleware) {
 	if s, ok := m.(*SourceWithSchemaExtraction); ok {
 		s.Config = c
@@ -459,17 +462,29 @@ func (s *sourceWithSchemaExtraction) encodeWithSchema(sch schema.Schema, data an
 
 // -- SourceWithSchemaContext --------------------------------------------------
 
+// SourceWithSchemaContextConfig is the configuration for the
+// SourceWithSchemaContext middleware. Fields set to their zero value are
+// ignored and will be set to the default value.
+//
+// SourceWithSchemaContextConfig can be used as a SourceMiddlewareOption.
 type SourceWithSchemaContextConfig struct {
 	Enabled *bool
 	Name    *string
 }
 
 // Apply sets the default configuration for the SourceWithSchemaExtraction middleware.
-// Apply can be used as a SourceMiddlewareOption.
 func (c SourceWithSchemaContextConfig) Apply(m SourceMiddleware) {
 	if s, ok := m.(*SourceWithSchemaContext); ok {
 		s.Config = c
 	}
+}
+
+func (c SourceWithSchemaContextConfig) EnabledParameterName() string {
+	return "sdk.schema.context.enabled"
+}
+
+func (c SourceWithSchemaContextConfig) NameParameterName() string {
+	return "sdk.schema.context.name"
 }
 
 func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
@@ -499,14 +514,6 @@ func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
 			Type: config.ParameterTypeString,
 		},
 	}
-}
-
-func (c SourceWithSchemaContextConfig) EnabledParameterName() string {
-	return "sdk.schema.context.enabled"
-}
-
-func (c SourceWithSchemaContextConfig) NameParameterName() string {
-	return "sdk.schema.context.name"
 }
 
 // SourceWithSchemaContext is a middleware that makes it possible to configure
