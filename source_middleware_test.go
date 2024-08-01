@@ -196,8 +196,10 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name   string
-		record opencdc.Record
+		name               string
+		record             opencdc.Record
+		wantKeySubject     string
+		wantPayloadSubject string
 	}{{
 		name: "no key, no payload",
 		record: opencdc.Record{
@@ -207,6 +209,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  nil,
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "raw key",
 		record: opencdc.Record{
@@ -216,6 +220,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  nil,
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "structured key",
 		record: opencdc.Record{
@@ -225,6 +231,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  nil,
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "raw payload before",
 		record: opencdc.Record{
@@ -234,6 +242,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  nil,
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "structured payload before",
 		record: opencdc.Record{
@@ -242,6 +252,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				Before: testStructuredData.Clone(),
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "raw payload after",
 		record: opencdc.Record{
@@ -251,6 +263,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  opencdc.RawData("this should not be encoded"),
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "structured payload after",
 		record: opencdc.Record{
@@ -260,6 +274,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  testStructuredData.Clone(),
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "all structured",
 		record: opencdc.Record{
@@ -269,6 +285,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  testStructuredData.Clone(),
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "all raw",
 		record: opencdc.Record{
@@ -278,6 +296,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  opencdc.RawData("this should not be encoded"),
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "key raw payload structured",
 		record: opencdc.Record{
@@ -287,6 +307,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  testStructuredData.Clone(),
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
 	}, {
 		name: "key structured payload raw",
 		record: opencdc.Record{
@@ -296,6 +318,22 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				After:  nil,
 			},
 		},
+		wantKeySubject:     "key",
+		wantPayloadSubject: "payload",
+	}, {
+		name: "all structured with collection",
+		record: opencdc.Record{
+			Metadata: map[string]string{
+				opencdc.MetadataCollection: "foo",
+			},
+			Key: testStructuredData.Clone(),
+			Payload: opencdc.Change{
+				Before: testStructuredData.Clone(),
+				After:  testStructuredData.Clone(),
+			},
+		},
+		wantKeySubject:     "foo.key",
+		wantPayloadSubject: "foo.payload",
 	}}
 
 	for _, tc := range testCases {
@@ -326,6 +364,9 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				version, err := got.Metadata.GetKeySchemaVersion()
 				is.NoErr(err)
 
+				is.Equal(subject, tc.wantKeySubject)
+				is.Equal(version, 1)
+
 				sch, err := sdkschema.Get(ctx, subject, version)
 				is.NoErr(err)
 
@@ -348,6 +389,9 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				is.NoErr(err)
 				version, err := got.Metadata.GetPayloadSchemaVersion()
 				is.NoErr(err)
+
+				is.Equal(subject, tc.wantPayloadSubject)
+				is.Equal(version, 1)
 
 				sch, err := sdkschema.Get(ctx, subject, version)
 				is.NoErr(err)
