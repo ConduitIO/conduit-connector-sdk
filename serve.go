@@ -23,6 +23,7 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/pconnector/server"
 	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 	"github.com/conduitio/conduit-connector-sdk/internal"
+	"github.com/rs/zerolog"
 )
 
 // Serve starts the plugin and takes care of its whole lifecycle by blocking
@@ -44,7 +45,7 @@ func Serve(c Connector) {
 }
 
 func serve(c Connector) error {
-	initStandaloneModeLogger()
+	initStandaloneModeLogger(connectorLogLevel())
 
 	target, err := connectorUtilitiesGRPCTarget()
 	if err != nil {
@@ -110,6 +111,22 @@ func connectorUtilitiesGRPCTarget() (string, error) {
 	}
 
 	return target, nil
+}
+
+// connectorLogLevel returns the log level to be used by the connector. The value
+// is fetched from the environment variable provided by conduit-connector-protocol.
+// The function returns the TRACE level if the environment variable is not
+// specified or empty (that's the zerolog default).
+func connectorLogLevel() zerolog.Level {
+	level := os.Getenv(pconnutils.EnvConduitLogLevel)
+
+	l, err := zerolog.ParseLevel(level)
+	if err != nil {
+		// Default to TRACE, logs will get filtered by Conduit.
+		return zerolog.TraceLevel
+	}
+
+	return l
 }
 
 func missingEnvError(envVar, conduitVersion string) error {
