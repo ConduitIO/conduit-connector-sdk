@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"strconv"
 	"testing"
 	"time"
 
@@ -190,10 +191,14 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 
 	testStructuredData := opencdc.StructuredData{
 		"foo":   "bar",
-		"int":   1,
+		"long":  int64(1),
 		"float": 2.34,
 		"time":  time.Now().UTC().Truncate(time.Microsecond), // avro precision is microseconds
 	}
+	wantSchema := `{"name":"record","type":"record","fields":[{"name":"float","type":"double"},{"name":"foo","type":"string"},{"name":"long","type":"long"},{"name":"time","type":{"type":"long","logicalType":"timestamp-micros"}}]}`
+
+	customTestSchema, err := sdkschema.Create(ctx, schema.TypeAvro, "custom-test-schema", []byte(wantSchema))
+	is.NoErr(err)
 
 	testCases := []struct {
 		name               string
@@ -334,6 +339,24 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 		},
 		wantKeySubject:     "foo.key",
 		wantPayloadSubject: "foo.payload",
+	}, {
+		name: "all structured with collection and predefined schema",
+		record: opencdc.Record{
+			Metadata: map[string]string{
+				opencdc.MetadataCollection:           "foo",
+				opencdc.MetadataKeySchemaSubject:     customTestSchema.Subject,
+				opencdc.MetadataKeySchemaVersion:     strconv.Itoa(customTestSchema.Version),
+				opencdc.MetadataPayloadSchemaSubject: customTestSchema.Subject,
+				opencdc.MetadataPayloadSchemaVersion: strconv.Itoa(customTestSchema.Version),
+			},
+			Key: testStructuredData.Clone(),
+			Payload: opencdc.Change{
+				Before: testStructuredData.Clone(),
+				After:  testStructuredData.Clone(),
+			},
+		},
+		wantKeySubject:     customTestSchema.Subject,
+		wantPayloadSubject: customTestSchema.Subject,
 	}}
 
 	for _, tc := range testCases {
@@ -370,6 +393,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				sch, err := sdkschema.Get(ctx, subject, version)
 				is.NoErr(err)
 
+				is.Equal("", cmp.Diff(wantSchema, string(sch.Bytes)))
+
 				var sd opencdc.StructuredData
 				err = sch.Unmarshal(gotKey.Bytes(), &sd)
 				is.NoErr(err)
@@ -396,6 +421,8 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				sch, err := sdkschema.Get(ctx, subject, version)
 				is.NoErr(err)
 
+				is.Equal("", cmp.Diff(wantSchema, string(sch.Bytes)))
+
 				if isPayloadBeforeStructured {
 					var sd opencdc.StructuredData
 					err = sch.Unmarshal(gotPayloadBefore.Bytes(), &sd)
@@ -415,9 +442,9 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				is.True(errors.Is(err, opencdc.ErrMetadataFieldNotFound))
 			}
 
-			is.Equal(gotKey, wantKey)
-			is.Equal(gotPayloadBefore, wantPayloadBefore)
-			is.Equal(gotPayloadAfter, wantPayloadAfter)
+			is.Equal("", cmp.Diff(gotKey, wantKey))
+			is.Equal("", cmp.Diff(gotPayloadBefore, wantPayloadBefore))
+			is.Equal("", cmp.Diff(gotPayloadAfter, wantPayloadAfter))
 		})
 	}
 }
