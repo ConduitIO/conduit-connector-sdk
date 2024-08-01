@@ -191,11 +191,11 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 
 	testStructuredData := opencdc.StructuredData{
 		"foo":   "bar",
-		"int":   1,
+		"long":  int64(1),
 		"float": 2.34,
 		"time":  time.Now().UTC().Truncate(time.Microsecond), // avro precision is microseconds
 	}
-	wantSchema := `{"name":"record","type":"record","fields":[{"name":"float","type":"double"},{"name":"foo","type":"string"},{"name":"int","type":"int"},{"name":"time","type":{"type":"long","logicalType":"timestamp-micros"}}]}`
+	wantSchema := `{"name":"record","type":"record","fields":[{"name":"float","type":"double"},{"name":"foo","type":"string"},{"name":"long","type":"long"},{"name":"time","type":{"type":"long","logicalType":"timestamp-micros"}}]}`
 
 	customTestSchema, err := sdkschema.Create(ctx, schema.TypeAvro, "custom-test-schema", []byte(wantSchema))
 	is.NoErr(err)
@@ -442,9 +442,9 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				is.True(errors.Is(err, opencdc.ErrMetadataFieldNotFound))
 			}
 
-			is.Equal(gotKey, wantKey)
-			is.Equal(gotPayloadBefore, wantPayloadBefore)
-			is.Equal(gotPayloadAfter, wantPayloadAfter)
+			is.Equal("", cmp.Diff(gotKey, wantKey))
+			is.Equal("", cmp.Diff(gotPayloadBefore, wantPayloadBefore))
+			is.Equal("", cmp.Diff(gotPayloadAfter, wantPayloadAfter))
 		})
 	}
 }
