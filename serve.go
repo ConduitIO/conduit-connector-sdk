@@ -118,7 +118,7 @@ func connectorUtilitiesGRPCTarget() (string, error) {
 // The function returns the TRACE level if the environment variable is not
 // specified or empty (that's the zerolog default).
 func connectorLogLevel() zerolog.Level {
-	level := os.Getenv(pconnutils.EnvConduitConnectorLogLevel)
+	level := os.Getenv(pconnector.EnvConduitConnectorLogLevel)
 
 	l, err := zerolog.ParseLevel(level)
 	if err != nil {
