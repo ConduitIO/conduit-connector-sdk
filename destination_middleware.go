@@ -25,7 +25,6 @@ import (
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-commons/schema"
 	sdkschema "github.com/conduitio/conduit-connector-sdk/schema"
 	"golang.org/x/time/rate"
 )
@@ -593,9 +592,8 @@ func (s *DestinationWithSchemaExtraction) Wrap(impl Destination) Destination {
 		s.Config.PayloadEnabled = ptr(true)
 	}
 	return &destinationWithSchemaExtraction{
-		Destination:         impl,
-		defaults:            s.Config,
-		subjectVersionCache: make(map[string]map[int]schema.Schema),
+		Destination: impl,
+		defaults:    s.Config,
 	}
 }
 
@@ -607,9 +605,8 @@ type destinationWithSchemaExtraction struct {
 	payloadEnabled bool
 	keyEnabled     bool
 
-	subjectVersionCache map[string]map[int]schema.Schema
-	payloadWarnOnce     sync.Once
-	keyWarnOnce         sync.Once
+	payloadWarnOnce sync.Once
+	keyWarnOnce     sync.Once
 }
 
 func (d *destinationWithSchemaExtraction) Parameters() config.Parameters {
@@ -738,21 +735,13 @@ func (d *destinationWithSchemaExtraction) decode(ctx context.Context, data openc
 		return nil, fmt.Errorf("unexpected data type %T", data)
 	}
 
-	// check if we have the schema in the cache
-	if _, ok := d.subjectVersionCache[subject]; !ok {
-		d.subjectVersionCache[subject] = make(map[int]schema.Schema)
-	}
-	if _, ok := d.subjectVersionCache[subject][version]; !ok {
-		sch, err := sdkschema.Get(ctx, subject, version)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get schema for %s:%d: %w", subject, version, err)
-		}
-		d.subjectVersionCache[subject][version] = sch
+	sch, err := sdkschema.Get(ctx, subject, version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema for %s:%d: %w", subject, version, err)
 	}
 
-	sch := d.subjectVersionCache[subject][version]
 	var structuredData opencdc.StructuredData
-	err := sch.Unmarshal(data.Bytes(), &structuredData)
+	err = sch.Unmarshal(data.Bytes(), &structuredData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal bytes with schema: %w", err)
 	}
