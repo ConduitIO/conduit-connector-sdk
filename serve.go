@@ -45,7 +45,12 @@ func Serve(c Connector) {
 }
 
 func serve(c Connector) error {
-	initStandaloneModeLogger(connectorLogLevel())
+	cfg, err := getPluginConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get plugin configuration: %w", err)
+	}
+
+	initStandaloneModeLogger(connectorLogLevel(cfg))
 
 	target, err := connectorUtilitiesGRPCTarget()
 	if err != nil {
@@ -67,11 +72,6 @@ func serve(c Connector) error {
 		c.NewDestination = func() Destination { return nil }
 	}
 
-	cfg, err := getPluginConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get plugin configuration: %w", err)
-	}
-
 	return server.Serve(
 		func() pconnector.SpecifierPlugin {
 			return NewSpecifierPlugin(c.NewSpecification(), c.NewSource(), c.NewDestination())
@@ -87,12 +87,12 @@ func getPluginConfig() (pconnector.PluginConfig, error) {
 		return pconnector.PluginConfig{}, missingEnvError(pconnutils.EnvConduitConnectorToken, "v0.11.0")
 	}
 
-	connectorID := os.Getenv(pconnutils.EnvConduitConnectorID)
+	connectorID := os.Getenv(pconnector.EnvConduitConnectorID)
 	if connectorID == "" {
-		return pconnector.PluginConfig{}, missingEnvError(pconnutils.EnvConduitConnectorID, "v0.11.0")
+		return pconnector.PluginConfig{}, missingEnvError(pconnector.EnvConduitConnectorID, "v0.11.0")
 	}
 
-	logLevel := os.Getenv(pconnutils.EnvConduitLogLevel)
+	logLevel := os.Getenv(pconnector.EnvConduitConnectorLogLevel)
 
 	return pconnector.PluginConfig{
 		Token:       token,
@@ -117,8 +117,8 @@ func connectorUtilitiesGRPCTarget() (string, error) {
 // is fetched from the environment variable provided by conduit-connector-protocol.
 // The function returns the TRACE level if the environment variable is not
 // specified or empty (that's the zerolog default).
-func connectorLogLevel() zerolog.Level {
-	level := os.Getenv(pconnutils.EnvConduitLogLevel)
+func connectorLogLevel(cfg pconnector.PluginConfig) zerolog.Level {
+	level := cfg.LogLevel
 
 	l, err := zerolog.ParseLevel(level)
 	if err != nil {
