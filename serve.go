@@ -45,7 +45,12 @@ func Serve(c Connector) {
 }
 
 func serve(c Connector) error {
-	initStandaloneModeLogger(connectorLogLevel())
+	cfg, err := getPluginConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get plugin configuration: %w", err)
+	}
+
+	initStandaloneModeLogger(connectorLogLevel(cfg))
 
 	target, err := connectorUtilitiesGRPCTarget()
 	if err != nil {
@@ -65,11 +70,6 @@ func serve(c Connector) error {
 	}
 	if c.NewDestination == nil {
 		c.NewDestination = func() Destination { return nil }
-	}
-
-	cfg, err := getPluginConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get plugin configuration: %w", err)
 	}
 
 	return server.Serve(
@@ -117,8 +117,8 @@ func connectorUtilitiesGRPCTarget() (string, error) {
 // is fetched from the environment variable provided by conduit-connector-protocol.
 // The function returns the TRACE level if the environment variable is not
 // specified or empty (that's the zerolog default).
-func connectorLogLevel() zerolog.Level {
-	level := os.Getenv(pconnector.EnvConduitConnectorLogLevel)
+func connectorLogLevel(cfg pconnector.PluginConfig) zerolog.Level {
+	level := cfg.LogLevel
 
 	l, err := zerolog.ParseLevel(level)
 	if err != nil {
