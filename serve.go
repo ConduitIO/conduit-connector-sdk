@@ -87,12 +87,12 @@ func getPluginConfig() (pconnector.PluginConfig, error) {
 		return pconnector.PluginConfig{}, missingEnvError(pconnutils.EnvConduitConnectorToken, "v0.11.0")
 	}
 
-	connectorID := os.Getenv(pconnutils.EnvConduitConnectorID)
+	connectorID := os.Getenv(pconnector.EnvConduitConnectorID)
 	if connectorID == "" {
-		return pconnector.PluginConfig{}, missingEnvError(pconnutils.EnvConduitConnectorID, "v0.11.0")
+		return pconnector.PluginConfig{}, missingEnvError(pconnector.EnvConduitConnectorID, "v0.11.0")
 	}
 
-	logLevel := os.Getenv(pconnutils.EnvConduitLogLevel)
+	logLevel := os.Getenv(pconnector.EnvConduitConnectorLogLevel)
 
 	return pconnector.PluginConfig{
 		Token:       token,
@@ -118,7 +118,7 @@ func connectorUtilitiesGRPCTarget() (string, error) {
 // The function returns the TRACE level if the environment variable is not
 // specified or empty (that's the zerolog default).
 func connectorLogLevel() zerolog.Level {
-	level := os.Getenv(pconnutils.EnvConduitLogLevel)
+	level := os.Getenv(pconnutils.EnvConduitConnectorLogLevel)
 
 	l, err := zerolog.ParseLevel(level)
 	if err != nil {
