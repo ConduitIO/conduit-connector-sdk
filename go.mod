@@ -4,8 +4,8 @@ go 1.22.5
 
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
-	github.com/conduitio/conduit-commons v0.2.1-0.20240801113202-731b460a2c58
-	github.com/conduitio/conduit-connector-protocol v0.6.1-0.20240802103310-fd4ab945b1ac
+	github.com/conduitio/conduit-commons v0.3.0
+	github.com/conduitio/conduit-connector-protocol v0.7.0
 	github.com/goccy/go-json v0.10.3
 	github.com/golangci/golangci-lint v1.59.1
 	github.com/google/go-cmp v0.6.0
@@ -95,7 +95,7 @@ require (
 	github.com/gostaticanalysis/comment v1.4.2 // indirect
 	github.com/gostaticanalysis/forcetypeassert v0.1.0 // indirect
 	github.com/gostaticanalysis/nilerr v0.1.1 // indirect
-	github.com/hamba/avro/v2 v2.23.1-0.20240731181311-3fc81b66c693 // indirect
+	github.com/hamba/avro/v2 v2.24.0 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-plugin v1.6.1 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
