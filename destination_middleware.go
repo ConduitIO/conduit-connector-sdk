@@ -264,7 +264,7 @@ func (c DestinationWithRateLimitConfig) parameters() config.Parameters {
 		},
 		configDestinationRateBurst: {
 			Default:     strconv.Itoa(c.Burst),
-			Description: "Allow bursts of at most X records (0 or less means that bursts are not allowed). Only takes effect if a rate limit per second is set. Note that if `sdk.batch.size` is bigger than `sdk.rate.burst`, the effective batch size will be equal to `sdk.rate.burst`.",
+			Description: "Allow bursts of at most X records (0 or less means that bursts are not limited). Only takes effect if a rate limit per second is set. Note that if `sdk.batch.size` is bigger than `sdk.rate.burst`, the effective batch size will be equal to `sdk.rate.burst`.",
 			Type:        config.ParameterTypeInt,
 		},
 	}
@@ -275,7 +275,7 @@ func (c DestinationWithRateLimitConfig) parameters() config.Parameters {
 //   - `sdk.rate.perSecond` - Maximum number of records written per second (0
 //     means no rate limit).
 //   - `sdk.rate.burst` - Allow bursts of at most X records (0 or less means
-//     that bursts are not allowed). Only takes effect if a rate limit per
+//     that bursts are not limited). Only takes effect if a rate limit per
 //     second is set. Note that if `sdk.batch.size` is bigger than
 //     `sdk.rate.burst`, the effective batch size will be equal to `sdk.rate.burst`.
 //
