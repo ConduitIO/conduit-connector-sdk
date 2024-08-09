@@ -185,7 +185,7 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 		have:        config.Config{},
 		wantLimiter: true,
 		wantLimit:   rate.Limit(1.23),
-		wantBurst:   1, // burst will be at minimum 1
+		wantBurst:   2, // burst will be set to ceil of rate per second
 	}, {
 		name: "config with values",
 		middleware: DestinationWithRateLimit{
@@ -214,7 +214,7 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 		},
 		wantLimiter: true,
 		wantLimit:   rate.Limit(1.23),
-		wantBurst:   1, // burst will be at minimum 1
+		wantBurst:   2, // burst will be set to ceil of rate per second
 	}}
 
 	for _, tt := range testCases {
@@ -248,18 +248,19 @@ func TestDestinationWithRateLimit_Write(t *testing.T) {
 	dst.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
 
 	err := d.Configure(ctx, config.Config{
-		configDestinationRatePerSecond: "10",
+		configDestinationRatePerSecond: "8",
 		configDestinationRateBurst:     "2",
 	})
 	is.NoErr(err)
 
-	recs := []opencdc.Record{{}, {}}
+	recs := []opencdc.Record{{}, {}, {}, {}}
 
 	const tolerance = time.Millisecond * 10
 
 	expectWriteAfter := func(delay time.Duration) {
 		start := time.Now()
-		dst.EXPECT().Write(ctx, recs).DoAndReturn(func(context.Context, []opencdc.Record) (int, error) {
+		// expect writes of 2 records at a time because of the burst
+		dst.EXPECT().Write(ctx, []opencdc.Record{{}, {}}).DoAndReturn(func(context.Context, []opencdc.Record) (int, error) {
 			dur := time.Since(start)
 			diff := dur - delay
 			if diff < 0 {
@@ -272,18 +273,17 @@ func TestDestinationWithRateLimit_Write(t *testing.T) {
 		})
 	}
 
-	// first write should happen right away
+	// first write of 4 records is split in two bursts of 2 records, first
+	// happens instantly, the second after 250ms (2/8 seconds)
 	expectWriteAfter(0)
+	expectWriteAfter(250 * time.Millisecond)
 	_, err = d.Write(ctx, recs)
 	is.NoErr(err)
 
-	// second write happens right away because we allow bursts of 2
-	expectWriteAfter(0)
-	_, err = d.Write(ctx, recs)
-	is.NoErr(err)
-
-	// third write needs to wait for 100ms
-	expectWriteAfter(100 * time.Millisecond)
+	// third and fourth writes are again delayed by 250ms each
+	// the result is 8 records written in a second with bursts of at most 2 records
+	expectWriteAfter(250 * time.Millisecond)
+	expectWriteAfter(500 * time.Millisecond)
 	_, err = d.Write(ctx, recs)
 	is.NoErr(err)
 }
