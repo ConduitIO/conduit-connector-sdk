@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"sync"
@@ -258,12 +259,12 @@ func (c DestinationWithRateLimitConfig) parameters() config.Parameters {
 	return config.Parameters{
 		configDestinationRatePerSecond: {
 			Default:     strconv.FormatFloat(c.RatePerSecond, 'f', -1, 64),
-			Description: "Maximum times records can be written per second (0 means no rate limit).",
+			Description: "Maximum number of records written per second (0 means no rate limit).",
 			Type:        config.ParameterTypeFloat,
 		},
 		configDestinationRateBurst: {
 			Default:     strconv.Itoa(c.Burst),
-			Description: "Allow bursts of at most X writes (1 or less means that bursts are not allowed). Only takes effect if a rate limit per second is set.",
+			Description: "Allow bursts of at most X records (0 or less means that bursts are not limited). Only takes effect if a rate limit per second is set. Note that if `sdk.batch.size` is bigger than `sdk.rate.burst`, the effective batch size will be equal to `sdk.rate.burst`.",
 			Type:        config.ParameterTypeInt,
 		},
 	}
@@ -271,10 +272,12 @@ func (c DestinationWithRateLimitConfig) parameters() config.Parameters {
 
 // DestinationWithRateLimit adds support for rate limiting to the destination.
 // It adds two parameters to the destination config:
-//   - `sdk.rate.perSecond` - Maximum times the Write function can be called per
-//     second (0 means no rate limit).
-//   - `sdk.rate.burst` - Allow bursts of at most X writes (0 means that bursts
-//     are not allowed).
+//   - `sdk.rate.perSecond` - Maximum number of records written per second (0
+//     means no rate limit).
+//   - `sdk.rate.burst` - Allow bursts of at most X records (0 or less means
+//     that bursts are not limited). Only takes effect if a rate limit per
+//     second is set. Note that if `sdk.batch.size` is bigger than
+//     `sdk.rate.burst`, the effective batch size will be equal to `sdk.rate.burst`.
 //
 // To change the defaults of these parameters use the fields of this struct.
 type DestinationWithRateLimit struct {
@@ -328,7 +331,9 @@ func (d *destinationWithRateLimit) Configure(ctx context.Context, config config.
 
 	if limit > 0 {
 		if burst <= 0 {
-			burst = 1 // non-positive numbers would prevent all writes, we don't allow that, we default it to 1
+			// non-positive numbers would prevent all writes, we default it to
+			// be the same size as the per second limit
+			burst = int(math.Ceil(float64(limit)))
 		}
 		d.limiter = rate.NewLimiter(limit, burst)
 	}
@@ -337,13 +342,32 @@ func (d *destinationWithRateLimit) Configure(ctx context.Context, config config.
 }
 
 func (d *destinationWithRateLimit) Write(ctx context.Context, recs []opencdc.Record) (int, error) {
-	if d.limiter != nil {
-		err := d.limiter.Wait(ctx)
+	if d.limiter == nil {
+		return d.Destination.Write(ctx, recs)
+	}
+
+	// split the records into smaller chunks
+	// this is necessary because the rate limiter only allows bursts of a certain size
+	// and we need to wait for each chunk
+	written := 0
+	chunkSize := d.limiter.Burst()
+	for len(recs) > 0 {
+		if chunkSize > len(recs) {
+			chunkSize = len(recs)
+		}
+		chunk := recs[:chunkSize]
+		recs = recs[chunkSize:]
+		err := d.limiter.WaitN(ctx, len(chunk))
 		if err != nil {
 			return 0, fmt.Errorf("rate limiter: %w", err)
 		}
+		n, err := d.Destination.Write(ctx, chunk)
+		written += n
+		if err != nil {
+			return written, err
+		}
 	}
-	return d.Destination.Write(ctx, recs)
+	return written, nil
 }
 
 // -- DestinationWithRecordFormat ----------------------------------------------
