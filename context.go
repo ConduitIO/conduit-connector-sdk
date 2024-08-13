@@ -23,5 +23,9 @@ import (
 // ConnectorIDFromContext fetches the connector ID from the context. If the
 // context does not contain a connector ID it returns an empty string.
 func ConnectorIDFromContext(ctx context.Context) string {
-	return internal.ConnectorIDFromContext(ctx)
+	connectorID := ctx.Value(internal.ConnectorIDCtxKey{})
+	if connectorID != nil {
+		return connectorID.(string) //nolint:forcetypeassert // only this package can set the value, it has to be a string
+	}
+	return ""
 }

@@ -24,7 +24,6 @@ import (
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-commons/schema"
-	"github.com/conduitio/conduit-connector-sdk/internal"
 	sdkschema "github.com/conduitio/conduit-connector-sdk/schema"
 )
 
@@ -563,7 +562,7 @@ func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Conf
 		// 1. user config
 		// 2. default middleware config
 		// 3. connector ID (if no context name is configured anywhere)
-		s.contextName = internal.ConnectorIDFromContext(ctx)
+		s.contextName = ConnectorIDFromContext(ctx)
 		if s.mwCfg.Name != nil {
 			s.contextName = *s.mwCfg.Name
 		}

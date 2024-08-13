@@ -12,27 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package internal
+package sdk
 
 import (
 	"context"
 	"testing"
 
-	"github.com/conduitio/conduit-connector-protocol/pconnector"
-	"github.com/conduitio/conduit-connector-protocol/pconnutils"
+	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/matryer/is"
 )
 
-func TestContextUtils_Enrich(t *testing.T) {
-	is := is.New(t)
-	ctx := context.Background()
-	cfg := pconnector.PluginConfig{
-		Token:       "test-token",
-		ConnectorID: "test-connector-id",
-		LogLevel:    "trace",
+func TestConnectorIDFromContext(t *testing.T) {
+	testCases := []struct {
+		name string
+		want string
+	}{
+		{
+			name: "empty string",
+			want: "",
+		},
+		{
+			name: "with connector ID",
+			want: "test-connector-id",
+		},
 	}
 
-	got := Enrich(ctx, cfg)
-	is.Equal(cfg.Token, pconnutils.ConnectorTokenFromContext(got))
-	is.Equal(cfg.LogLevel, LogLevelFromContext(got))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			ctx := context.Background()
+
+			ctxWithID := internal.ContextWithConnectorID(ctx, tc.want)
+			is.Equal(ConnectorIDFromContext(ctxWithID), tc.want)
+		})
+	}
 }
