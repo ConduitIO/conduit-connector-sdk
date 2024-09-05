@@ -34,5 +34,6 @@ func TestContextUtils_Enrich(t *testing.T) {
 
 	got := Enrich(ctx, cfg)
 	is.Equal(cfg.Token, pconnutils.ConnectorTokenFromContext(got))
+	is.Equal(cfg.ConnectorID, ConnectorIDFromContext(got))
 	is.Equal(cfg.LogLevel, LogLevelFromContext(got))
 }

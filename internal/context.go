@@ -23,11 +23,21 @@ import (
 
 // -- Connector ID ----------------------------------------------------------
 
-type ConnectorIDCtxKey struct{}
+type connectorIDCtxKey struct{}
 
 // ContextWithConnectorID wraps ctx and returns a context that contains the connector ID.
 func ContextWithConnectorID(ctx context.Context, connectorID string) context.Context {
-	return context.WithValue(ctx, ConnectorIDCtxKey{}, connectorID)
+	return context.WithValue(ctx, connectorIDCtxKey{}, connectorID)
+}
+
+// ConnectorIDFromContext fetches the connector ID from the context. If the
+// context does not contain a connector ID it returns an empty string.
+func ConnectorIDFromContext(ctx context.Context) string {
+	connectorID := ctx.Value(connectorIDCtxKey{})
+	if connectorID != nil {
+		return connectorID.(string) //nolint:forcetypeassert // only this package can set the value, it has to be a string
+	}
+	return ""
 }
 
 // -- Connector token ----------------------------------------------------------
