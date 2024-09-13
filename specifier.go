@@ -51,7 +51,12 @@ type specifierPluginAdapter struct {
 }
 
 func (s *specifierPluginAdapter) Specify(context.Context, pconnector.SpecifierSpecifyRequest) (pconnector.SpecifierSpecifyResponse, error) {
-	return pconnector.SpecifierSpecifyResponse{
+	resp := pconnector.SpecifierSpecifyResponse{
 		Specification: pconnector.Specification(s.specs),
-	}, nil
+	}
+
+	resp.Specification.SourceParams = s.sourceParams
+	resp.Specification.DestinationParams = s.destinationParams
+
+	return resp, nil
 }
