@@ -24,10 +24,9 @@ import (
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
-	sdkschema "github.com/conduitio/conduit-connector-sdk/schema"
+	"github.com/conduitio/conduit-connector-sdk/schema"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/matryer/is"
@@ -197,7 +196,7 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 	}
 	wantSchema := `{"name":"record","type":"record","fields":[{"name":"float","type":"double"},{"name":"foo","type":"string"},{"name":"long","type":"long"},{"name":"time","type":{"type":"long","logicalType":"timestamp-micros"}}]}`
 
-	customTestSchema, err := sdkschema.Create(ctx, schema.TypeAvro, "custom-test-schema", []byte(wantSchema))
+	customTestSchema, err := schema.Create(ctx, schema.TypeAvro, "custom-test-schema", []byte(wantSchema))
 	is.NoErr(err)
 
 	testCases := []struct {
@@ -390,7 +389,7 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				is.Equal(subject, tc.wantKeySubject)
 				is.Equal(version, 1)
 
-				sch, err := sdkschema.Get(ctx, subject, version)
+				sch, err := schema.Get(ctx, subject, version)
 				is.NoErr(err)
 
 				is.Equal("", cmp.Diff(wantSchema, string(sch.Bytes)))
@@ -418,7 +417,7 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				is.Equal(subject, tc.wantPayloadSubject)
 				is.Equal(version, 1)
 
-				sch, err := sdkschema.Get(ctx, subject, version)
+				sch, err := schema.Get(ctx, subject, version)
 				is.NoErr(err)
 
 				is.Equal("", cmp.Diff(wantSchema, string(sch.Bytes)))
@@ -612,7 +611,7 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 			s.EXPECT().
 				Configure(gomock.Any(), tc.connectorCfg).
 				DoAndReturn(func(ctx context.Context, c config.Config) error {
-					gotContextName := sdkschema.GetSchemaContextName(ctx)
+					gotContextName := schema.GetSchemaContextName(ctx)
 					is.Equal(tc.wantContextName, gotContextName)
 					return nil
 				})
@@ -639,13 +638,13 @@ func TestSourceWithSchemaContext_ContextValue(t *testing.T) {
 	s.EXPECT().
 		Configure(gomock.Any(), connectorCfg).
 		DoAndReturn(func(ctx context.Context, _ config.Config) error {
-			is.Equal(wantContextName, sdkschema.GetSchemaContextName(ctx))
+			is.Equal(wantContextName, schema.GetSchemaContextName(ctx))
 			return nil
 		})
 	s.EXPECT().
 		Open(gomock.Any(), opencdc.Position{}).
 		DoAndReturn(func(ctx context.Context, _ opencdc.Position) error {
-			is.Equal(wantContextName, sdkschema.GetSchemaContextName(ctx))
+			is.Equal(wantContextName, schema.GetSchemaContextName(ctx))
 			return nil
 		})
 

@@ -61,6 +61,7 @@ linters:
     - bodyclose
     - containedctx
     - contextcheck
+    - copyloopvar
     - decorder
     # - depguard
     - dogsled
@@ -72,7 +73,6 @@ linters:
     - errname
     - errorlint
     - exhaustive
-    - exportloopref
     # - forbidigo
     - forcetypeassert
     # - funlen

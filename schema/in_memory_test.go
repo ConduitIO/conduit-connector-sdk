@@ -18,7 +18,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/conduitio/conduit-commons/schema"
 	"github.com/google/go-cmp/cmp"
 	"github.com/matryer/is"
 )
@@ -27,11 +26,11 @@ func TestInMemoryService(t *testing.T) {
 	is := is.New(t)
 	ctx := context.Background()
 
-	want1 := schema.Schema{
+	want1 := Schema{
 		ID:      1,
 		Subject: "test-subject",
 		Version: 1,
-		Type:    schema.TypeAvro,
+		Type:    TypeAvro,
 		Bytes:   []byte("irrelevant 1"),
 	}
 
@@ -41,7 +40,7 @@ func TestInMemoryService(t *testing.T) {
 	is.Equal("", cmp.Diff(want1, created1))
 
 	// Create second version
-	want2 := schema.Schema{
+	want2 := Schema{
 		ID:      2,
 		Subject: want1.Subject,
 		Version: 2,

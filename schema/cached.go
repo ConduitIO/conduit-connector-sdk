@@ -18,7 +18,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 	"github.com/twmb/go-cache/cache"
 )
@@ -45,7 +44,7 @@ type cachedSchemaService struct {
 
 type comparableCreateSchemaRequest struct {
 	Subject string
-	Type    schema.Type
+	Type    Type
 	Bytes   string
 }
 

@@ -18,7 +18,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 	"github.com/conduitio/conduit-connector-protocol/pconnutils/mock"
 	"github.com/matryer/is"
@@ -36,11 +35,11 @@ func TestCachedSchemaService_Get(t *testing.T) {
 		Version: 1,
 	}
 	resp1 := pconnutils.GetSchemaResponse{
-		Schema: schema.Schema{
+		Schema: Schema{
 			ID:      1,
 			Subject: "test",
 			Version: 1,
-			Type:    schema.TypeAvro,
+			Type:    TypeAvro,
 			Bytes:   []byte("int"),
 		},
 	}
@@ -50,11 +49,11 @@ func TestCachedSchemaService_Get(t *testing.T) {
 		Version: 2,
 	}
 	resp2 := pconnutils.GetSchemaResponse{
-		Schema: schema.Schema{
+		Schema: Schema{
 			ID:      2,
 			Subject: "test",
 			Version: 2,
-			Type:    schema.TypeAvro,
+			Type:    TypeAvro,
 			Bytes:   []byte("string"),
 		},
 	}
@@ -84,30 +83,30 @@ func TestCachedSchemaService_Create(t *testing.T) {
 
 	req1 := pconnutils.CreateSchemaRequest{
 		Subject: "test",
-		Type:    schema.TypeAvro,
+		Type:    TypeAvro,
 		Bytes:   []byte("int"),
 	}
 	resp1 := pconnutils.CreateSchemaResponse{
-		Schema: schema.Schema{
+		Schema: Schema{
 			ID:      1,
 			Subject: "test",
 			Version: 1,
-			Type:    schema.TypeAvro,
+			Type:    TypeAvro,
 			Bytes:   []byte("int"),
 		},
 	}
 
 	req2 := pconnutils.CreateSchemaRequest{
 		Subject: "test",
-		Type:    schema.TypeAvro,
+		Type:    TypeAvro,
 		Bytes:   []byte("string"),
 	}
 	resp2 := pconnutils.CreateSchemaResponse{
-		Schema: schema.Schema{
+		Schema: Schema{
 			ID:      2,
 			Subject: "test",
 			Version: 2,
-			Type:    schema.TypeAvro,
+			Type:    TypeAvro,
 			Bytes:   []byte("string"),
 		},
 	}
