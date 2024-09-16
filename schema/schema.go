@@ -33,6 +33,8 @@ var (
 	ErrSubjectNotFound = pconnutils.ErrSubjectNotFound
 	ErrVersionNotFound = pconnutils.ErrVersionNotFound
 	ErrInvalidSchema   = pconnutils.ErrInvalidSchema
+
+	ErrUnsupportedType = schema.ErrUnsupportedType
 )
 
 // Service is the schema service client that can be used to interact with the schema service.
@@ -40,14 +42,14 @@ var (
 var Service pconnutils.SchemaService = newCachedSchemaService(newInMemoryService())
 
 // Create creates a new schema with the given name and bytes. The schema type must be Avro.
-func Create(ctx context.Context, typ schema.Type, subject string, bytes []byte) (schema.Schema, error) {
+func Create(ctx context.Context, typ Type, subject string, bytes []byte) (Schema, error) {
 	resp, err := Service.CreateSchema(ctx, pconnutils.CreateSchemaRequest{
 		Subject: qualifiedSubject(ctx, subject),
 		Type:    typ,
 		Bytes:   bytes,
 	})
 	if err != nil {
-		return schema.Schema{}, err
+		return Schema{}, err
 	}
 
 	return resp.Schema, nil
@@ -66,13 +68,13 @@ func qualifiedSubject(ctx context.Context, subject string) string {
 }
 
 // Get retrieves the schema with the given name and version. If the schema does not exist, an error is returned.
-func Get(ctx context.Context, subject string, version int) (schema.Schema, error) {
+func Get(ctx context.Context, subject string, version int) (Schema, error) {
 	resp, err := Service.GetSchema(ctx, pconnutils.GetSchemaRequest{
 		Subject: subject,
 		Version: version,
 	})
 	if err != nil {
-		return schema.Schema{}, err
+		return Schema{}, err
 	}
 
 	return resp.Schema, nil

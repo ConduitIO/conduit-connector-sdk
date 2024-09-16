@@ -23,9 +23,8 @@ import (
 
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-sdk/internal"
-	sdkschema "github.com/conduitio/conduit-connector-sdk/schema"
+	"github.com/conduitio/conduit-connector-sdk/schema"
 )
 
 // SourceMiddleware wraps a Source and adds functionality to it.
@@ -327,7 +326,7 @@ func (s *sourceWithSchemaExtraction) schemaForKey(ctx context.Context, rec openc
 	case subject != "" && version > 0:
 		// The connector has attached the schema subject and version, we can use
 		// it to retrieve the schema from the schema service.
-		return sdkschema.Get(ctx, subject, version)
+		return schema.Get(ctx, subject, version)
 	case subject != "" || version > 0:
 		// The connector has attached either the schema subject or version, but
 		// not both, this isn't valid.
@@ -405,7 +404,7 @@ func (s *sourceWithSchemaExtraction) schemaForPayload(ctx context.Context, rec o
 	case subject != "" && version > 0:
 		// The connector has attached the schema subject and version, we can use
 		// it to retrieve the schema from the schema service.
-		return sdkschema.Get(ctx, subject, version)
+		return schema.Get(ctx, subject, version)
 	case subject != "" || version > 0:
 		// The connector has attached either the schema subject or version, but
 		// not both, this isn't valid.
@@ -438,7 +437,7 @@ func (s *sourceWithSchemaExtraction) schemaForType(ctx context.Context, data any
 		return schema.Schema{}, fmt.Errorf("failed to create schema for value: %w", err)
 	}
 
-	sch, err := sdkschema.Create(ctx, s.schemaType, subject, []byte(srd.String()))
+	sch, err := schema.Create(ctx, s.schemaType, subject, []byte(srd.String()))
 	if err != nil {
 		return schema.Schema{}, fmt.Errorf("failed to create schema: %w", err)
 	}
@@ -572,31 +571,31 @@ func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Conf
 		}
 	}
 
-	return s.Source.Configure(sdkschema.WithSchemaContextName(ctx, s.contextName), cfg)
+	return s.Source.Configure(schema.WithSchemaContextName(ctx, s.contextName), cfg)
 }
 
 func (s *sourceWithSchemaContext) Open(ctx context.Context, pos opencdc.Position) error {
-	return s.Source.Open(sdkschema.WithSchemaContextName(ctx, s.contextName), pos)
+	return s.Source.Open(schema.WithSchemaContextName(ctx, s.contextName), pos)
 }
 
 func (s *sourceWithSchemaContext) Read(ctx context.Context) (opencdc.Record, error) {
-	return s.Source.Read(sdkschema.WithSchemaContextName(ctx, s.contextName))
+	return s.Source.Read(schema.WithSchemaContextName(ctx, s.contextName))
 }
 
 func (s *sourceWithSchemaContext) Teardown(ctx context.Context) error {
-	return s.Source.Teardown(sdkschema.WithSchemaContextName(ctx, s.contextName))
+	return s.Source.Teardown(schema.WithSchemaContextName(ctx, s.contextName))
 }
 
 func (s *sourceWithSchemaContext) LifecycleOnCreated(ctx context.Context, config config.Config) error {
-	return s.Source.LifecycleOnCreated(sdkschema.WithSchemaContextName(ctx, s.contextName), config)
+	return s.Source.LifecycleOnCreated(schema.WithSchemaContextName(ctx, s.contextName), config)
 }
 
 func (s *sourceWithSchemaContext) LifecycleOnUpdated(ctx context.Context, configBefore, configAfter config.Config) error {
-	return s.Source.LifecycleOnUpdated(sdkschema.WithSchemaContextName(ctx, s.contextName), configBefore, configAfter)
+	return s.Source.LifecycleOnUpdated(schema.WithSchemaContextName(ctx, s.contextName), configBefore, configAfter)
 }
 
 func (s *sourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config config.Config) error {
-	return s.Source.LifecycleOnDeleted(sdkschema.WithSchemaContextName(ctx, s.contextName), config)
+	return s.Source.LifecycleOnDeleted(schema.WithSchemaContextName(ctx, s.contextName), config)
 }
 
 func ptr[T any](t T) *T {

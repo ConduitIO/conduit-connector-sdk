@@ -19,14 +19,13 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/conduitio/conduit-commons/schema"
 	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 )
 
 type inMemoryService struct {
 	// schemas is a map of schema subjects to all the versions of that schema
 	// versioning starts at 1, newer versions are appended to the end of the versions slice.
-	schemas map[string][]schema.Schema
+	schemas map[string][]Schema
 	// m guards access to schemas
 	m sync.Mutex
 	// idSequence is used to generate unique schema IDs
@@ -35,19 +34,19 @@ type inMemoryService struct {
 
 func newInMemoryService() pconnutils.SchemaService {
 	return &inMemoryService{
-		schemas: make(map[string][]schema.Schema),
+		schemas: make(map[string][]Schema),
 	}
 }
 
 func (s *inMemoryService) CreateSchema(_ context.Context, request pconnutils.CreateSchemaRequest) (pconnutils.CreateSchemaResponse, error) {
-	if request.Type != schema.TypeAvro {
+	if request.Type != TypeAvro {
 		return pconnutils.CreateSchemaResponse{}, fmt.Errorf("unsupported schema type: %s", request.Type)
 	}
 
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	inst := schema.Schema{
+	inst := Schema{
 		ID:      s.nextID(),
 		Subject: request.Subject,
 		Version: len(s.schemas[request.Subject]) + 1,
