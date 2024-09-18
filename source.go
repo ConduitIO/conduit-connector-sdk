@@ -245,6 +245,11 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.Sou
 		Max:    time.Second * 5,
 	}
 
+	batchSize := 10000
+	batch := make([]opencdc.Record, 0, batchSize)
+
+	logger := Logger(ctx)
+
 	for {
 		r, err := a.impl.Read(ctx)
 		if err != nil {
@@ -264,7 +269,14 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.Sou
 			return fmt.Errorf("read plugin error: %w", err)
 		}
 
-		err = stream.Send(pconnector.SourceRunResponse{Records: []opencdc.Record{r}})
+		batch = append(batch, r)
+		if len(batch) < batchSize {
+			continue
+		}
+
+		logger.Debug().Msg("flushing batch")
+		err = stream.Send(pconnector.SourceRunResponse{Records: batch})
+		logger.Debug().Msg("sent!")
 		if err != nil {
 			return fmt.Errorf("read stream error: %w", err)
 		}
@@ -272,6 +284,7 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.Sou
 
 		// reset backoff retry
 		b.Reset()
+		batch = make([]opencdc.Record, 0, batchSize)
 	}
 }
 

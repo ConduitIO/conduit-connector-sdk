@@ -177,29 +177,46 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream pconnector.De
 			return fmt.Errorf("write stream error: %w", err)
 		}
 
-		for _, rec := range batch.Records {
-			err = a.writeStrategy.Write(ctx, rec, func(err error) error {
-				return a.ack(rec, err, stream)
-			})
-			a.lastPosition.Set(rec.Position)
-			if err != nil {
-				return err
-			}
+		n, err := a.impl.Write(ctx, batch.Records)
+		if err != nil {
+			return fmt.Errorf("write error: %w", err)
 		}
+		if n != len(batch.Records) {
+			return fmt.Errorf("write returned %d records out of %d", n, len(batch.Records))
+		}
+		a.ack(batch.Records, nil, stream)
+
+		// ack all records
+
+		// for _, rec := range batch.Records {
+		// 	err = a.writeStrategy.Write(ctx, rec, func(err error) error {
+		// 		return a.ack(rec, err, stream)
+		// 	})
+		// 	a.lastPosition.Set(rec.Position)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// }
 	}
 }
 
 // ack sends a message into the stream signaling that the record was processed.
-func (a *destinationPluginAdapter) ack(r opencdc.Record, writeErr error, stream pconnector.DestinationRunStreamServer) error {
+func (a *destinationPluginAdapter) ack(r []opencdc.Record, writeErr error, stream pconnector.DestinationRunStreamServer) error {
 	var ackErrStr string
 	if writeErr != nil {
 		ackErrStr = writeErr.Error()
 	}
-	err := stream.Send(pconnector.DestinationRunResponse{
-		Acks: []pconnector.DestinationRunResponseAck{{
-			Position: r.Position,
+
+	acks := make([]pconnector.DestinationRunResponseAck, len(r))
+	for i, rec := range r {
+		acks[i] = pconnector.DestinationRunResponseAck{
+			Position: rec.Position,
 			Error:    ackErrStr,
-		}},
+		}
+	}
+
+	err := stream.Send(pconnector.DestinationRunResponse{
+		Acks: acks,
 	})
 	if err != nil {
 		return fmt.Errorf("ack stream error: %w", err)
