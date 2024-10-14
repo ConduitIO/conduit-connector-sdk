@@ -137,6 +137,7 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
 
 	// first produce "normal" records, then produce last record, then return ErrBackoffRetry
+	src.EXPECT().ReadBatch(gomock.Any()).Return(nil, ErrUnimplemented)
 	r1 := src.EXPECT().Read(gomock.Any()).Return(want, nil).Times(recordCount - 1)
 	r2 := src.EXPECT().Read(gomock.Any()).Return(wantLast, nil).After(r1)
 	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r2)
@@ -209,6 +210,7 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
 
 	// first produce "normal" records, then produce last record, then return ErrBackoffRetry
+	src.EXPECT().ReadBatch(gomock.Any()).Return(nil, ErrUnimplemented)
 	r1 := src.EXPECT().Read(gomock.Any()).Return(want, nil)
 	src.EXPECT().Read(gomock.Any()).DoAndReturn(func(ctx context.Context) (opencdc.Record, error) {
 		<-make(chan struct{}) // block forever and ever
@@ -267,6 +269,7 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
 
 	// produce one record, then return ErrBackoffRetry
+	src.EXPECT().ReadBatch(gomock.Any()).Return(nil, ErrUnimplemented)
 	r1 := src.EXPECT().Read(gomock.Any()).Return(want, nil)
 	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r1.Call)
 
@@ -322,6 +325,7 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
+	src.EXPECT().ReadBatch(gomock.Any()).Return(nil, ErrUnimplemented)
 	r1 := src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, nil)
 	src.EXPECT().Read(gomock.Any()).Return(opencdc.Record{}, ErrBackoffRetry).After(r1.Call)
 

@@ -33,11 +33,11 @@ func BenchmarkBatcher_Enqueue(b *testing.B) {
 			batcher := NewBatcher(
 				batchSize,
 				time.Hour, // don't trigger based on time
-				func(batch []int) error { return nil },
+				func(batch []int, size int) error { return nil },
 			)
 
 			for i := 0; i < b.N; i++ {
-				es = batcher.Enqueue(i)
+				es = batcher.Enqueue(i, 1)
 				if es == Flushed {
 					<-batcher.Results()
 				}
@@ -53,13 +53,13 @@ func TestBatcher_Enqueue_Scheduled(t *testing.T) {
 	b := NewBatcher(
 		2,
 		time.Second,
-		func(batch []int) error {
+		func(batch []int, size int) error {
 			gotBatches = append(gotBatches, batch)
 			return nil
 		},
 	)
 
-	status := b.Enqueue(1)
+	status := b.Enqueue(1, 1)
 	is.Equal(Scheduled, status)
 	select {
 	case <-b.Results():
@@ -77,16 +77,16 @@ func TestBatcher_Enqueue_Flushed(t *testing.T) {
 	b := NewBatcher(
 		2,
 		time.Second,
-		func(batch []int) error {
+		func(batch []int, size int) error {
 			gotBatches = append(gotBatches, batch)
 			return nil
 		},
 	)
 
-	status := b.Enqueue(1) // first item gets scheduled
+	status := b.Enqueue(1, 1) // first item gets schedule, 1d
 	is.Equal(Scheduled, status)
 
-	status = b.Enqueue(2) // second item triggers a flush
+	status = b.Enqueue(2, 1) // second item triggers a flus, 1h
 	is.Equal(Flushed, status)
 
 	// the scheduled result should contain the same error, i.e. nil
@@ -109,14 +109,14 @@ func TestBatcher_Enqueue_Delay(t *testing.T) {
 	b := NewBatcher(
 		2,
 		wantDelay,
-		func(batch []int) error {
+		func(batch []int, size int) error {
 			gotBatches = append(gotBatches, batch)
 			return nil
 		},
 	)
 
 	start := time.Now()
-	status := b.Enqueue(1) // first item gets scheduled
+	status := b.Enqueue(1, 1) // first item gets schedule, 1d
 	is.Equal(Scheduled, status)
 
 	select {
@@ -129,7 +129,7 @@ func TestBatcher_Enqueue_Delay(t *testing.T) {
 		t.Fatal("expected the channel to contain a value after delay")
 	}
 
-	status = b.Enqueue(1) // next item gets scheduled again
+	status = b.Enqueue(1, 1) // next item gets scheduled agai, 1n
 	is.Equal(Scheduled, status)
 }
 
@@ -140,15 +140,15 @@ func TestBatcher_Enqueue_FlushedError(t *testing.T) {
 	b := NewBatcher(
 		2,
 		time.Second,
-		func(batch []int) error {
+		func(batch []int, size int) error {
 			return wantErr
 		},
 	)
 
-	status := b.Enqueue(1) // first item gets scheduled
+	status := b.Enqueue(1, 1) // first item gets schedule, 1d
 	is.Equal(Scheduled, status)
 
-	status = b.Enqueue(2) // second item triggers a flush
+	status = b.Enqueue(2, 1) // second item triggers a flus, 1h
 	is.Equal(Flushed, status)
 
 	select {
@@ -166,14 +166,14 @@ func TestBatcher_Flush(t *testing.T) {
 	b := NewBatcher(
 		10,
 		time.Second,
-		func(batch []int) error {
+		func(batch []int, size int) error {
 			gotBatches = append(gotBatches, batch)
 			return nil
 		},
 	)
 
 	for i := 0; i < 9; i++ {
-		status := b.Enqueue(i)
+		status := b.Enqueue(i, 1)
 		is.Equal(Scheduled, status)
 	}
 
@@ -201,7 +201,7 @@ func TestBatcher_Concurrent(t *testing.T) {
 	b := NewBatcher(
 		batchSize,
 		time.Second,
-		func(batch []int) error {
+		func(batch []int, size int) error {
 			gotBatches = append(gotBatches, batch)
 			return nil
 		},
@@ -213,7 +213,7 @@ func TestBatcher_Concurrent(t *testing.T) {
 		go func(c int) {
 			defer wg.Done()
 			for i := 0; i < batchSize; i++ {
-				_ = b.Enqueue(c*batchSize + i)
+				_ = b.Enqueue(c*batchSize+i, 1)
 			}
 		}(i)
 	}

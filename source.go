@@ -42,6 +42,8 @@ var (
 
 // Source fetches records from 3rd party resources and sends them to Conduit.
 // All implementations must embed UnimplementedSource for forward compatibility.
+//
+//nolint:interfacebloat // Source interface is a contract and should not be split
 type Source interface {
 	// Parameters is a map of named Parameters that describe how to configure
 	// the Source.
@@ -82,6 +84,12 @@ type Source interface {
 	// the error is ErrBackoffRetry, as mentioned above).
 	// Read can be called concurrently with Ack.
 	Read(context.Context) (opencdc.Record, error)
+
+	// ReadBatch is the same as Read, but returns a batch of records. The
+	// default implementation calls Read and returns the single record in a
+	// batch.
+	ReadBatch(context.Context) ([]opencdc.Record, error)
+
 	// Ack signals to the implementation that the record with the supplied
 	// position was successfully processed. This method might be called after
 	// the context of Read is already cancelled, since there might be
@@ -245,18 +253,14 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.Sou
 		Max:    time.Second * 5,
 	}
 
-	batchSize := 10000
-	batch := make([]opencdc.Record, 0, batchSize)
-
-	logger := Logger(ctx)
+	batching := true
+	readFn := a.impl.ReadBatch
 
 	for {
-		r, err := a.impl.Read(ctx)
+		recs, err := readFn(ctx)
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return nil // not an actual error
-			}
-			if errors.Is(err, ErrBackoffRetry) {
+			switch {
+			case errors.Is(err, ErrBackoffRetry):
 				// the plugin wants us to retry reading later
 				_, _, err := cchan.ChanOut[time.Time](time.After(b.Duration())).Recv(ctx)
 				if err != nil {
@@ -265,26 +269,41 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.Sou
 					return nil
 				}
 				continue
+
+			case errors.Is(err, context.Canceled):
+				return nil // not an actual error
+
+			case errors.Is(err, ErrUnimplemented) && batching:
+				Logger(ctx).Info().Msg("source does not support batch reads, falling back to single reads")
+
+				// the plugin doesn't support batch reads, fallback to single reads
+				readFn = func(ctx context.Context) ([]opencdc.Record, error) {
+					rec, err := a.impl.Read(ctx)
+					if err != nil {
+						return nil, err
+					}
+					return []opencdc.Record{rec}, nil
+				}
+				batching = false
+				continue
+
+			default:
+				return fmt.Errorf("read plugin error: %w", err)
 			}
-			return fmt.Errorf("read plugin error: %w", err)
 		}
 
-		batch = append(batch, r)
-		if len(batch) < batchSize {
+		if len(recs) == 0 {
 			continue
 		}
 
-		logger.Debug().Msg("flushing batch")
-		err = stream.Send(pconnector.SourceRunResponse{Records: batch})
-		logger.Debug().Msg("sent!")
+		err = stream.Send(pconnector.SourceRunResponse{Records: recs})
 		if err != nil {
 			return fmt.Errorf("read stream error: %w", err)
 		}
-		a.lastPosition = r.Position // store last sent position
+		a.lastPosition = recs[len(recs)-1].Position // store last sent position
 
 		// reset backoff retry
 		b.Reset()
-		batch = make([]opencdc.Record, 0, batchSize)
 	}
 }
 
@@ -337,6 +356,7 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ pconnector.SourceStopR
 		return pconnector.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
 	}
 
+	Logger(ctx).Debug().Msg("waiting for Read to stop running ...")
 	// wait for read to actually stop running with a timeout, in case the
 	// connector gets stuck
 	_, _, err = cchan.ChanOut[struct{}](a.readDone).Recv(ctx)
@@ -345,6 +365,7 @@ func (a *sourcePluginAdapter) Stop(ctx context.Context, _ pconnector.SourceStopR
 		return pconnector.SourceStopResponse{}, fmt.Errorf("failed to stop connector: %w", err)
 	}
 
+	Logger(ctx).Debug().Msg("stop successful")
 	return pconnector.SourceStopResponse{
 		LastPosition: a.lastPosition,
 	}, nil

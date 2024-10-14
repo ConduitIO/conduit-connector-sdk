@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
@@ -39,10 +40,10 @@ func TestSourceWithSchemaExtractionConfig_Apply(t *testing.T) {
 	is := is.New(t)
 
 	wantCfg := SourceWithSchemaExtractionConfig{
-		PayloadEnabled: ptr(true),
-		KeyEnabled:     ptr(true),
-		PayloadSubject: ptr("foo"),
-		KeySubject:     ptr("bar"),
+		PayloadEnabled: lang.Ptr(true),
+		KeyEnabled:     lang.Ptr(true),
+		PayloadSubject: lang.Ptr("foo"),
+		KeySubject:     lang.Ptr("bar"),
 	}
 
 	have := &SourceWithSchemaExtraction{}
@@ -108,8 +109,8 @@ func TestSourceWithSchemaExtraction_Configure(t *testing.T) {
 		name: "disabled by default",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadEnabled: ptr(false),
-				KeyEnabled:     ptr(false),
+				PayloadEnabled: lang.Ptr(false),
+				KeyEnabled:     lang.Ptr(false),
 			},
 		},
 		have: config.Config{},
@@ -132,8 +133,8 @@ func TestSourceWithSchemaExtraction_Configure(t *testing.T) {
 		name: "static default payload subject",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadSubject: ptr("foo"),
-				KeySubject:     ptr("bar"),
+				PayloadSubject: lang.Ptr("foo"),
+				KeySubject:     lang.Ptr("bar"),
 			},
 		},
 		have: config.Config{},
@@ -478,8 +479,8 @@ func TestSourceWithSchemaContext_Parameters(t *testing.T) {
 		{
 			name: "custom middleware config",
 			mwCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(false),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(false),
+				Name:    lang.Ptr("foobar"),
 			},
 			wantParams: config.Parameters{
 				"sdk.schema.context.enabled": {
@@ -545,8 +546,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "custom context in middleware, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(true),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(true),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "foobar",
@@ -554,8 +555,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "middleware config: use context false, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(false),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(false),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "",
@@ -563,8 +564,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides use context",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(false),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(false),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.enabled": "true",
@@ -574,8 +575,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides context name, non-empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(true),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(true),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",
@@ -586,8 +587,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides context name, empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(true),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(true),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",
