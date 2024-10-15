@@ -343,6 +343,45 @@ func (c *MockSourceReadCall) DoAndReturn(f func(context.Context) (opencdc.Record
 	return c
 }
 
+// ReadBatch mocks base method.
+func (m *MockSource) ReadBatch(arg0 context.Context) ([]opencdc.Record, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadBatch", arg0)
+	ret0, _ := ret[0].([]opencdc.Record)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadBatch indicates an expected call of ReadBatch.
+func (mr *MockSourceMockRecorder) ReadBatch(arg0 any) *MockSourceReadBatchCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadBatch", reflect.TypeOf((*MockSource)(nil).ReadBatch), arg0)
+	return &MockSourceReadBatchCall{Call: call}
+}
+
+// MockSourceReadBatchCall wrap *gomock.Call
+type MockSourceReadBatchCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockSourceReadBatchCall) Return(arg0 []opencdc.Record, arg1 error) *MockSourceReadBatchCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockSourceReadBatchCall) Do(f func(context.Context) ([]opencdc.Record, error)) *MockSourceReadBatchCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockSourceReadBatchCall) DoAndReturn(f func(context.Context) ([]opencdc.Record, error)) *MockSourceReadBatchCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // Teardown mocks base method.
 func (m *MockSource) Teardown(arg0 context.Context) error {
 	m.ctrl.T.Helper()
