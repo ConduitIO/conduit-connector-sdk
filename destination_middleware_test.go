@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-commons/schema/avro"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
@@ -359,8 +360,8 @@ func TestDestinationWithSchemaExtractionConfig_Apply(t *testing.T) {
 	is := is.New(t)
 
 	wantCfg := DestinationWithSchemaExtractionConfig{
-		PayloadEnabled: ptr(true),
-		KeyEnabled:     ptr(true),
+		PayloadEnabled: lang.Ptr(true),
+		KeyEnabled:     lang.Ptr(true),
 	}
 
 	have := &DestinationWithSchemaExtraction{}
@@ -417,8 +418,8 @@ func TestDestinationWithSchemaExtraction_Configure(t *testing.T) {
 		name: "disabled by default",
 		middleware: DestinationWithSchemaExtraction{
 			Config: DestinationWithSchemaExtractionConfig{
-				PayloadEnabled: ptr(false),
-				KeyEnabled:     ptr(false),
+				PayloadEnabled: lang.Ptr(false),
+				KeyEnabled:     lang.Ptr(false),
 			},
 		},
 		have: config.Config{},
