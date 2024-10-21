@@ -87,16 +87,20 @@ func TestSourceWithSchemaExtraction_Configure(t *testing.T) {
 
 		wantErr            error
 		wantSchemaType     schema.Type
-		wantPayloadSubject string
+		wantKeyEnabled     bool
 		wantKeySubject     string
+		wantPayloadEnabled bool
+		wantPayloadSubject string
 	}{{
 		name:       "empty config",
 		middleware: SourceWithSchemaExtraction{},
 		have:       config.Config{},
 
 		wantSchemaType:     schema.TypeAvro,
-		wantPayloadSubject: "payload",
+		wantKeyEnabled:     true,
 		wantKeySubject:     "key",
+		wantPayloadEnabled: true,
+		wantPayloadSubject: "payload",
 	}, {
 		name:       "invalid schema type",
 		middleware: SourceWithSchemaExtraction{},
@@ -108,26 +112,34 @@ func TestSourceWithSchemaExtraction_Configure(t *testing.T) {
 		name: "disabled by default",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadEnabled: ptr(false),
 				KeyEnabled:     ptr(false),
+				KeySubject:     ptr("foo"),
+				PayloadEnabled: ptr(false),
+				PayloadSubject: ptr("foo"),
 			},
 		},
 		have: config.Config{},
 
 		wantSchemaType:     schema.TypeAvro,
-		wantPayloadSubject: "",
+		wantKeyEnabled:     false,
 		wantKeySubject:     "",
+		wantPayloadEnabled: false,
+		wantPayloadSubject: "",
 	}, {
 		name:       "disabled by config",
 		middleware: SourceWithSchemaExtraction{},
 		have: config.Config{
-			configSourceSchemaExtractionPayloadEnabled: "false",
 			configSourceSchemaExtractionKeyEnabled:     "false",
+			configSourceSchemaExtractionKeySubject:     "foo",
+			configSourceSchemaExtractionPayloadEnabled: "false",
+			configSourceSchemaExtractionPayloadSubject: "foo",
 		},
 
 		wantSchemaType:     schema.TypeAvro,
-		wantPayloadSubject: "",
+		wantKeyEnabled:     false,
 		wantKeySubject:     "",
+		wantPayloadEnabled: false,
+		wantPayloadSubject: "",
 	}, {
 		name: "static default payload subject",
 		middleware: SourceWithSchemaExtraction{
@@ -139,19 +151,23 @@ func TestSourceWithSchemaExtraction_Configure(t *testing.T) {
 		have: config.Config{},
 
 		wantSchemaType:     schema.TypeAvro,
-		wantPayloadSubject: "foo",
+		wantKeyEnabled:     true,
 		wantKeySubject:     "bar",
+		wantPayloadEnabled: true,
+		wantPayloadSubject: "foo",
 	}, {
 		name:       "payload subject by config",
 		middleware: SourceWithSchemaExtraction{},
 		have: config.Config{
-			configSourceSchemaExtractionPayloadSubject: "foo",
 			configSourceSchemaExtractionKeySubject:     "bar",
+			configSourceSchemaExtractionPayloadSubject: "foo",
 		},
 
 		wantSchemaType:     schema.TypeAvro,
-		wantPayloadSubject: "foo",
+		wantKeyEnabled:     true,
 		wantKeySubject:     "bar",
+		wantPayloadEnabled: true,
+		wantPayloadSubject: "foo",
 	}}
 
 	for _, tt := range testCases {
@@ -170,8 +186,10 @@ func TestSourceWithSchemaExtraction_Configure(t *testing.T) {
 			is.NoErr(err)
 
 			is.Equal(s.schemaType, tt.wantSchemaType)
-			is.Equal(s.payloadSubject, tt.wantPayloadSubject)
+			is.Equal(s.keyEnabled, tt.wantKeyEnabled)
 			is.Equal(s.keySubject, tt.wantKeySubject)
+			is.Equal(s.keyEnabled, tt.wantPayloadEnabled)
+			is.Equal(s.payloadSubject, tt.wantPayloadSubject)
 		})
 	}
 }
