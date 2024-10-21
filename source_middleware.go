@@ -209,7 +209,9 @@ type sourceWithSchemaExtraction struct {
 	defaults SourceWithSchemaExtractionConfig
 
 	schemaType     schema.Type
+	payloadEnabled bool
 	payloadSubject string
+	keyEnabled     bool
 	keySubject     string
 
 	payloadWarnOnce sync.Once
@@ -233,28 +235,28 @@ func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config confi
 		}
 	}
 
-	encodeKey := *s.defaults.KeyEnabled
+	s.keyEnabled = *s.defaults.KeyEnabled
 	if val, ok := config[configSourceSchemaExtractionKeyEnabled]; ok {
-		encodeKey, err = strconv.ParseBool(val)
+		s.keyEnabled, err = strconv.ParseBool(val)
 		if err != nil {
 			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configSourceSchemaExtractionKeyEnabled, err)
 		}
 	}
-	if encodeKey {
+	if s.keyEnabled {
 		s.keySubject = *s.defaults.KeySubject
 		if val, ok := config[configSourceSchemaExtractionKeySubject]; ok {
 			s.keySubject = val
 		}
 	}
 
-	encodePayload := *s.defaults.PayloadEnabled
+	s.payloadEnabled = *s.defaults.PayloadEnabled
 	if val, ok := config[configSourceSchemaExtractionPayloadEnabled]; ok {
-		encodePayload, err = strconv.ParseBool(val)
+		s.payloadEnabled, err = strconv.ParseBool(val)
 		if err != nil {
 			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configSourceSchemaExtractionPayloadEnabled, err)
 		}
 	}
-	if encodePayload {
+	if s.payloadEnabled {
 		s.payloadSubject = *s.defaults.PayloadSubject
 		if val, ok := config[configSourceSchemaExtractionPayloadSubject]; ok {
 			s.payloadSubject = val
@@ -281,7 +283,7 @@ func (s *sourceWithSchemaExtraction) Read(ctx context.Context) (opencdc.Record, 
 }
 
 func (s *sourceWithSchemaExtraction) encodeKey(ctx context.Context, rec *opencdc.Record) error {
-	if s.keySubject == "" {
+	if !s.keyEnabled {
 		return nil // key schema encoding is disabled
 	}
 	if _, ok := rec.Key.(opencdc.StructuredData); !ok {
@@ -348,7 +350,7 @@ func (s *sourceWithSchemaExtraction) schemaForKey(ctx context.Context, rec openc
 }
 
 func (s *sourceWithSchemaExtraction) encodePayload(ctx context.Context, rec *opencdc.Record) error {
-	if s.payloadSubject == "" {
+	if !s.payloadEnabled {
 		return nil // payload schema encoding is disabled
 	}
 	_, beforeIsStructured := rec.Payload.Before.(opencdc.StructuredData)
