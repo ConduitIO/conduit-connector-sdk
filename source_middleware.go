@@ -170,8 +170,8 @@ func (c SourceWithSchemaExtractionConfig) types() []string {
 	return out
 }
 
-// SourceWithSchemaExtraction is a middleware that extracts and encodes the record
-// payload and key with a schema. The schema is extracted from the record data
+// SourceWithSchemaExtraction is a middleware that extracts a record's
+// payload and key schemas. The schema is extracted from the record data
 // for each record produced by the source. The schema is registered with the
 // schema service and the schema subject is attached to the record metadata.
 type SourceWithSchemaExtraction struct {
@@ -583,6 +583,9 @@ func (s *sourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config
 
 // -- SourceWithEncoding ------------------------------------------------------
 
+// SourceWithEncoding is a middleware that encodes the record payload and key
+// with the provided schema. The schema is registered with the schema service
+// and the schema subject is attached to the record metadata.
 type SourceWithEncoding struct {
 }
 
@@ -593,6 +596,7 @@ func (s SourceWithEncoding) Wrap(impl Source) Source {
 	return &sourceWithEncoding{Source: impl}
 }
 
+// sourceWithEncoding is the actual middleware implementation.
 type sourceWithEncoding struct {
 	Source
 
