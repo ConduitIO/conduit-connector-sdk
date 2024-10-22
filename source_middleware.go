@@ -42,6 +42,7 @@ type SourceMiddlewareOption interface {
 var (
 	_ SourceMiddlewareOption = SourceWithSchemaExtractionConfig{}
 	_ SourceMiddlewareOption = SourceWithSchemaContextConfig{}
+	_ SourceMiddlewareOption = SourceWithEncoding{}
 )
 
 // DefaultSourceMiddleware returns a slice of middleware that should be added to
@@ -50,6 +51,7 @@ func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware 
 	middleware := []SourceMiddleware{
 		&SourceWithSchemaContext{},
 		&SourceWithSchemaExtraction{},
+		&SourceWithEncoding{},
 	}
 
 	// apply options to all middleware
@@ -270,20 +272,24 @@ func (s *sourceWithSchemaExtraction) Read(ctx context.Context) (opencdc.Record, 
 		return rec, err
 	}
 
-	if err := s.encodeKey(ctx, &rec); err != nil {
+	if err := s.extractAttachKeySchema(ctx, &rec); err != nil {
 		return rec, err
 	}
-	if err := s.encodePayload(ctx, &rec); err != nil {
+	if err := s.extractAttachPayloadSchema(ctx, &rec); err != nil {
 		return rec, err
 	}
 
 	return rec, nil
 }
 
-func (s *sourceWithSchemaExtraction) encodeKey(ctx context.Context, rec *opencdc.Record) error {
+func (s *sourceWithSchemaExtraction) extractAttachKeySchema(ctx context.Context, rec *opencdc.Record) error {
 	if s.keySubject == "" {
-		return nil // key schema encoding is disabled
+		return nil // key schema extraction is disabled
 	}
+	if rec.Key == nil {
+		return nil
+	}
+
 	if _, ok := rec.Key.(opencdc.StructuredData); !ok {
 		// log warning once, to avoid spamming the logs
 		s.keyWarnOnce.Do(func() {
@@ -296,22 +302,18 @@ func (s *sourceWithSchemaExtraction) encodeKey(ctx context.Context, rec *opencdc
 		// ensure we have a metadata value, to make it safe for retrieving and setting values
 		rec.Metadata = opencdc.Metadata{}
 	}
-	sch, err := s.schemaForKey(ctx, *rec)
+	sch, err := s.extractKeySchema(ctx, *rec)
 	if err != nil {
 		return err // already wrapped
 	}
 
-	encoded, err := s.encodeWithSchema(sch, rec.Key)
-	if err != nil {
-		return fmt.Errorf("failed to encode key: %w", err)
-	}
-
-	rec.Key = opencdc.RawData(encoded)
 	schema.AttachKeySchemaToRecord(*rec, sch)
 	return nil
 }
 
-func (s *sourceWithSchemaExtraction) schemaForKey(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+func (s *sourceWithSchemaExtraction) extractKeySchema(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+	// If the record has a key schema already,
+	// then we return it (no need to extract a schema).
 	subject, err := rec.Metadata.GetKeySchemaSubject()
 	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
 		return schema.Schema{}, fmt.Errorf("failed to get key schema subject: %w", err)
@@ -347,17 +349,11 @@ func (s *sourceWithSchemaExtraction) schemaForKey(ctx context.Context, rec openc
 	return sch, nil
 }
 
-func (s *sourceWithSchemaExtraction) encodePayload(ctx context.Context, rec *opencdc.Record) error {
+func (s *sourceWithSchemaExtraction) extractAttachPayloadSchema(ctx context.Context, rec *opencdc.Record) error {
 	if s.payloadSubject == "" {
 		return nil // payload schema encoding is disabled
 	}
-	_, beforeIsStructured := rec.Payload.Before.(opencdc.StructuredData)
-	_, afterIsStructured := rec.Payload.After.(opencdc.StructuredData)
-	if !beforeIsStructured && !afterIsStructured {
-		// log warning once, to avoid spamming the logs
-		s.payloadWarnOnce.Do(func() {
-			Logger(ctx).Warn().Msgf(`record payload is not structured, consider disabling the source schema payload encoding using "%s: false"`, configSourceSchemaExtractionPayloadEnabled)
-		})
+	if rec.Payload.After == nil {
 		return nil
 	}
 
@@ -365,31 +361,18 @@ func (s *sourceWithSchemaExtraction) encodePayload(ctx context.Context, rec *ope
 		// ensure we have a metadata value, to make it safe for retrieving and setting values
 		rec.Metadata = opencdc.Metadata{}
 	}
-	sch, err := s.schemaForPayload(ctx, *rec)
+	sch, err := s.extractPayloadSchema(ctx, *rec)
 	if err != nil {
 		return fmt.Errorf("failed to extract schema for payload: %w", err)
 	}
 
-	// encode both before and after with the extracted schema
-	if beforeIsStructured {
-		encoded, err := s.encodeWithSchema(sch, rec.Payload.Before)
-		if err != nil {
-			return fmt.Errorf("failed to encode before payload: %w", err)
-		}
-		rec.Payload.Before = opencdc.RawData(encoded)
-	}
-	if afterIsStructured {
-		encoded, err := s.encodeWithSchema(sch, rec.Payload.After)
-		if err != nil {
-			return fmt.Errorf("failed to encode after payload: %w", err)
-		}
-		rec.Payload.After = opencdc.RawData(encoded)
-	}
 	schema.AttachPayloadSchemaToRecord(*rec, sch)
 	return nil
 }
 
-func (s *sourceWithSchemaExtraction) schemaForPayload(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+func (s *sourceWithSchemaExtraction) extractPayloadSchema(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+	// If the record has a payload schema already,
+	// then we return it (no need to extract a schema).
 	subject, err := rec.Metadata.GetPayloadSchemaSubject()
 	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
 		return schema.Schema{}, fmt.Errorf("failed to get payload schema subject: %w", err)
@@ -597,6 +580,176 @@ func (s *sourceWithSchemaContext) LifecycleOnUpdated(ctx context.Context, config
 func (s *sourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config config.Config) error {
 	return s.Source.LifecycleOnDeleted(schema.WithSchemaContextName(ctx, s.contextName), config)
 }
+
+// -- SourceWithEncoding ------------------------------------------------------
+
+type SourceWithEncoding struct {
+}
+
+func (s SourceWithEncoding) Apply(SourceMiddleware) {
+}
+
+func (s SourceWithEncoding) Wrap(impl Source) Source {
+	return &sourceWithEncoding{Source: impl}
+}
+
+type sourceWithEncoding struct {
+	Source
+
+	keyWarnOnce     sync.Once
+	payloadWarnOnce sync.Once
+}
+
+func (s *sourceWithEncoding) Read(ctx context.Context) (opencdc.Record, error) {
+	rec, err := s.Source.Read(ctx)
+	if err != nil {
+		return rec, err
+	}
+
+	if err := s.encodeKey(ctx, &rec); err != nil {
+		return rec, err
+	}
+	if err := s.encodePayload(ctx, &rec); err != nil {
+		return rec, err
+	}
+
+	return rec, nil
+}
+
+func (s *sourceWithEncoding) encodeKey(ctx context.Context, rec *opencdc.Record) error {
+	if _, ok := rec.Key.(opencdc.StructuredData); !ok {
+		// log warning once, to avoid spamming the logs
+		s.keyWarnOnce.Do(func() {
+			Logger(ctx).Warn().Msgf(`record key is not structured, consider disabling the source schema key encoding using "%s: false"`, configSourceSchemaExtractionKeyEnabled)
+		})
+		return nil
+	}
+
+	if rec.Metadata == nil {
+		// ensure we have a metadata value, to make it safe for retrieving and setting values
+		rec.Metadata = opencdc.Metadata{}
+	}
+	sch, err := s.schemaForKey(ctx, *rec)
+	if err != nil {
+		return err // already wrapped
+	}
+
+	encoded, err := s.encodeWithSchema(sch, rec.Key)
+	if err != nil {
+		return fmt.Errorf("failed to encode key: %w", err)
+	}
+
+	rec.Key = opencdc.RawData(encoded)
+	schema.AttachKeySchemaToRecord(*rec, sch)
+	return nil
+}
+
+func (s *sourceWithEncoding) schemaForKey(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+	subject, err := rec.Metadata.GetKeySchemaSubject()
+	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
+		return schema.Schema{}, fmt.Errorf("failed to get key schema subject: %w", err)
+	}
+
+	version, err := rec.Metadata.GetKeySchemaVersion()
+	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
+		return schema.Schema{}, fmt.Errorf("failed to get key schema version: %w", err)
+	}
+
+	switch {
+	case subject != "" && version > 0:
+		// The connector has attached the schema subject and version, we can use
+		// it to retrieve the schema from the schema service.
+		return schema.Get(ctx, subject, version)
+	case subject != "" || version > 0:
+		// The connector has attached either the schema subject or version, but
+		// not both, this isn't valid.
+		return schema.Schema{}, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected key schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataKeySchemaSubject, subject, opencdc.MetadataKeySchemaVersion, version)
+	default:
+		// todo handle case
+		return schema.Schema{}, nil
+	}
+}
+
+func (s *sourceWithEncoding) encodePayload(ctx context.Context, rec *opencdc.Record) error {
+	_, beforeIsStructured := rec.Payload.Before.(opencdc.StructuredData)
+	_, afterIsStructured := rec.Payload.After.(opencdc.StructuredData)
+	if !beforeIsStructured && !afterIsStructured {
+		// log warning once, to avoid spamming the logs
+		s.payloadWarnOnce.Do(func() {
+			Logger(ctx).Warn().Msgf(`record payload is not structured, consider disabling the source schema payload encoding using "%s: false"`, configSourceSchemaExtractionPayloadEnabled)
+		})
+		return nil
+	}
+
+	if rec.Metadata == nil {
+		// ensure we have a metadata value, to make it safe for retrieving and setting values
+		rec.Metadata = opencdc.Metadata{}
+	}
+	sch, err := s.schemaForPayload(ctx, *rec)
+	if err != nil {
+		return fmt.Errorf("failed to extract schema for payload: %w", err)
+	}
+
+	// encode both before and after with the extracted schema
+	if beforeIsStructured {
+		encoded, err := s.encodeWithSchema(sch, rec.Payload.Before)
+		if err != nil {
+			return fmt.Errorf("failed to encode before payload: %w", err)
+		}
+		rec.Payload.Before = opencdc.RawData(encoded)
+	}
+	if afterIsStructured {
+		encoded, err := s.encodeWithSchema(sch, rec.Payload.After)
+		if err != nil {
+			return fmt.Errorf("failed to encode after payload: %w", err)
+		}
+		rec.Payload.After = opencdc.RawData(encoded)
+	}
+	schema.AttachPayloadSchemaToRecord(*rec, sch)
+	return nil
+}
+
+func (s *sourceWithEncoding) schemaForPayload(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+	subject, err := rec.Metadata.GetPayloadSchemaSubject()
+	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
+		return schema.Schema{}, fmt.Errorf("failed to get payload schema subject: %w", err)
+	}
+
+	version, err := rec.Metadata.GetPayloadSchemaVersion()
+	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
+		return schema.Schema{}, fmt.Errorf("failed to get payload schema version: %w", err)
+	}
+
+	switch {
+	case subject != "" && version > 0:
+		// The connector has attached the schema subject and version, we can use
+		// it to retrieve the schema from the schema service.
+		return schema.Get(ctx, subject, version)
+	case subject != "" || version > 0:
+		// The connector has attached either the schema subject or version, but
+		// not both, this isn't valid.
+		return schema.Schema{}, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected payload schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataPayloadSchemaSubject, subject, opencdc.MetadataPayloadSchemaVersion, version)
+	default:
+		// todo handle this better
+		return schema.Schema{}, nil
+	}
+}
+
+func (s *sourceWithEncoding) encodeWithSchema(sch schema.Schema, data any) ([]byte, error) {
+	srd, err := sch.Serde()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get serde for schema: %w", err)
+	}
+
+	encoded, err := srd.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal data with schema: %w", err)
+	}
+
+	return encoded, nil
+}
+
+// -- Utility functions  ------------------------------------------------------
 
 func ptr[T any](t T) *T {
 	return &t
