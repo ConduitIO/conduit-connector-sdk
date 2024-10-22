@@ -356,6 +356,15 @@ func (s *sourceWithSchemaExtraction) extractAttachPayloadSchema(ctx context.Cont
 	if (rec.Payload == opencdc.Change{}) {
 		return nil
 	}
+	_, beforeIsStructured := rec.Payload.Before.(opencdc.StructuredData)
+	_, afterIsStructured := rec.Payload.After.(opencdc.StructuredData)
+	if !beforeIsStructured && !afterIsStructured {
+		// log warning once, to avoid spamming the logs
+		s.payloadWarnOnce.Do(func() {
+			Logger(ctx).Warn().Msgf(`record payload is not structured, consider disabling the source schema payload encoding using "%s: false"`, configSourceSchemaExtractionPayloadEnabled)
+		})
+		return nil
+	}
 
 	if rec.Metadata == nil {
 		// ensure we have a metadata value, to make it safe for retrieving and setting values
@@ -426,20 +435,6 @@ func (s *sourceWithSchemaExtraction) schemaForType(ctx context.Context, data any
 	}
 
 	return sch, nil
-}
-
-func (s *sourceWithSchemaExtraction) encodeWithSchema(sch schema.Schema, data any) ([]byte, error) {
-	srd, err := sch.Serde()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get serde for schema: %w", err)
-	}
-
-	encoded, err := srd.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal data with schema: %w", err)
-	}
-
-	return encoded, nil
 }
 
 // -- SourceWithSchemaContext --------------------------------------------------
@@ -586,8 +581,7 @@ func (s *sourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config
 // SourceWithEncoding is a middleware that encodes the record payload and key
 // with the provided schema. The schema is registered with the schema service
 // and the schema subject is attached to the record metadata.
-type SourceWithEncoding struct {
-}
+type SourceWithEncoding struct{}
 
 func (s SourceWithEncoding) Apply(SourceMiddleware) {
 }
