@@ -353,7 +353,7 @@ func (s *sourceWithSchemaExtraction) extractAttachPayloadSchema(ctx context.Cont
 	if s.payloadSubject == "" {
 		return nil // payload schema encoding is disabled
 	}
-	if rec.Payload.After == nil {
+	if (rec.Payload == opencdc.Change{}) {
 		return nil
 	}
 
