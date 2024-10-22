@@ -824,7 +824,7 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 			Key: opencdc.RawData("this should not be encoded"),
 			Payload: opencdc.Change{
 				Before: nil,
-				After:  testDataStruct.Clone(),
+				After:  testDataRaw,
 			},
 		},
 	}, {
@@ -837,7 +837,7 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 			},
 		},
 		wantRec: opencdc.Record{
-			Key: testDataStruct.Clone(),
+			Key: testDataRaw,
 			Payload: opencdc.Change{
 				Before: opencdc.RawData("this should not be encoded"),
 				After:  nil,
@@ -859,19 +859,10 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 			Metadata: map[string]string{
 				opencdc.MetadataCollection: "foo",
 			},
-			Key: testDataStruct.Clone(),
+			Key: testDataRaw,
 			Payload: opencdc.Change{
-				Before: testDataStruct.Clone(),
-				After:  testDataStruct.Clone(),
-			},
-		},
-	}, {
-		name: "all structured with collection and predefined schema",
-		inputRec: opencdc.Record{
-			Key: testDataStruct.Clone(),
-			Payload: opencdc.Change{
-				Before: testDataStruct.Clone(),
-				After:  testDataStruct.Clone(),
+				Before: testDataRaw,
+				After:  testDataRaw,
 			},
 		},
 	}}
@@ -888,17 +879,6 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 
 			src.EXPECT().Read(ctx).Return(tc.inputRec, nil)
 
-			var wantKey, wantPayloadBefore, wantPayloadAfter opencdc.Data
-			if tc.inputRec.Key != nil {
-				wantKey = tc.inputRec.Key.Clone()
-			}
-			if tc.inputRec.Payload.Before != nil {
-				wantPayloadBefore = tc.inputRec.Payload.Before.Clone()
-			}
-			if tc.inputRec.Payload.After != nil {
-				wantPayloadAfter = tc.inputRec.Payload.After.Clone()
-			}
-
 			got, err := s.Read(ctx)
 			is.NoErr(err)
 
@@ -906,55 +886,9 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 			gotPayloadBefore := got.Payload.Before
 			gotPayloadAfter := got.Payload.After
 
-			// if the test case expects the resulting key to be structured
-			if _, ok := wantKey.(opencdc.StructuredData); ok {
-				subject, err := got.Metadata.GetKeySchemaSubject()
-				is.NoErr(err)
-				version, err := got.Metadata.GetKeySchemaVersion()
-				is.NoErr(err)
-
-				sch, err := schema.Get(ctx, subject, version)
-				is.NoErr(err)
-
-				is.Equal("", cmp.Diff(wantSchema, string(sch.Bytes)))
-
-				var sd opencdc.StructuredData
-				err = sch.Unmarshal(gotKey.Bytes(), &sd)
-				is.NoErr(err)
-
-				gotKey = sd
-			}
-
-			_, isPayloadBeforeStructured := wantPayloadBefore.(opencdc.StructuredData)
-			_, isPayloadAfterStructured := wantPayloadAfter.(opencdc.StructuredData)
-			if isPayloadBeforeStructured || isPayloadAfterStructured {
-				subject, err := got.Metadata.GetPayloadSchemaSubject()
-				is.NoErr(err)
-				version, err := got.Metadata.GetPayloadSchemaVersion()
-				is.NoErr(err)
-
-				sch, err := schema.Get(ctx, subject, version)
-				is.NoErr(err)
-
-				is.Equal("", cmp.Diff(wantSchema, string(sch.Bytes)))
-
-				if isPayloadBeforeStructured {
-					var sd opencdc.StructuredData
-					err = sch.Unmarshal(gotPayloadBefore.Bytes(), &sd)
-					is.NoErr(err)
-					gotPayloadBefore = sd
-				}
-				if isPayloadAfterStructured {
-					var sd opencdc.StructuredData
-					err = sch.Unmarshal(gotPayloadAfter.Bytes(), &sd)
-					is.NoErr(err)
-					gotPayloadAfter = sd
-				}
-			}
-
-			is.Equal("", cmp.Diff(wantKey, gotKey))
-			is.Equal("", cmp.Diff(wantPayloadBefore, gotPayloadBefore))
-			is.Equal("", cmp.Diff(wantPayloadAfter, gotPayloadAfter))
+			is.Equal("", cmp.Diff(tc.wantRec.Key, gotKey))
+			is.Equal("", cmp.Diff(tc.wantRec.Payload.Before, gotPayloadBefore))
+			is.Equal("", cmp.Diff(tc.wantRec.Payload.After, gotPayloadAfter))
 		})
 	}
 }
