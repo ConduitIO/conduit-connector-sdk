@@ -422,9 +422,9 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				is.True(errors.Is(err, opencdc.ErrMetadataFieldNotFound))
 			}
 
-			is.Equal("", cmp.Diff(gotKey, wantKey))
-			is.Equal("", cmp.Diff(gotPayloadBefore, wantPayloadBefore))
-			is.Equal("", cmp.Diff(gotPayloadAfter, wantPayloadAfter))
+			is.Equal("", cmp.Diff(wantKey, gotKey))
+			is.Equal("", cmp.Diff(wantPayloadBefore, gotPayloadBefore))
+			is.Equal("", cmp.Diff(wantPayloadAfter, gotPayloadAfter))
 		})
 	}
 }
@@ -906,6 +906,7 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 			gotPayloadBefore := got.Payload.Before
 			gotPayloadAfter := got.Payload.After
 
+			// if the test case expects the resulting key to be structured
 			if _, ok := wantKey.(opencdc.StructuredData); ok {
 				subject, err := got.Metadata.GetKeySchemaSubject()
 				is.NoErr(err)
@@ -951,9 +952,9 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 				}
 			}
 
-			is.Equal("", cmp.Diff(gotKey, wantKey))
-			is.Equal("", cmp.Diff(gotPayloadBefore, wantPayloadBefore))
-			is.Equal("", cmp.Diff(gotPayloadAfter, wantPayloadAfter))
+			is.Equal("", cmp.Diff(wantKey, gotKey))
+			is.Equal("", cmp.Diff(wantPayloadBefore, gotPayloadBefore))
+			is.Equal("", cmp.Diff(wantPayloadAfter, gotPayloadAfter))
 		})
 	}
 }
