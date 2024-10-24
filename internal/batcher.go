@@ -25,12 +25,13 @@ type Batcher[T any] struct {
 	fn             BatchFn[T]
 	results        chan BatchResult
 
+	batchSize  int
 	batch      []T
 	flushTimer *time.Timer
 	m          sync.Mutex
 }
 
-type BatchFn[T any] func([]T) error
+type BatchFn[T any] func([]T, int) error
 
 type BatchResult struct {
 	At   time.Time
@@ -58,13 +59,14 @@ func (b *Batcher[T]) Results() <-chan BatchResult {
 	return b.results
 }
 
-func (b *Batcher[T]) Enqueue(item T) EnqueueStatus {
+func (b *Batcher[T]) Enqueue(item T, size int) EnqueueStatus {
 	b.m.Lock()
 	defer b.m.Unlock()
 
 	b.batch = append(b.batch, item)
+	b.batchSize += size
 
-	if len(b.batch) == b.sizeThreshold {
+	if b.batchSize == b.sizeThreshold {
 		// trigger flush synchronously
 		_ = b.flushNow()
 		return Flushed
@@ -86,21 +88,20 @@ func (b *Batcher[T]) flushNow() bool {
 		b.flushTimer.Stop()
 		b.flushTimer = nil
 	}
-	if len(b.batch) == 0 {
+	if b.batchSize == 0 {
 		// nothing to flush
 		return false
 	}
-	batchCopy := make([]T, len(b.batch))
-	copy(batchCopy, b.batch)
 
 	at := time.Now()
-	err := b.fn(batchCopy)
+	err := b.fn(b.batch, b.batchSize)
 	r := BatchResult{
 		At:   at,
-		Size: len(batchCopy),
+		Size: b.batchSize,
 		Err:  err,
 	}
 	b.results <- r
 	b.batch = b.batch[:0]
+	b.batchSize = 0
 	return true
 }
