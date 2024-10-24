@@ -83,10 +83,10 @@ func TestBatcher_Enqueue_Flushed(t *testing.T) {
 		},
 	)
 
-	status := b.Enqueue(1, 1) // first item gets schedule, 1d
+	status := b.Enqueue(1, 1) // first item gets scheduled
 	is.Equal(Scheduled, status)
 
-	status = b.Enqueue(2, 1) // second item triggers a flus, 1h
+	status = b.Enqueue(2, 1) // second item triggers a flush
 	is.Equal(Flushed, status)
 
 	// the scheduled result should contain the same error, i.e. nil
@@ -116,7 +116,7 @@ func TestBatcher_Enqueue_Delay(t *testing.T) {
 	)
 
 	start := time.Now()
-	status := b.Enqueue(1, 1) // first item gets schedule, 1d
+	status := b.Enqueue(1, 1) // first item gets scheduled
 	is.Equal(Scheduled, status)
 
 	select {
@@ -129,7 +129,7 @@ func TestBatcher_Enqueue_Delay(t *testing.T) {
 		t.Fatal("expected the channel to contain a value after delay")
 	}
 
-	status = b.Enqueue(1, 1) // next item gets scheduled agai, 1n
+	status = b.Enqueue(1, 1) // next item gets scheduled again
 	is.Equal(Scheduled, status)
 }
 
@@ -145,10 +145,10 @@ func TestBatcher_Enqueue_FlushedError(t *testing.T) {
 		},
 	)
 
-	status := b.Enqueue(1, 1) // first item gets schedule, 1d
+	status := b.Enqueue(1, 1) // first item gets scheduled
 	is.Equal(Scheduled, status)
 
-	status = b.Enqueue(2, 1) // second item triggers a flus, 1h
+	status = b.Enqueue(2, 1) // second item triggers a flush
 	is.Equal(Flushed, status)
 
 	select {
