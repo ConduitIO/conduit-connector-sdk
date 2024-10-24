@@ -108,6 +108,8 @@ type destinationPluginAdapter struct {
 	impl Destination
 	cfg  pconnector.PluginConfig
 
+	// lastPosition holds the position of the last record passed to the connector's
+	// Write method. It is used to determine when the connector should stop.
 	lastPosition *csync.ValueWatcher[opencdc.Position]
 	openCancel   context.CancelFunc
 
@@ -129,11 +131,12 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req pconnector
 }
 
 func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context) {
-	a.writeStrategy = &writeStrategySingle{impl: a.impl, ackFn: a.ack} // by default we write single records
+	writeSingle := &writeStrategySingle{impl: a.impl, ackFn: a.ack}
+	a.writeStrategy = writeSingle // by default we write single records
 
 	batchConfig := (&destinationWithBatch{}).getBatchConfig(ctx)
 	if batchConfig.BatchSize > 1 || batchConfig.BatchDelay > 0 {
-		a.writeStrategy = newWriteStrategyBatch(a.impl, batchConfig.BatchSize, batchConfig.BatchDelay, a.ack)
+		a.writeStrategy = newWriteStrategyBatch(writeSingle, batchConfig.BatchSize, batchConfig.BatchDelay)
 	}
 }
 
@@ -303,13 +306,12 @@ type writeStrategy interface {
 	SetStream(pconnector.DestinationRunStreamServer)
 }
 
-// writeStrategySingle will write records synchronously one by one without
-// caching them. Acknowledgments are sent back to Conduit right after they are
-// written.
+// writeStrategySingle will write batches synchronously without caching them.
+// Acknowledgments are sent back to Conduit right after they are written.
 type writeStrategySingle struct {
-	impl  Destination
-	ackFn func([]opencdc.Record, error, pconnector.DestinationRunStreamServer) error
+	impl Destination
 
+	ackFn  func([]opencdc.Record, error, pconnector.DestinationRunStreamServer) error
 	stream pconnector.DestinationRunStreamServer
 }
 
@@ -355,11 +357,9 @@ func (w *writeStrategySingle) SetStream(stream pconnector.DestinationRunStreamSe
 // when the time since adding the first record to the current batch reaches
 // batchDelay.
 type writeStrategyBatch struct {
-	impl    Destination
 	batcher *internal.Batcher[writeBatchItem]
-	ackFn   func([]opencdc.Record, error, pconnector.DestinationRunStreamServer) error
 
-	stream pconnector.DestinationRunStreamServer
+	writer *writeStrategySingle
 }
 
 type writeBatchItem struct {
@@ -367,22 +367,19 @@ type writeBatchItem struct {
 	records []opencdc.Record
 }
 
-func newWriteStrategyBatch(impl Destination, batchSize int, batchDelay time.Duration, ackFn func([]opencdc.Record, error, pconnector.DestinationRunStreamServer) error) *writeStrategyBatch {
+func newWriteStrategyBatch(writer *writeStrategySingle, batchSize int, batchDelay time.Duration) *writeStrategyBatch {
 	strategy := &writeStrategyBatch{
-		impl:  impl,
-		ackFn: ackFn,
+		writer: writer,
 	}
 	strategy.batcher = internal.NewBatcher(
 		batchSize,
 		batchDelay,
-		strategy.writeBatch,
+		strategy.flushBatch,
 	)
 	return strategy
 }
 
-func (w *writeStrategyBatch) writeBatch(batch []writeBatchItem, batchSize int) error {
-	// TODO consider using writeStrategySingle for this implementation, it's essentially the same code
-
+func (w *writeStrategyBatch) flushBatch(batch []writeBatchItem, batchSize int) error {
 	records := make([]opencdc.Record, 0, batchSize)
 	for _, item := range batch {
 		records = append(records, item.records...)
@@ -390,24 +387,7 @@ func (w *writeStrategyBatch) writeBatch(batch []writeBatchItem, batchSize int) e
 	// use the last record's context as the write context
 	ctx := batch[len(batch)-1].ctx
 
-	n, err := w.impl.Write(ctx, records)
-	if n == len(batch) && err != nil {
-		err = fmt.Errorf("connector reported a successful write of all records in the batch and simultaneously returned an error, this is probably a bug in the connector. Original error: %w", err)
-		n = 0 // nack all messages in the batch
-	} else if n < len(batch) && err == nil {
-		err = fmt.Errorf("batch contained %d messages, connector has only written %d without reporting the error, this is probably a bug in the connector", len(batch), n)
-	}
-
-	ackErr := w.ackFn(records[:n], nil, w.stream)
-	if ackErr != nil {
-		return fmt.Errorf("ack error: %w", ackErr)
-	}
-	ackErr = w.ackFn(records[n:], err, w.stream)
-	if ackErr != nil {
-		return fmt.Errorf("ack error: %w", ackErr)
-	}
-
-	return nil
+	return w.writer.Write(ctx, records)
 }
 
 func (w *writeStrategyBatch) Write(ctx context.Context, recs []opencdc.Record) error {
@@ -478,7 +458,7 @@ func (w *writeStrategyBatch) Flush(ctx context.Context) error {
 }
 
 func (w *writeStrategyBatch) SetStream(stream pconnector.DestinationRunStreamServer) {
-	w.stream = stream
+	w.writer.SetStream(stream)
 }
 
 // DestinationUtil provides utility methods for implementing a destination. Use
