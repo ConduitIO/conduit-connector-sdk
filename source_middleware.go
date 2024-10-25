@@ -46,6 +46,7 @@ type SourceMiddlewareOption interface {
 var (
 	_ SourceMiddlewareOption = SourceWithSchemaExtractionConfig{}
 	_ SourceMiddlewareOption = SourceWithSchemaContextConfig{}
+	_ SourceMiddlewareOption = SourceWithBatchConfig{}
 )
 
 // DefaultSourceMiddleware returns a slice of middleware that should be added to
@@ -285,8 +286,8 @@ func (s *sourceWithSchemaExtraction) Read(ctx context.Context) (opencdc.Record, 
 	return rec, nil
 }
 
-func (s *sourceWithSchemaExtraction) ReadBatch(ctx context.Context) ([]opencdc.Record, error) {
-	recs, err := s.Source.ReadBatch(ctx)
+func (s *sourceWithSchemaExtraction) ReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
+	recs, err := s.Source.ReadN(ctx, n)
 	if err != nil || (s.keySubject == "" && s.payloadSubject == "") {
 		return recs, err
 	}
@@ -606,8 +607,8 @@ func (s *sourceWithSchemaContext) Read(ctx context.Context) (opencdc.Record, err
 	return s.Source.Read(schema.WithSchemaContextName(ctx, s.contextName))
 }
 
-func (s *sourceWithSchemaContext) ReadBatch(ctx context.Context) ([]opencdc.Record, error) {
-	return s.Source.ReadBatch(schema.WithSchemaContextName(ctx, s.contextName))
+func (s *sourceWithSchemaContext) ReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
+	return s.Source.ReadN(schema.WithSchemaContextName(ctx, s.contextName), n)
 }
 
 func (s *sourceWithSchemaContext) Teardown(ctx context.Context) error {
@@ -700,9 +701,9 @@ func (s *SourceWithBatch) Wrap(impl Source) Source {
 		Source:   impl,
 		defaults: s.Config,
 
-		readCh:      make(chan readResponse, *s.Config.BatchSize),
-		readBatchCh: make(chan readBatchResponse, 1),
-		stop:        make(chan struct{}),
+		readCh:  make(chan readResponse, *s.Config.BatchSize),
+		readNCh: make(chan readNResponse, 1),
+		stop:    make(chan struct{}),
 	}
 }
 
@@ -710,17 +711,17 @@ type sourceWithBatch struct {
 	Source
 	defaults SourceWithBatchConfig
 
-	readCh      chan readResponse
-	readBatchCh chan readBatchResponse
-	stop        chan struct{}
+	readCh  chan readResponse
+	readNCh chan readNResponse
+	stop    chan struct{}
 
-	collectFn func(context.Context) ([]opencdc.Record, error)
+	collectFn func(context.Context, int) ([]opencdc.Record, error)
 
 	batchSize  int
 	batchDelay time.Duration
 }
 
-type readBatchResponse struct {
+type readNResponse struct {
 	Records []opencdc.Record
 	Err     error
 }
@@ -778,18 +779,18 @@ func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error 
 	}
 
 	if s.batchSize > 0 || s.batchDelay > 0 {
-		s.collectFn = s.collectWithReadBatch
-		go s.runReadBatch(ctx)
+		s.collectFn = s.collectWithReadN
+		go s.runReadN(ctx)
 	} else {
 		// Batching not configured, simply forward the call.
-		s.collectFn = s.Source.ReadBatch
+		s.collectFn = s.Source.ReadN
 	}
 
 	return nil
 }
 
-func (s *sourceWithBatch) runReadBatch(ctx context.Context) {
-	defer close(s.readBatchCh)
+func (s *sourceWithBatch) runReadN(ctx context.Context) {
+	defer close(s.readNCh)
 
 	b := &backoff.Backoff{
 		Factor: 2,
@@ -798,7 +799,7 @@ func (s *sourceWithBatch) runReadBatch(ctx context.Context) {
 	}
 
 	for {
-		recs, err := s.Source.ReadBatch(ctx)
+		recs, err := s.Source.ReadN(ctx, s.batchSize)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrBackoffRetry):
@@ -812,23 +813,24 @@ func (s *sourceWithBatch) runReadBatch(ctx context.Context) {
 				continue
 
 			case errors.Is(err, context.Canceled):
+				s.readNCh <- readNResponse{Err: err}
 				return
 
 			case errors.Is(err, ErrUnimplemented):
 				Logger(ctx).Info().Msg("source does not support batch reads, falling back to single reads")
 
 				go s.runRead(ctx)
-				s.readBatchCh <- readBatchResponse{Err: err}
+				s.readNCh <- readNResponse{Err: err}
 				return
 
 			default:
-				s.readBatchCh <- readBatchResponse{Err: err}
+				s.readNCh <- readNResponse{Err: err}
 				return
 			}
 		}
 
 		select {
-		case s.readBatchCh <- readBatchResponse{Records: recs}:
+		case s.readNCh <- readNResponse{Records: recs}:
 		case <-ctx.Done():
 			return
 		case <-s.stop:
@@ -860,6 +862,7 @@ func (s *sourceWithBatch) runRead(ctx context.Context) {
 				continue
 			}
 			if errors.Is(err, context.Canceled) {
+				s.readNCh <- readNResponse{Err: err}
 				return
 			}
 
@@ -881,11 +884,11 @@ func (s *sourceWithBatch) Read(ctx context.Context) (opencdc.Record, error) {
 	return s.Source.Read(ctx)
 }
 
-func (s *sourceWithBatch) ReadBatch(ctx context.Context) ([]opencdc.Record, error) {
-	return s.collectFn(ctx)
+func (s *sourceWithBatch) ReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
+	return s.collectFn(ctx, n)
 }
 
-func (s *sourceWithBatch) collectWithRead(ctx context.Context) ([]opencdc.Record, error) {
+func (s *sourceWithBatch) collectWithRead(ctx context.Context, _ int) ([]opencdc.Record, error) {
 	batch := make([]opencdc.Record, 0, s.batchSize)
 	var delay <-chan time.Time
 
@@ -920,13 +923,13 @@ func (s *sourceWithBatch) collectWithRead(ctx context.Context) ([]opencdc.Record
 	}
 }
 
-func (s *sourceWithBatch) collectWithReadBatch(ctx context.Context) ([]opencdc.Record, error) {
+func (s *sourceWithBatch) collectWithReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
 	batch := make([]opencdc.Record, 0, s.batchSize)
 	var delay <-chan time.Time
 
 	for {
 		select {
-		case resp, ok := <-s.readBatchCh:
+		case resp, ok := <-s.readNCh:
 			if !ok {
 				return batch, ctx.Err()
 			}
@@ -934,7 +937,7 @@ func (s *sourceWithBatch) collectWithReadBatch(ctx context.Context) ([]opencdc.R
 				if errors.Is(resp.Err, ErrUnimplemented) {
 					// the plugin doesn't support batch reads, fallback to single reads
 					s.collectFn = s.collectWithRead
-					return s.collectWithRead(ctx)
+					return s.collectWithRead(ctx, n)
 				}
 				return nil, resp.Err
 			}

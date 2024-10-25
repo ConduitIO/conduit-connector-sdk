@@ -85,10 +85,13 @@ type Source interface {
 	// Read can be called concurrently with Ack.
 	Read(context.Context) (opencdc.Record, error)
 
-	// ReadBatch is the same as Read, but returns a batch of records. The
-	// default implementation calls Read and returns the single record in a
-	// batch.
-	ReadBatch(context.Context) ([]opencdc.Record, error)
+	// ReadN is the same as Read, but returns a batch of records. The connector
+	// is expected to return at most n records. If there are fewer records
+	// available, it should return all of them. If there are no records available
+	// it should block until there are records available or the context is
+	// cancelled. If the context is cancelled while ReadN is running, it should
+	// return the context error.
+	ReadN(context.Context, int) ([]opencdc.Record, error)
 
 	// Ack signals to the implementation that the record with the supplied
 	// position was successfully processed. This method might be called after
@@ -254,10 +257,10 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.Sou
 	}
 
 	batching := true
-	readFn := a.impl.ReadBatch
+	readFn := a.impl.ReadN
 
 	for {
-		recs, err := readFn(ctx)
+		recs, err := readFn(ctx, 1) // default is to read 1 record, the batch middleware can override it
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrBackoffRetry):
@@ -277,7 +280,7 @@ func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.Sou
 				Logger(ctx).Info().Msg("source does not support batch reads, falling back to single reads")
 
 				// the plugin doesn't support batch reads, fallback to single reads
-				readFn = func(ctx context.Context) ([]opencdc.Record, error) {
+				readFn = func(ctx context.Context, _ int) ([]opencdc.Record, error) {
 					rec, err := a.impl.Read(ctx)
 					if err != nil {
 						return nil, err

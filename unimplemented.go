@@ -90,9 +90,9 @@ func (UnimplementedSource) Read(context.Context) (opencdc.Record, error) {
 	return opencdc.Record{}, fmt.Errorf("action \"Read\": %w", ErrUnimplemented)
 }
 
-// ReadBatch calls Read by default.
-func (s UnimplementedSource) ReadBatch(context.Context) ([]opencdc.Record, error) {
-	return nil, fmt.Errorf("action \"ReadBatch\": %w", ErrUnimplemented)
+// ReadN can be overridden. If it's not implemented, Read will be used as a fallback.
+func (s UnimplementedSource) ReadN(context.Context, int) ([]opencdc.Record, error) {
+	return nil, fmt.Errorf("action \"ReadN\": %w", ErrUnimplemented)
 }
 
 // Ack should be overridden if acks need to be forwarded to the source,
