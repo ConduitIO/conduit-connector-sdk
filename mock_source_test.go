@@ -346,6 +346,45 @@ func (c *MockSourceReadCall) DoAndReturn(f func(context.Context) (opencdc.Record
 	return c
 }
 
+// ReadN mocks base method.
+func (m *MockSource) ReadN(arg0 context.Context, arg1 int) ([]opencdc.Record, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadN", arg0, arg1)
+	ret0, _ := ret[0].([]opencdc.Record)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadN indicates an expected call of ReadN.
+func (mr *MockSourceMockRecorder) ReadN(arg0, arg1 any) *MockSourceReadNCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadN", reflect.TypeOf((*MockSource)(nil).ReadN), arg0, arg1)
+	return &MockSourceReadNCall{Call: call}
+}
+
+// MockSourceReadNCall wrap *gomock.Call
+type MockSourceReadNCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockSourceReadNCall) Return(arg0 []opencdc.Record, arg1 error) *MockSourceReadNCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockSourceReadNCall) Do(f func(context.Context, int) ([]opencdc.Record, error)) *MockSourceReadNCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockSourceReadNCall) DoAndReturn(f func(context.Context, int) ([]opencdc.Record, error)) *MockSourceReadNCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // Teardown mocks base method.
 func (m *MockSource) Teardown(arg0 context.Context) error {
 	m.ctrl.T.Helper()

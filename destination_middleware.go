@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-sdk/schema"
 	"golang.org/x/time/rate"
@@ -186,6 +187,11 @@ func (d *destinationWithBatch) Configure(ctx context.Context, config config.Conf
 	if cfg.BatchDelay < 0 {
 		return fmt.Errorf("invalid %q: must not be negative", configDestinationBatchDelay)
 	}
+
+	// TODO: emit this warning once we move to source batching
+	// if cfg.BatchDelay > 0 || cfg.BatchSize > 0 {
+	// 	Logger(ctx).Warn().Msg("Batching in the destination is deprecated. Consider moving the `sdk.batch.size` and `sdk.batch.delay` parameters to the source connector to enable batching at the source.")
+	// }
 
 	// Batching is actually implemented in the plugin adapter because it is the
 	// only place we have access to acknowledgments.
@@ -610,10 +616,10 @@ type DestinationWithSchemaExtraction struct {
 // values if they are not explicitly set.
 func (s *DestinationWithSchemaExtraction) Wrap(impl Destination) Destination {
 	if s.Config.KeyEnabled == nil {
-		s.Config.KeyEnabled = ptr(true)
+		s.Config.KeyEnabled = lang.Ptr(true)
 	}
 	if s.Config.PayloadEnabled == nil {
-		s.Config.PayloadEnabled = ptr(true)
+		s.Config.PayloadEnabled = lang.Ptr(true)
 	}
 	return &destinationWithSchemaExtraction{
 		Destination: impl,
