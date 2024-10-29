@@ -627,44 +627,49 @@ func (s *sourceWithEncoding) encodeKey(ctx context.Context, rec *opencdc.Record)
 		// ensure we have a metadata value, to make it safe for retrieving and setting values
 		rec.Metadata = opencdc.Metadata{}
 	}
+
 	sch, err := s.schemaForKey(ctx, *rec)
 	if err != nil {
 		return err // already wrapped
 	}
+	// if there's no schema, there's no encoding
+	if sch == nil {
+		return nil
+	}
 
-	encoded, err := s.encodeWithSchema(sch, rec.Key)
+	encoded, err := s.encodeWithSchema(*sch, rec.Key)
 	if err != nil {
 		return fmt.Errorf("failed to encode key: %w", err)
 	}
 
 	rec.Key = opencdc.RawData(encoded)
-	schema.AttachKeySchemaToRecord(*rec, sch)
+	schema.AttachKeySchemaToRecord(*rec, *sch)
 	return nil
 }
 
-func (s *sourceWithEncoding) schemaForKey(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+func (s *sourceWithEncoding) schemaForKey(ctx context.Context, rec opencdc.Record) (*schema.Schema, error) {
 	subject, err := rec.Metadata.GetKeySchemaSubject()
 	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
-		return schema.Schema{}, fmt.Errorf("failed to get key schema subject: %w", err)
+		return nil, fmt.Errorf("failed to get key schema subject: %w", err)
 	}
 
 	version, err := rec.Metadata.GetKeySchemaVersion()
 	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
-		return schema.Schema{}, fmt.Errorf("failed to get key schema version: %w", err)
+		return nil, fmt.Errorf("failed to get key schema version: %w", err)
 	}
 
 	switch {
 	case subject != "" && version > 0:
 		// The connector has attached the schema subject and version, we can use
 		// it to retrieve the schema from the schema service.
-		return schema.Get(ctx, subject, version)
+		sch, err := schema.Get(ctx, subject, version)
+		return &sch, err
 	case subject != "" || version > 0:
 		// The connector has attached either the schema subject or version, but
 		// not both, this isn't valid.
-		return schema.Schema{}, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected key schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataKeySchemaSubject, subject, opencdc.MetadataKeySchemaVersion, version)
+		return nil, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected key schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataKeySchemaSubject, subject, opencdc.MetadataKeySchemaVersion, version)
 	default:
-		// todo handle case
-		return schema.Schema{}, nil
+		return nil, nil
 	}
 }
 
@@ -683,53 +688,58 @@ func (s *sourceWithEncoding) encodePayload(ctx context.Context, rec *opencdc.Rec
 		// ensure we have a metadata value, to make it safe for retrieving and setting values
 		rec.Metadata = opencdc.Metadata{}
 	}
+
 	sch, err := s.schemaForPayload(ctx, *rec)
 	if err != nil {
 		return fmt.Errorf("failed to extract schema for payload: %w", err)
 	}
+	// if there's no schema, there's no encoding
+	if sch == nil {
+		return nil
+	}
 
 	// encode both before and after with the extracted schema
 	if beforeIsStructured {
-		encoded, err := s.encodeWithSchema(sch, rec.Payload.Before)
+		encoded, err := s.encodeWithSchema(*sch, rec.Payload.Before)
 		if err != nil {
 			return fmt.Errorf("failed to encode before payload: %w", err)
 		}
 		rec.Payload.Before = opencdc.RawData(encoded)
 	}
 	if afterIsStructured {
-		encoded, err := s.encodeWithSchema(sch, rec.Payload.After)
+		encoded, err := s.encodeWithSchema(*sch, rec.Payload.After)
 		if err != nil {
 			return fmt.Errorf("failed to encode after payload: %w", err)
 		}
 		rec.Payload.After = opencdc.RawData(encoded)
 	}
-	schema.AttachPayloadSchemaToRecord(*rec, sch)
+	schema.AttachPayloadSchemaToRecord(*rec, *sch)
 	return nil
 }
 
-func (s *sourceWithEncoding) schemaForPayload(ctx context.Context, rec opencdc.Record) (schema.Schema, error) {
+func (s *sourceWithEncoding) schemaForPayload(ctx context.Context, rec opencdc.Record) (*schema.Schema, error) {
 	subject, err := rec.Metadata.GetPayloadSchemaSubject()
 	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
-		return schema.Schema{}, fmt.Errorf("failed to get payload schema subject: %w", err)
+		return nil, fmt.Errorf("failed to get payload schema subject: %w", err)
 	}
 
 	version, err := rec.Metadata.GetPayloadSchemaVersion()
 	if err != nil && !errors.Is(err, opencdc.ErrMetadataFieldNotFound) {
-		return schema.Schema{}, fmt.Errorf("failed to get payload schema version: %w", err)
+		return nil, fmt.Errorf("failed to get payload schema version: %w", err)
 	}
 
 	switch {
 	case subject != "" && version > 0:
 		// The connector has attached the schema subject and version, we can use
 		// it to retrieve the schema from the schema service.
-		return schema.Get(ctx, subject, version)
+		sch, err := schema.Get(ctx, subject, version)
+		return &sch, err
 	case subject != "" || version > 0:
 		// The connector has attached either the schema subject or version, but
 		// not both, this isn't valid.
-		return schema.Schema{}, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected payload schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataPayloadSchemaSubject, subject, opencdc.MetadataPayloadSchemaVersion, version)
+		return nil, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected payload schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataPayloadSchemaSubject, subject, opencdc.MetadataPayloadSchemaVersion, version)
 	default:
-		// todo handle this better
-		return schema.Schema{}, nil
+		return nil, nil
 	}
 }
 
