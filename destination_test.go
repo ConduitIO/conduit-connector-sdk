@@ -220,16 +220,18 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 		err = clientStream.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{want}})
 		is.NoErr(err)
 	}
-	for i := 0; i < 5; i++ {
-		resp, err := clientStream.Recv()
-		is.NoErr(err)
-		is.Equal(resp, pconnector.DestinationRunResponse{
-			Acks: []pconnector.DestinationRunResponseAck{{
-				Position: want.Position,
-				Error:    "",
-			}},
-		})
-	}
+
+	resp, err := clientStream.Recv()
+	is.NoErr(err)
+	is.Equal(resp, pconnector.DestinationRunResponse{
+		Acks: []pconnector.DestinationRunResponseAck{
+			{Position: want.Position, Error: ""},
+			{Position: want.Position, Error: ""},
+			{Position: want.Position, Error: ""},
+			{Position: want.Position, Error: ""},
+			{Position: want.Position, Error: ""},
+		},
+	})
 
 	// close stream
 	stream.Close(io.EOF)
@@ -293,26 +295,25 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
 		err = clientStream.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{want}})
 		is.NoErr(err)
 	}
-	for i := 0; i < 3; i++ {
-		resp, err := clientStream.Recv()
-		is.NoErr(err)
-		is.Equal(resp, pconnector.DestinationRunResponse{
-			Acks: []pconnector.DestinationRunResponseAck{{
-				Position: want.Position,
-				Error:    "",
-			}},
-		})
-	}
-	for i := 0; i < 2; i++ {
-		resp, err := clientStream.Recv()
-		is.NoErr(err)
-		is.Equal(resp, pconnector.DestinationRunResponse{
-			Acks: []pconnector.DestinationRunResponseAck{{
-				Position: want.Position,
-				Error:    wantErr.Error(),
-			}},
-		})
-	}
+
+	resp, err := clientStream.Recv()
+	is.NoErr(err)
+	is.Equal(resp, pconnector.DestinationRunResponse{
+		Acks: []pconnector.DestinationRunResponseAck{
+			{Position: want.Position, Error: ""},
+			{Position: want.Position, Error: ""},
+			{Position: want.Position, Error: ""},
+		},
+	})
+
+	resp, err = clientStream.Recv()
+	is.NoErr(err)
+	is.Equal(resp, pconnector.DestinationRunResponse{
+		Acks: []pconnector.DestinationRunResponseAck{
+			{Position: want.Position, Error: wantErr.Error()},
+			{Position: want.Position, Error: wantErr.Error()},
+		},
+	})
 
 	// close stream
 	stream.Close(io.EOF)

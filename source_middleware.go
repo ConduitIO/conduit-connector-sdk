@@ -20,11 +20,15 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
+	"github.com/conduitio/conduit-commons/cchan"
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/schema"
+	"github.com/jpillora/backoff"
 )
 
 // SourceMiddleware wraps a Source and adds functionality to it.
@@ -43,6 +47,7 @@ var (
 	_ SourceMiddlewareOption = SourceWithSchemaExtractionConfig{}
 	_ SourceMiddlewareOption = SourceWithSchemaContextConfig{}
 	_ SourceMiddlewareOption = SourceWithEncoding{}
+	_ SourceMiddlewareOption = SourceWithBatchConfig{}
 )
 
 // DefaultSourceMiddleware returns a slice of middleware that should be added to
@@ -52,6 +57,7 @@ func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware 
 		&SourceWithSchemaContext{},
 		&SourceWithSchemaExtraction{},
 		&SourceWithEncoding{},
+		&SourceWithBatch{},
 	}
 
 	// apply options to all middleware
@@ -186,17 +192,17 @@ func (s *SourceWithSchemaExtraction) Wrap(impl Source) Source {
 	}
 
 	if s.Config.KeyEnabled == nil {
-		s.Config.KeyEnabled = ptr(true)
+		s.Config.KeyEnabled = lang.Ptr(true)
 	}
 	if s.Config.KeySubject == nil {
-		s.Config.KeySubject = ptr("key")
+		s.Config.KeySubject = lang.Ptr("key")
 	}
 
 	if s.Config.PayloadEnabled == nil {
-		s.Config.PayloadEnabled = ptr(true)
+		s.Config.PayloadEnabled = lang.Ptr(true)
 	}
 	if s.Config.PayloadSubject == nil {
-		s.Config.PayloadSubject = ptr("payload")
+		s.Config.PayloadSubject = lang.Ptr("payload")
 	}
 
 	return &sourceWithSchemaExtraction{
@@ -266,20 +272,23 @@ func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config confi
 	return nil
 }
 
-func (s *sourceWithSchemaExtraction) Read(ctx context.Context) (opencdc.Record, error) {
-	rec, err := s.Source.Read(ctx)
+func (s *sourceWithSchemaExtraction) ReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
+	recs, err := s.Source.ReadN(ctx, n)
 	if err != nil || (s.keySubject == "" && s.payloadSubject == "") {
-		return rec, err
+		return recs, err
 	}
 
-	if err := s.extractAttachKeySchema(ctx, &rec); err != nil {
-		return rec, err
-	}
-	if err := s.extractAttachPayloadSchema(ctx, &rec); err != nil {
-		return rec, err
+	for i, rec := range recs {
+		if err := s.extractAttachKeySchema(ctx, &rec); err != nil {
+			return nil, err
+		}
+		if err := s.extractAttachPayloadSchema(ctx, &rec); err != nil {
+			return nil, err
+		}
+		recs[i] = rec
 	}
 
-	return rec, nil
+	return recs, nil
 }
 
 func (s *sourceWithSchemaExtraction) extractAttachKeySchema(ctx context.Context, rec *opencdc.Record) error {
@@ -503,7 +512,7 @@ type SourceWithSchemaContext struct {
 // values if they are not explicitly set.
 func (s *SourceWithSchemaContext) Wrap(impl Source) Source {
 	if s.Config.Enabled == nil {
-		s.Config.Enabled = ptr(true)
+		s.Config.Enabled = lang.Ptr(true)
 	}
 
 	return &sourceWithSchemaContext{
@@ -558,6 +567,10 @@ func (s *sourceWithSchemaContext) Open(ctx context.Context, pos opencdc.Position
 
 func (s *sourceWithSchemaContext) Read(ctx context.Context) (opencdc.Record, error) {
 	return s.Source.Read(schema.WithSchemaContextName(ctx, s.contextName))
+}
+
+func (s *sourceWithSchemaContext) ReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
+	return s.Source.ReadN(schema.WithSchemaContextName(ctx, s.contextName), n)
 }
 
 func (s *sourceWithSchemaContext) Teardown(ctx context.Context) error {
@@ -759,8 +772,343 @@ func (s *sourceWithEncoding) encodeWithSchema(sch schema.Schema, data any) ([]by
 	return encoded, nil
 }
 
-// -- Utility functions  ------------------------------------------------------
+// -- SourceWithBatch --------------------------------------------------
 
-func ptr[T any](t T) *T {
-	return &t
+const (
+	configSourceBatchSize  = "sdk.batch.size"
+	configSourceBatchDelay = "sdk.batch.delay"
+)
+
+// SourceWithBatchConfig is the configuration for the
+// SourceWithBatch middleware. Fields set to their zero value are
+// ignored and will be set to the default value.
+//
+// SourceWithBatchConfig can be used as a SourceMiddlewareOption.
+type SourceWithBatchConfig struct {
+	// BatchSize is the default value for the batch size.
+	BatchSize *int
+	// BatchDelay is the default value for the batch delay.
+	BatchDelay *time.Duration
+}
+
+// Apply sets the default configuration for the SourceWithBatch middleware.
+func (c SourceWithBatchConfig) Apply(m SourceMiddleware) {
+	if d, ok := m.(*SourceWithBatch); ok {
+		d.Config = c
+	}
+}
+
+func (c SourceWithBatchConfig) BatchSizeParameterName() string {
+	return configSourceBatchSize
+}
+
+func (c SourceWithBatchConfig) BatchDelayParameterName() string {
+	return configSourceBatchDelay
+}
+
+func (c SourceWithBatchConfig) parameters() config.Parameters {
+	return config.Parameters{
+		configSourceBatchSize: {
+			Default:     strconv.Itoa(*c.BatchSize),
+			Description: "Maximum size of batch before it gets read from the source.",
+			Type:        config.ParameterTypeInt,
+		},
+		configSourceBatchDelay: {
+			Default:     c.BatchDelay.String(),
+			Description: "Maximum delay before an incomplete batch is read from the source.",
+			Type:        config.ParameterTypeDuration,
+		},
+	}
+}
+
+// SourceWithBatch adds support for batching on the source. It adds
+// two parameters to the source config:
+//   - `sdk.batch.size` - Maximum size of batch before it gets written to the
+//     source.
+//   - `sdk.batch.delay` - Maximum delay before an incomplete batch is written
+//     to the source.
+//
+// To change the defaults of these parameters use the fields of this struct.
+type SourceWithBatch struct {
+	Config SourceWithBatchConfig
+}
+
+// Wrap a Source into the batching middleware.
+func (s *SourceWithBatch) Wrap(impl Source) Source {
+	if s.Config.BatchSize == nil {
+		s.Config.BatchSize = lang.Ptr(0)
+	}
+	if s.Config.BatchDelay == nil {
+		s.Config.BatchDelay = lang.Ptr(time.Duration(0))
+	}
+
+	return &sourceWithBatch{
+		Source:   impl,
+		defaults: s.Config,
+
+		readCh:  make(chan readResponse, *s.Config.BatchSize),
+		readNCh: make(chan readNResponse, 1),
+		stop:    make(chan struct{}),
+	}
+}
+
+type sourceWithBatch struct {
+	Source
+	defaults SourceWithBatchConfig
+
+	readCh  chan readResponse
+	readNCh chan readNResponse
+	stop    chan struct{}
+
+	collectFn func(context.Context, int) ([]opencdc.Record, error)
+
+	batchSize  int
+	batchDelay time.Duration
+}
+
+type readNResponse struct {
+	Records []opencdc.Record
+	Err     error
+}
+
+type readResponse struct {
+	Record opencdc.Record
+	Err    error
+}
+
+func (s *sourceWithBatch) Parameters() config.Parameters {
+	return mergeParameters(s.Source.Parameters(), s.defaults.parameters())
+}
+
+func (s *sourceWithBatch) Configure(ctx context.Context, config config.Config) error {
+	err := s.Source.Configure(ctx, config)
+	if err != nil {
+		return err
+	}
+
+	cfg := s.defaults
+
+	if batchSizeRaw := config[configSourceBatchSize]; batchSizeRaw != "" {
+		batchSizeInt, err := strconv.Atoi(batchSizeRaw)
+		if err != nil {
+			return fmt.Errorf("invalid %q: %w", configSourceBatchSize, err)
+		}
+		cfg.BatchSize = &batchSizeInt
+	}
+
+	if delayRaw := config[configSourceBatchDelay]; delayRaw != "" {
+		delayDur, err := time.ParseDuration(delayRaw)
+		if err != nil {
+			return fmt.Errorf("invalid %q: %w", configSourceBatchDelay, err)
+		}
+		cfg.BatchDelay = &delayDur
+	}
+
+	if *cfg.BatchSize < 0 {
+		return fmt.Errorf("invalid %q: must not be negative", configSourceBatchSize)
+	}
+	if *cfg.BatchDelay < 0 {
+		return fmt.Errorf("invalid %q: must not be negative", configSourceBatchDelay)
+	}
+
+	s.batchSize = *cfg.BatchSize
+	s.batchDelay = *cfg.BatchDelay
+
+	return nil
+}
+
+func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error {
+	err := s.Source.Open(ctx, pos)
+	if err != nil {
+		return err
+	}
+
+	if s.batchSize > 0 || s.batchDelay > 0 {
+		s.collectFn = s.collectWithReadN
+		go s.runReadN(ctx)
+	} else {
+		// Batching not configured, simply forward the call.
+		s.collectFn = s.Source.ReadN
+	}
+
+	return nil
+}
+
+func (s *sourceWithBatch) runReadN(ctx context.Context) {
+	defer close(s.readNCh)
+
+	b := &backoff.Backoff{
+		Factor: 2,
+		Min:    time.Millisecond * 100,
+		Max:    time.Second * 5,
+	}
+
+	for {
+		recs, err := s.Source.ReadN(ctx, s.batchSize)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrBackoffRetry):
+				// the plugin wants us to retry reading later
+				_, _, err := cchan.ChanOut[time.Time](time.After(b.Duration())).Recv(ctx)
+				if err != nil {
+					// The plugin is using the SDK for long-polling
+					// and relying on the SDK to check for a cancelled context.
+					return
+				}
+				continue
+
+			case errors.Is(err, context.Canceled):
+				s.readNCh <- readNResponse{Err: err}
+				return
+
+			case errors.Is(err, ErrUnimplemented):
+				Logger(ctx).Info().Msg("source does not support batch reads, falling back to single reads")
+
+				go s.runRead(ctx)
+				s.readNCh <- readNResponse{Err: err}
+				return
+
+			default:
+				s.readNCh <- readNResponse{Err: err}
+				return
+			}
+		}
+
+		select {
+		case s.readNCh <- readNResponse{Records: recs}:
+		case <-ctx.Done():
+			return
+		case <-s.stop:
+			return
+		}
+	}
+}
+
+func (s *sourceWithBatch) runRead(ctx context.Context) {
+	defer close(s.readCh)
+
+	b := &backoff.Backoff{
+		Factor: 2,
+		Min:    time.Millisecond * 100,
+		Max:    time.Second * 5,
+	}
+
+	for {
+		rec, err := s.Source.Read(ctx)
+		if err != nil {
+			if errors.Is(err, ErrBackoffRetry) {
+				// the plugin wants us to retry reading later
+				_, _, err := cchan.ChanOut[time.Time](time.After(b.Duration())).Recv(ctx)
+				if err != nil {
+					// The plugin is using the SDK for long-polling
+					// and relying on the SDK to check for a cancelled context.
+					return
+				}
+				continue
+			}
+			if errors.Is(err, context.Canceled) {
+				s.readNCh <- readNResponse{Err: err}
+				return
+			}
+
+			s.readCh <- readResponse{Err: err}
+			return
+		}
+
+		select {
+		case s.readCh <- readResponse{Record: rec}:
+		case <-ctx.Done():
+			return
+		case <-s.stop:
+			return
+		}
+	}
+}
+
+func (s *sourceWithBatch) Read(ctx context.Context) (opencdc.Record, error) {
+	return s.Source.Read(ctx)
+}
+
+func (s *sourceWithBatch) ReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
+	return s.collectFn(ctx, n)
+}
+
+func (s *sourceWithBatch) collectWithRead(ctx context.Context, _ int) ([]opencdc.Record, error) {
+	batch := make([]opencdc.Record, 0, s.batchSize)
+	var delay <-chan time.Time
+
+	for {
+		select {
+		case resp, ok := <-s.readCh:
+			if !ok {
+				return batch, ctx.Err()
+			}
+			if resp.Err != nil {
+				return nil, resp.Err
+			}
+
+			batch = append(batch, resp.Record)
+			if s.batchSize > 0 && len(batch) >= s.batchSize {
+				// batch is full, flush it
+				return batch, nil
+			}
+
+			if s.batchDelay > 0 && delay == nil {
+				// start the delay timer after we have received the first batch
+				delay = time.After(s.batchDelay)
+			}
+
+			// continue reading until the batch is full or the delay timer has expired
+		case <-delay:
+			// delay timer has expired, flush the batch
+			return batch, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (s *sourceWithBatch) collectWithReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
+	batch := make([]opencdc.Record, 0, s.batchSize)
+	var delay <-chan time.Time
+
+	for {
+		select {
+		case resp, ok := <-s.readNCh:
+			if !ok {
+				return batch, ctx.Err()
+			}
+			if resp.Err != nil {
+				if errors.Is(resp.Err, ErrUnimplemented) {
+					// the plugin doesn't support batch reads, fallback to single reads
+					s.collectFn = s.collectWithRead
+					return s.collectWithRead(ctx, n)
+				}
+				return nil, resp.Err
+			}
+
+			if len(batch) == 0 && len(resp.Records) >= s.batchSize {
+				// source returned a batch that is already full, flush it
+				return resp.Records, nil
+			}
+
+			batch = append(batch, resp.Records...)
+			if s.batchSize > 0 && len(batch) >= s.batchSize {
+				// batch is full, flush it
+				return batch, nil
+			}
+
+			if s.batchDelay > 0 && delay == nil {
+				// start the delay timer after we have received the first batch
+				delay = time.After(s.batchDelay)
+			}
+
+			// continue reading until the batch is full or the delay timer has expired
+		case <-delay:
+			// delay timer has expired, flush the batch
+			return batch, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }

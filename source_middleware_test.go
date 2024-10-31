@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/csync"
+	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-sdk/internal"
@@ -39,10 +41,10 @@ func TestSourceWithSchemaExtractionConfig_Apply(t *testing.T) {
 	is := is.New(t)
 
 	wantCfg := SourceWithSchemaExtractionConfig{
-		PayloadEnabled: ptr(true),
-		KeyEnabled:     ptr(true),
-		PayloadSubject: ptr("foo"),
-		KeySubject:     ptr("bar"),
+		PayloadEnabled: lang.Ptr(true),
+		KeyEnabled:     lang.Ptr(true),
+		PayloadSubject: lang.Ptr("foo"),
+		KeySubject:     lang.Ptr("bar"),
 	}
 
 	have := &SourceWithSchemaExtraction{}
@@ -108,8 +110,8 @@ func TestSourceWithSchemaExtraction_Configure(t *testing.T) {
 		name: "disabled by default",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadEnabled: ptr(false),
-				KeyEnabled:     ptr(false),
+				PayloadEnabled: lang.Ptr(false),
+				KeyEnabled:     lang.Ptr(false),
 			},
 		},
 		have: config.Config{},
@@ -132,8 +134,8 @@ func TestSourceWithSchemaExtraction_Configure(t *testing.T) {
 		name: "static default payload subject",
 		middleware: SourceWithSchemaExtraction{
 			Config: SourceWithSchemaExtractionConfig{
-				PayloadSubject: ptr("foo"),
-				KeySubject:     ptr("bar"),
+				PayloadSubject: lang.Ptr("foo"),
+				KeySubject:     lang.Ptr("bar"),
 			},
 		},
 		have: config.Config{},
@@ -459,8 +461,8 @@ func TestSourceWithSchemaContext_Parameters(t *testing.T) {
 		{
 			name: "custom middleware config",
 			mwCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(false),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(false),
+				Name:    lang.Ptr("foobar"),
 			},
 			wantParams: config.Parameters{
 				"sdk.schema.context.enabled": {
@@ -526,8 +528,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "custom context in middleware, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(true),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(true),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "foobar",
@@ -535,8 +537,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "middleware config: use context false, no user config",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(false),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(false),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg:    config.Config{},
 			wantContextName: "",
@@ -544,8 +546,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides use context",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(false),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(false),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.enabled": "true",
@@ -555,8 +557,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides context name, non-empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(true),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(true),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",
@@ -567,8 +569,8 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 		{
 			name: "user config overrides context name, empty",
 			middlewareCfg: SourceWithSchemaContextConfig{
-				Enabled: ptr(true),
-				Name:    ptr("foobar"),
+				Enabled: lang.Ptr(true),
+				Name:    lang.Ptr("foobar"),
 			},
 			connectorCfg: config.Config{
 				"sdk.schema.context.use":  "true",
@@ -891,4 +893,64 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 			is.Equal("", cmp.Diff(tc.wantRec.Payload.After, gotPayloadAfter))
 		})
 	}
+}
+
+// -- SourceWithBatch --------------------------------------------------
+
+func TestSourceWithBatch_ReadN(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+
+	connectorCfg := config.Config{
+		configSourceBatchSize:  "5",
+		configSourceBatchDelay: "",
+	}
+
+	s := NewMockSource(gomock.NewController(t))
+	underTest := (&SourceWithBatch{}).Wrap(s)
+
+	want := []opencdc.Record{
+		{Position: []byte("1")},
+		{Position: []byte("2")},
+		{Position: []byte("3")},
+		{Position: []byte("4")},
+		{Position: []byte("5")},
+	}
+
+	s.EXPECT().Configure(gomock.Any(), connectorCfg).Return(nil)
+	s.EXPECT().Open(gomock.Any(), opencdc.Position{}).Return(nil)
+
+	// First batch returns 5 records
+	call := s.EXPECT().ReadN(gomock.Any(), 5).Return(want, nil)
+	// Second batch blocks until the context is done
+	var done csync.WaitGroup
+	done.Add(1)
+	s.EXPECT().ReadN(gomock.Any(), 5).DoAndReturn(func(ctx context.Context, _ int) ([]opencdc.Record, error) {
+		defer done.Done()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}).After(call.Call)
+
+	err := underTest.Configure(ctx, connectorCfg)
+	is.NoErr(err)
+
+	openCtx, openCancel := context.WithCancel(ctx)
+	err = underTest.Open(openCtx, opencdc.Position{})
+	is.NoErr(err)
+
+	got, err := underTest.ReadN(ctx, 1) // 1 record per batch is the default, but the middleware should overwrite it
+	is.NoErr(err)
+	is.Equal(want, got)
+
+	// Give the second batch a chance to start, it's called in the background
+	time.Sleep(time.Millisecond * 10)
+
+	// On teardown the SDK cancels the open ctx, which should cause the second
+	// batch to return an error
+	openCancel()
+	is.NoErr(done.WaitTimeout(ctx, time.Second))
+
+	// Calling the middleware again should return the context error
+	_, err = underTest.ReadN(ctx, 1)
+	is.True(errors.Is(err, context.Canceled))
 }
