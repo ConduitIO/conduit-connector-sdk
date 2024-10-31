@@ -618,7 +618,7 @@ func (s *sourceWithEncoding) encodeKey(ctx context.Context, rec *opencdc.Record)
 	if _, ok := rec.Key.(opencdc.StructuredData); !ok {
 		// log warning once, to avoid spamming the logs
 		s.keyWarnOnce.Do(func() {
-			Logger(ctx).Warn().Msgf(`record key is not structured, consider disabling the source schema key encoding using "%s: false"`, configSourceSchemaExtractionKeyEnabled)
+			Logger(ctx).Warn().Msg(`record keys produced by this connector are not structured and won't be encoded"`)
 		})
 		return nil
 	}
@@ -679,7 +679,7 @@ func (s *sourceWithEncoding) encodePayload(ctx context.Context, rec *opencdc.Rec
 	if !beforeIsStructured && !afterIsStructured {
 		// log warning once, to avoid spamming the logs
 		s.payloadWarnOnce.Do(func() {
-			Logger(ctx).Warn().Msgf(`record payload is not structured, consider disabling the source schema payload encoding using "%s: false"`, configSourceSchemaExtractionPayloadEnabled)
+			Logger(ctx).Warn().Msg(`record payloads produced by this connector are not structured and won't be encoded"`)
 		})
 		return nil
 	}
