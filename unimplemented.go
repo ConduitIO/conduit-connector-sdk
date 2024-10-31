@@ -75,9 +75,14 @@ func (UnimplementedSource) Parameters() config.Parameters {
 	return nil
 }
 
-// Configure needs to be overridden in the actual implementation.
-func (UnimplementedSource) Configure(context.Context, config.Config) error {
-	return fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
+// Config needs to be overridden in the actual implementation.
+func (UnimplementedSource) Config() SourceConfig {
+	return nil
+}
+
+// Configure can optionally be overridden in the actual implementation.
+func (UnimplementedSource) Configure(context.Context, SourceConfig) error {
+	return nil // fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
 }
 
 // Open needs to be overridden in the actual implementation.
@@ -122,3 +127,11 @@ func (UnimplementedSource) LifecycleOnDeleted(context.Context, config.Config) er
 }
 
 func (UnimplementedSource) mustEmbedUnimplementedSource() {}
+
+type UnimplementedSourceConfig struct{}
+
+func (UnimplementedSourceConfig) mustEmbedUnimplementedSourceConfig() {}
+
+func (UnimplementedSourceConfig) Validate(context.Context) error {
+	return nil
+}

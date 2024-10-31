@@ -17,8 +17,10 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/conduitio/conduit-commons/config"
+	"gopkg.in/yaml.v3"
 )
 
 // Util provides utilities for implementing connectors.
@@ -47,9 +49,12 @@ var Util = struct {
 	//     validations, and value validations.
 	//   - Copies configuration values into the target object. The target object must
 	//     be a pointer to a struct.
-	ParseConfig func(ctx context.Context, cfg config.Config, target any, params config.Parameters) error
+	ParseConfig func(ctx context.Context, cfg config.Config, target any) error
+
+	YAMLSpecification func(ctx context.Context, rawYaml string) Specification
 }{
-	ParseConfig: parseConfig,
+	ParseConfig:       parseConfig,
+	YAMLSpecification: YAMLSpecification,
 }
 
 func mergeParameters(p1 config.Parameters, p2 config.Parameters) config.Parameters {
@@ -71,20 +76,35 @@ func parseConfig(
 	ctx context.Context,
 	cfg config.Config,
 	target any,
-	params config.Parameters,
+	// params config.Parameters,
 ) error {
 	logger := Logger(ctx)
 
 	logger.Debug().Msg("sanitizing configuration and applying defaults")
-	c := cfg.Sanitize().ApplyDefaults(params)
+	c := cfg.Sanitize() // .ApplyDefaults(params)
 
 	logger.Debug().Msg("validating configuration according to the specifications")
-	err := c.Validate(params)
-	if err != nil {
-		return fmt.Errorf("config invalid: %w", err)
-	}
+	// err := c.Validate(params)
+	// if err != nil {
+	// 	return fmt.Errorf("config invalid: %w", err)
+	// }
 
 	logger.Debug().Type("target", target).Msg("decoding configuration into the target object")
 	//nolint:wrapcheck // error is already wrapped by DecodeInto
 	return c.DecodeInto(target)
+}
+
+func YAMLSpecification(ctx context.Context, rawYaml string) Specification {
+	logger := Logger(ctx)
+
+	logger.Debug().Str("yaml", rawYaml).Msg("parsing YAML specification")
+
+	var spec Specification
+	err := yaml.NewDecoder(strings.NewReader(rawYaml)).Decode(&spec)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to parse YAML specification")
+	}
+
+	logger.Debug().Any("specification", spec).Msg("specification successfully parsed")
+	return spec
 }

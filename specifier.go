@@ -39,7 +39,7 @@ func NewSpecifierPlugin(specs Specification, source Source, dest Destination) pc
 
 	return &specifierPluginAdapter{
 		specs:             specs,
-		sourceParams:      source.Parameters(),
+		sourceParams:      nil, // source.Parameters(),
 		destinationParams: dest.Parameters(),
 	}
 }

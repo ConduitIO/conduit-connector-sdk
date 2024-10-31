@@ -76,6 +76,8 @@ github.com/chavacava/garif v0.1.0 h1:2JHa3hbYf5D9dsgseMKAmc/MZ109otzgNFk5s87H9Pc
 github.com/chavacava/garif v0.1.0/go.mod h1:XMyYCkEL58DF0oyW4qDjjnPWONs2HBqYKI+UIPD+Gww=
 github.com/ckaznocha/intrange v0.2.0 h1:FykcZuJ8BD7oX93YbO1UY9oZtkRbp+1/kJcDjkefYLs=
 github.com/ckaznocha/intrange v0.2.0/go.mod h1:r5I7nUlAAG56xmkOpw4XVr16BXhwYTUdcuRFeevn1oE=
+github.com/conduitio/conduit-commons v0.4.0 h1:YlvBKyfvgOa0SMu3jA1NzA5xhQ1Y5GQ+0vXBFVcvfIU=
+github.com/conduitio/conduit-commons v0.4.0/go.mod h1:hAvCne646OtmiZx6XDNumyKVNM5JlqyRGp6WYegAEpo=
 github.com/conduitio/conduit-connector-protocol v0.8.0 h1:HnuvFC30H3v/aw/czEvKFeKaSo/vySvYfRqiPNuYOWA=
 github.com/conduitio/conduit-connector-protocol v0.8.0/go.mod h1:qCRWXzp1vMN3PjuacY8FTLizp7gyE8wzgk6ieujB1zg=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=

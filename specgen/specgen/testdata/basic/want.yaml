@@ -1,0 +1,188 @@
+name: ""
+summary: ""
+description: ""
+version: ""
+author: ""
+sourceparams:
+  foo:
+    default: bar
+    description: |-
+      MyGlobalString is a required field in the global config with the name
+      "foo" and default value "bar".
+    type: string
+    validations:
+      - {}
+  myBool:
+    default: ""
+    description: ""
+    type: bool
+    validations: []
+  myBoolPtr:
+    default: ""
+    description: ""
+    type: bool
+    validations: []
+  myByte:
+    default: ""
+    description: ""
+    type: string
+    validations: []
+  myDurSlice:
+    default: ""
+    description: ""
+    type: string
+    validations: []
+  myDuration:
+    default: 1s
+    description: ""
+    type: duration
+    validations: []
+  myDurationPtr:
+    default: 1m0s
+    description: ""
+    type: duration
+    validations: []
+  myFloat32:
+    default: ""
+    description: ""
+    type: float
+    validations: []
+  myFloat64:
+    default: ""
+    description: ""
+    type: float
+    validations: []
+  myFloatSlice:
+    default: ""
+    description: ""
+    type: string
+    validations: []
+  myInt:
+    default: ""
+    description: ""
+    type: int
+    validations:
+      - v: 100
+      - v: 0
+  myInt8:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myInt16:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myInt32:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myInt64:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myIntSlice:
+    default: 1,2
+    description: ""
+    type: string
+    validations: []
+  myRune:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myString:
+    default: ""
+    description: MyString my string description
+    type: string
+    validations: []
+  myStringMap.*:
+    default: ""
+    description: ""
+    type: string
+    validations: []
+  myStructMap.*.myInt:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myStructMap.*.myString:
+    default: ""
+    description: ""
+    type: string
+    validations: []
+  myUint:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myUint8:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myUint16:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myUint32:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  myUint64:
+    default: ""
+    description: ""
+    type: int
+    validations: []
+  sdk.schema.context.enabled:
+    default: ""
+    description: |-
+      Specifies whether to use a schema context name. If set to false, no schema context name will
+      be used, and schemas will be saved with the subject name specified in the connector
+      (not safe because of name conflicts).
+    type: bool
+    validations: []
+  sdk.schema.context.name:
+    default: ""
+    description: Schema context name to be used. Used as a prefix for all schema subject names.
+    type: string
+    validations: []
+  sdk.schema.extract.key.enabled:
+    default: "false"
+    description: Whether to extract and encode the record key with a schema.
+    type: bool
+    validations: []
+  sdk.schema.extract.key.subject:
+    default: key
+    description: |-
+      The subject of the key schema. If the record metadata contains the field
+      "opencdc.collection" it is prepended to the subject name and separated
+      with a dot.
+    type: string
+    validations: []
+  sdk.schema.extract.payload.enabled:
+    default: "false"
+    description: Whether to extract and encode the record payload with a schema.
+    type: bool
+    validations: []
+  sdk.schema.extract.payload.subject:
+    default: payload
+    description: |-
+      The subject of the payload schema. If the record metadata contains the
+      field "opencdc.collection" it is prepended to the subject name and
+      separated with a dot.
+    type: string
+    validations: []
+  sdk.schema.extract.type:
+    default: avro
+    description: The type of the payload schema.
+    type: int
+    validations:
+      - list:
+          - avro
+destinationparams: {}

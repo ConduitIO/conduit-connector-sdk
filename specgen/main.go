@@ -1,4 +1,4 @@
-// Copyright © 2022 Meroxa, Inc.
+// Copyright © 2024 Meroxa, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// go:build ignoreBuildTags
-
-package example
-
-import (
-	"example.com/test/internal"
-)
-
-// GlobalConfig is defined in another file. It is defined with an underlying
-// type that is in another package (should still work).
-type GlobalConfig internal.GlobalConfig
+package specgen

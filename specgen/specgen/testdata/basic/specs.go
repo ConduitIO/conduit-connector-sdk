@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package example
+package basic
 
 import (
 	"net/http"
 	"time"
+
+	"github.com/conduitio/conduit-commons/lang"
+	sdk "github.com/conduitio/conduit-connector-sdk"
 )
 
 // GlobalConfig is a reusable config struct used in the source and destination
@@ -24,26 +27,19 @@ import (
 type GlobalConfig struct {
 	// MyGlobalString is a required field in the global config with the name
 	// "foo" and default value "bar".
-	MyGlobalString string `name:"foo" default:"bar" required:"true"`
+	MyGlobalString string `json:"foo" default:"bar" validate:"required"`
 }
 
-// DestinationConfig can be used to parse the configuration for the destination
-// connector.
-type DestinationConfig struct {
-	GlobalConfig
-
-	// MyDestinationString is a field in the destination config.
-	MyDestinationString string
-}
-
-// SourceConfig can be used to parse the configuration for the source connector.
+// SourceConfig this comment will be ignored.
 type SourceConfig struct {
+	sdk.DefaultSourceMiddleware
 	GlobalConfig
 
+	// MyString my string description
 	MyString string
 	MyBool   bool
 
-	MyInt    int
+	MyInt    int `validate:"lt=100, gt=0"`
 	MyUint   uint
 	MyInt8   int8
 	MyUint8  uint8
@@ -62,22 +58,50 @@ type SourceConfig struct {
 
 	MyDuration time.Duration
 
+	MyIntSlice   []int
+	MyFloatSlice []float32
+	MyDurSlice   []time.Duration
+
+	MyStringMap map[string]string
+	MyStructMap map[string]structMapVal
+
+	MyBoolPtr     *bool
+	MyDurationPtr *time.Duration `default:"5h"`
+
 	// this field is ignored because it is not exported
 	ignoreThis http.Client
 }
 
-// Specs contains the specifications. This comment describes the struct itself
-// and won't be included in the generated specifications.
-//
-//spec:summary This is a basic summary.
-//spec:description
-// This is a basic description. It can start in a new line and be distributed
-// across multiple lines. Standard Markdown syntax _can_ be used.
-//spec:author Example Inc.
-//spec:version v0.1.0
-type Specs struct {
-	//spec:sourceParams
-	SourceConfig
-	//spec:destinationParams
-	DestinationConfig
+type structMapVal struct {
+	MyString string
+	MyInt    int
+}
+
+var Connector = sdk.Connector{
+	NewSpecification: nil,
+	NewSource: func() sdk.Source {
+		return &Source{
+			config: SourceConfig{
+				DefaultSourceMiddleware: sdk.DefaultSourceMiddleware{
+					SourceWithSchemaExtractionConfig: sdk.SourceWithSchemaExtractionConfig{
+						KeyEnabled:     lang.Ptr(false),
+						PayloadEnabled: lang.Ptr(false),
+					},
+				},
+				MyIntSlice:    []int{1, 2},
+				MyDuration:    time.Second,
+				MyDurationPtr: lang.Ptr(time.Minute),
+			},
+		}
+	},
+	NewDestination: nil,
+}
+
+type Source struct {
+	sdk.UnimplementedSource
+	config SourceConfig
+}
+
+func (s *Source) Config() sdk.SourceConfig {
+	return &s.config
 }

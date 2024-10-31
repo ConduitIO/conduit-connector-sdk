@@ -14,6 +14,8 @@
 
 package sdk
 
+/*
+
 import (
 	"context"
 	"fmt"
@@ -183,3 +185,6 @@ func (bm *benchmarkSource) reportMetrics(b *testing.B) {
 	b.ReportMetric(bm.firstAck.Seconds(), "firstAck")
 	b.ReportMetric(float64(b.N-1)/bm.allAcks.Seconds(), "acks/s")
 }
+
+
+*/

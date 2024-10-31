@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"sync"
 	"time"
@@ -26,65 +27,41 @@ import (
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/schema"
 	"github.com/jpillora/backoff"
 )
+
+var sourceMiddlewareType = reflect.TypeFor[SourceMiddleware]()
 
 // SourceMiddleware wraps a Source and adds functionality to it.
 type SourceMiddleware interface {
 	Wrap(Source) Source
 }
 
-// SourceMiddlewareOption can be used to change the behavior of the default source
-// middleware created with DefaultSourceMiddleware.
-type SourceMiddlewareOption interface {
-	Apply(SourceMiddleware)
-}
+type DefaultSourceMiddleware struct {
+	UnimplementedSourceConfig
 
-// Available source middleware options.
-var (
-	_ SourceMiddlewareOption = SourceWithSchemaExtractionConfig{}
-	_ SourceMiddlewareOption = SourceWithSchemaContextConfig{}
-	_ SourceMiddlewareOption = SourceWithBatchConfig{}
-)
-
-// DefaultSourceMiddleware returns a slice of middleware that should be added to
-// all sources unless there's a good reason not to.
-func DefaultSourceMiddleware(opts ...SourceMiddlewareOption) []SourceMiddleware {
-	middleware := []SourceMiddleware{
-		&SourceWithSchemaContext{},
-		&SourceWithSchemaExtraction{},
-		&SourceWithBatch{},
-	}
-
-	// apply options to all middleware
-	for _, m := range middleware {
-		for _, opt := range opts {
-			opt.Apply(m)
-		}
-	}
-	return middleware
+	SourceWithSchemaContextConfig
+	SourceWithSchemaExtractionConfig
 }
 
 // SourceWithMiddleware wraps the source into the supplied middleware.
-func SourceWithMiddleware(s Source, middleware ...SourceMiddleware) Source {
-	// apply middleware in reverse order to preserve the order as specified
-	for i := len(middleware) - 1; i >= 0; i-- {
-		s = middleware[i].Wrap(s)
+func SourceWithMiddleware(s Source) Source {
+	cfg := s.Config()
+
+	cfgVal := reflect.ValueOf(cfg)
+	for i := range cfgVal.NumField() {
+		field := cfgVal.Field(i)
+		if field.Type().Implements(sourceMiddlewareType) {
+			// This is a middleware config, wrap the source with it
+			s = field.Interface().(SourceMiddleware).Wrap(s)
+		}
 	}
+
 	return s
 }
 
 // -- SourceWithSchemaExtraction ----------------------------------------------
-
-const (
-	configSourceSchemaExtractionType           = "sdk.schema.extract.type"
-	configSourceSchemaExtractionPayloadEnabled = "sdk.schema.extract.payload.enabled"
-	configSourceSchemaExtractionPayloadSubject = "sdk.schema.extract.payload.subject"
-	configSourceSchemaExtractionKeyEnabled     = "sdk.schema.extract.key.enabled"
-	configSourceSchemaExtractionKeySubject     = "sdk.schema.extract.key.subject"
-)
 
 // SourceWithSchemaExtractionConfig is the configuration for the
 // SourceWithSchemaExtraction middleware. Fields set to their zero value are
@@ -92,120 +69,28 @@ const (
 //
 // SourceWithSchemaExtractionConfig can be used as a SourceMiddlewareOption.
 type SourceWithSchemaExtractionConfig struct {
-	// The type of the payload schema. Defaults to Avro.
-	SchemaType schema.Type
+	// The type of the payload schema.
+	SchemaType schema.Type `json:"sdk.schema.extract.type" validate:"inclusion=avro" default:"avro"`
 	// Whether to extract and encode the record payload with a schema.
-	// If unset, defaults to true.
-	PayloadEnabled *bool
-	// The subject of the payload schema. If unset, defaults to "payload".
-	PayloadSubject *string
+	PayloadEnabled *bool `json:"sdk.schema.extract.payload.enabled" default:"true"`
+	// The subject of the payload schema. If the record metadata contains the
+	// field "opencdc.collection" it is prepended to the subject name and
+	// separated with a dot.
+	PayloadSubject *string `json:"sdk.schema.extract.payload.subject" default:"payload"`
 	// Whether to extract and encode the record key with a schema.
-	// If unset, defaults to true.
-	KeyEnabled *bool
-	// The subject of the key schema. If unset, defaults to "key".
-	KeySubject *string
-}
-
-// Apply sets the default configuration for the SourceWithSchemaExtraction middleware.
-func (c SourceWithSchemaExtractionConfig) Apply(m SourceMiddleware) {
-	if s, ok := m.(*SourceWithSchemaExtraction); ok {
-		s.Config = c
-	}
-}
-
-func (c SourceWithSchemaExtractionConfig) SchemaTypeParameterName() string {
-	return configSourceSchemaExtractionType
-}
-
-func (c SourceWithSchemaExtractionConfig) SchemaPayloadEnabledParameterName() string {
-	return configSourceSchemaExtractionPayloadEnabled
-}
-
-func (c SourceWithSchemaExtractionConfig) SchemaPayloadSubjectParameterName() string {
-	return configSourceSchemaExtractionPayloadSubject
-}
-
-func (c SourceWithSchemaExtractionConfig) SchemaKeyEnabledParameterName() string {
-	return configSourceSchemaExtractionKeyEnabled
-}
-
-func (c SourceWithSchemaExtractionConfig) SchemaKeySubjectParameterName() string {
-	return configSourceSchemaExtractionKeySubject
-}
-
-func (c SourceWithSchemaExtractionConfig) parameters() config.Parameters {
-	return config.Parameters{
-		configSourceSchemaExtractionType: {
-			Default:     c.SchemaType.String(),
-			Type:        config.ParameterTypeString,
-			Description: "The type of the payload schema.",
-			Validations: []config.Validation{
-				config.ValidationInclusion{List: c.types()},
-			},
-		},
-		configSourceSchemaExtractionPayloadEnabled: {
-			Default:     strconv.FormatBool(*c.PayloadEnabled),
-			Type:        config.ParameterTypeBool,
-			Description: "Whether to extract and encode the record payload with a schema.",
-		},
-		configSourceSchemaExtractionPayloadSubject: {
-			Default:     *c.PayloadSubject,
-			Type:        config.ParameterTypeString,
-			Description: `The subject of the payload schema. If the record metadata contains the field "opencdc.collection" it is prepended to the subject name and separated with a dot.`,
-		},
-		configSourceSchemaExtractionKeyEnabled: {
-			Default:     strconv.FormatBool(*c.KeyEnabled),
-			Type:        config.ParameterTypeBool,
-			Description: "Whether to extract and encode the record key with a schema.",
-		},
-		configSourceSchemaExtractionKeySubject: {
-			Default:     *c.KeySubject,
-			Type:        config.ParameterTypeString,
-			Description: `The subject of the key schema. If the record metadata contains the field "opencdc.collection" it is prepended to the subject name and separated with a dot.`,
-		},
-	}
-}
-
-func (c SourceWithSchemaExtractionConfig) types() []string {
-	out := make([]string, 0, len(schema.KnownSerdeFactories))
-	for t := range schema.KnownSerdeFactories {
-		out = append(out, t.String())
-	}
-	return out
-}
-
-// SourceWithSchemaExtraction is a middleware that extracts and encodes the record
-// payload and key with a schema. The schema is extracted from the record data
-// for each record produced by the source. The schema is registered with the
-// schema service and the schema subject is attached to the record metadata.
-type SourceWithSchemaExtraction struct {
-	Config SourceWithSchemaExtractionConfig
+	KeyEnabled *bool `json:"sdk.schema.extract.key.enabled" default:"true"`
+	// The subject of the key schema. If the record metadata contains the field
+	// "opencdc.collection" it is prepended to the subject name and separated
+	// with a dot.
+	KeySubject *string `json:"sdk.schema.extract.key.subject" default:"key"`
 }
 
 // Wrap a Source into the schema middleware. It will apply default configuration
 // values if they are not explicitly set.
-func (s *SourceWithSchemaExtraction) Wrap(impl Source) Source {
-	if s.Config.SchemaType == 0 {
-		s.Config.SchemaType = schema.TypeAvro
-	}
-
-	if s.Config.KeyEnabled == nil {
-		s.Config.KeyEnabled = lang.Ptr(true)
-	}
-	if s.Config.KeySubject == nil {
-		s.Config.KeySubject = lang.Ptr("key")
-	}
-
-	if s.Config.PayloadEnabled == nil {
-		s.Config.PayloadEnabled = lang.Ptr(true)
-	}
-	if s.Config.PayloadSubject == nil {
-		s.Config.PayloadSubject = lang.Ptr("payload")
-	}
-
+func (c SourceWithSchemaExtractionConfig) Wrap(impl Source) Source {
 	return &sourceWithSchemaExtraction{
 		Source:   impl,
-		defaults: s.Config,
+		defaults: c,
 	}
 }
 
@@ -222,53 +107,49 @@ type sourceWithSchemaExtraction struct {
 	keyWarnOnce     sync.Once
 }
 
-func (s *sourceWithSchemaExtraction) Parameters() config.Parameters {
-	return mergeParameters(s.Source.Parameters(), s.defaults.parameters())
-}
-
-func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config config.Config) error {
-	err := s.Source.Configure(ctx, config)
-	if err != nil {
-		return err
-	}
-
-	s.schemaType = s.defaults.SchemaType
-	if val, ok := config[configSourceSchemaExtractionType]; ok {
-		if err := s.schemaType.UnmarshalText([]byte(val)); err != nil {
-			return fmt.Errorf("invalid %s: failed to parse schema type: %w", configSourceSchemaExtractionType, err)
-		}
-	}
-
-	encodeKey := *s.defaults.KeyEnabled
-	if val, ok := config[configSourceSchemaExtractionKeyEnabled]; ok {
-		encodeKey, err = strconv.ParseBool(val)
-		if err != nil {
-			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configSourceSchemaExtractionKeyEnabled, err)
-		}
-	}
-	if encodeKey {
-		s.keySubject = *s.defaults.KeySubject
-		if val, ok := config[configSourceSchemaExtractionKeySubject]; ok {
-			s.keySubject = val
-		}
-	}
-
-	encodePayload := *s.defaults.PayloadEnabled
-	if val, ok := config[configSourceSchemaExtractionPayloadEnabled]; ok {
-		encodePayload, err = strconv.ParseBool(val)
-		if err != nil {
-			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configSourceSchemaExtractionPayloadEnabled, err)
-		}
-	}
-	if encodePayload {
-		s.payloadSubject = *s.defaults.PayloadSubject
-		if val, ok := config[configSourceSchemaExtractionPayloadSubject]; ok {
-			s.payloadSubject = val
-		}
-	}
-
-	return nil
-}
+// func (s *sourceWithSchemaExtraction) Configure(ctx context.Context, config config.Config) error {
+// 	err := s.Source.Configure(ctx, config)
+// 	if err != nil {
+// 		return err
+// 	}
+//
+// 	s.schemaType = s.defaults.SchemaType
+// 	if val, ok := config[configSourceSchemaExtractionType]; ok {
+// 		if err := s.schemaType.UnmarshalText([]byte(val)); err != nil {
+// 			return fmt.Errorf("invalid %s: failed to parse schema type: %w", configSourceSchemaExtractionType, err)
+// 		}
+// 	}
+//
+// 	encodeKey := *s.defaults.KeyEnabled
+// 	if val, ok := config[configSourceSchemaExtractionKeyEnabled]; ok {
+// 		encodeKey, err = strconv.ParseBool(val)
+// 		if err != nil {
+// 			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configSourceSchemaExtractionKeyEnabled, err)
+// 		}
+// 	}
+// 	if encodeKey {
+// 		s.keySubject = *s.defaults.KeySubject
+// 		if val, ok := config[configSourceSchemaExtractionKeySubject]; ok {
+// 			s.keySubject = val
+// 		}
+// 	}
+//
+// 	encodePayload := *s.defaults.PayloadEnabled
+// 	if val, ok := config[configSourceSchemaExtractionPayloadEnabled]; ok {
+// 		encodePayload, err = strconv.ParseBool(val)
+// 		if err != nil {
+// 			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configSourceSchemaExtractionPayloadEnabled, err)
+// 		}
+// 	}
+// 	if encodePayload {
+// 		s.payloadSubject = *s.defaults.PayloadSubject
+// 		if val, ok := config[configSourceSchemaExtractionPayloadSubject]; ok {
+// 			s.payloadSubject = val
+// 		}
+// 	}
+//
+// 	return nil
+// }
 
 func (s *sourceWithSchemaExtraction) Read(ctx context.Context) (opencdc.Record, error) {
 	rec, err := s.Source.Read(ctx)
@@ -312,7 +193,7 @@ func (s *sourceWithSchemaExtraction) encodeKey(ctx context.Context, rec *opencdc
 	if _, ok := rec.Key.(opencdc.StructuredData); !ok {
 		// log warning once, to avoid spamming the logs
 		s.keyWarnOnce.Do(func() {
-			Logger(ctx).Warn().Msgf(`record key is not structured, consider disabling the source schema key encoding using "%s: false"`, configSourceSchemaExtractionKeyEnabled)
+			Logger(ctx).Warn().Msgf(`record key is not structured, consider disabling the source schema key encoding using "%s: false"`, "schema.extraction.key.enabled")
 		})
 		return nil
 	}
@@ -381,7 +262,7 @@ func (s *sourceWithSchemaExtraction) encodePayload(ctx context.Context, rec *ope
 	if !beforeIsStructured && !afterIsStructured {
 		// log warning once, to avoid spamming the logs
 		s.payloadWarnOnce.Do(func() {
-			Logger(ctx).Warn().Msgf(`record payload is not structured, consider disabling the source schema payload encoding using "%s: false"`, configSourceSchemaExtractionPayloadEnabled)
+			Logger(ctx).Warn().Msgf(`record payload is not structured, consider disabling the source schema payload encoding using "%s: false"`, "schema.extraction.payload.enabled")
 		})
 		return nil
 	}
@@ -492,51 +373,18 @@ func (s *sourceWithSchemaExtraction) encodeWithSchema(sch schema.Schema, data an
 //
 // SourceWithSchemaContextConfig can be used as a SourceMiddlewareOption.
 type SourceWithSchemaContextConfig struct {
-	Enabled *bool
-	Name    *string
+	// Specifies whether to use a schema context name. If set to false, no schema context name will
+	// be used, and schemas will be saved with the subject name specified in the connector
+	// (not safe because of name conflicts).
+	Enabled *bool `json:"sdk.schema.context.enabled"`
+	// Schema context name to be used. Used as a prefix for all schema subject names.
+	Name *string `json:"sdk.schema.context.name"`
 }
 
 // Apply sets the default configuration for the SourceWithSchemaExtraction middleware.
 func (c SourceWithSchemaContextConfig) Apply(m SourceMiddleware) {
 	if s, ok := m.(*SourceWithSchemaContext); ok {
 		s.Config = c
-	}
-}
-
-func (c SourceWithSchemaContextConfig) EnabledParameterName() string {
-	return "sdk.schema.context.enabled"
-}
-
-func (c SourceWithSchemaContextConfig) NameParameterName() string {
-	return "sdk.schema.context.name"
-}
-
-func (c SourceWithSchemaContextConfig) parameters() config.Parameters {
-	return config.Parameters{
-		c.EnabledParameterName(): config.Parameter{
-			Default: strconv.FormatBool(*c.Enabled),
-			Description: "Specifies whether to use a schema context name. If set to false, no schema context name will " +
-				"be used, and schemas will be saved with the subject name specified in the connector " +
-				"(not safe because of name conflicts).",
-			Type: config.ParameterTypeBool,
-		},
-		c.NameParameterName(): config.Parameter{
-			Default: func() string {
-				if c.Name == nil {
-					return ""
-				}
-
-				return *c.Name
-			}(),
-			Description: func() string {
-				d := "Schema context name to be used. Used as a prefix for all schema subject names."
-				if c.Name == nil {
-					d += " Defaults to the connector ID."
-				}
-				return d
-			}(),
-			Type: config.ParameterTypeString,
-		},
 	}
 }
 
@@ -568,36 +416,36 @@ type sourceWithSchemaContext struct {
 	contextName string
 }
 
-func (s *sourceWithSchemaContext) Parameters() config.Parameters {
-	return mergeParameters(s.Source.Parameters(), s.mwCfg.parameters())
-}
+// func (s *sourceWithSchemaContext) Parameters() config.Parameters {
+// 	return mergeParameters(s.Source.Parameters(), s.mwCfg.parameters())
+// }
 
-func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Config) error {
-	s.useContext = *s.mwCfg.Enabled
-	if useStr, ok := cfg[s.mwCfg.EnabledParameterName()]; ok {
-		use, err := strconv.ParseBool(useStr)
-		if err != nil {
-			return fmt.Errorf("could not parse `%v`, input %v: %w", s.mwCfg.EnabledParameterName(), useStr, err)
-		}
-		s.useContext = use
-	}
-
-	if s.useContext {
-		// The order of precedence is (from highest to lowest):
-		// 1. user config
-		// 2. default middleware config
-		// 3. connector ID (if no context name is configured anywhere)
-		s.contextName = internal.ConnectorIDFromContext(ctx)
-		if s.mwCfg.Name != nil {
-			s.contextName = *s.mwCfg.Name
-		}
-		if ctxName, ok := cfg[s.mwCfg.NameParameterName()]; ok {
-			s.contextName = ctxName
-		}
-	}
-
-	return s.Source.Configure(schema.WithSchemaContextName(ctx, s.contextName), cfg)
-}
+// func (s *sourceWithSchemaContext) Configure(ctx context.Context, cfg config.Config) error {
+// 	s.useContext = *s.mwCfg.Enabled
+// 	if useStr, ok := cfg[s.mwCfg.EnabledParameterName()]; ok {
+// 		use, err := strconv.ParseBool(useStr)
+// 		if err != nil {
+// 			return fmt.Errorf("could not parse `%v`, input %v: %w", s.mwCfg.EnabledParameterName(), useStr, err)
+// 		}
+// 		s.useContext = use
+// 	}
+//
+// 	if s.useContext {
+// 		// The order of precedence is (from highest to lowest):
+// 		// 1. user config
+// 		// 2. default middleware config
+// 		// 3. connector ID (if no context name is configured anywhere)
+// 		s.contextName = internal.ConnectorIDFromContext(ctx)
+// 		if s.mwCfg.Name != nil {
+// 			s.contextName = *s.mwCfg.Name
+// 		}
+// 		if ctxName, ok := cfg[s.mwCfg.NameParameterName()]; ok {
+// 			s.contextName = ctxName
+// 		}
+// 	}
+//
+// 	return s.Source.Configure(schema.WithSchemaContextName(ctx, s.contextName), cfg)
+// }
 
 func (s *sourceWithSchemaContext) Open(ctx context.Context, pos opencdc.Position) error {
 	return s.Source.Open(schema.WithSchemaContextName(ctx, s.contextName), pos)
@@ -731,46 +579,46 @@ type readResponse struct {
 	Err    error
 }
 
-func (s *sourceWithBatch) Parameters() config.Parameters {
-	return mergeParameters(s.Source.Parameters(), s.defaults.parameters())
-}
-
-func (s *sourceWithBatch) Configure(ctx context.Context, config config.Config) error {
-	err := s.Source.Configure(ctx, config)
-	if err != nil {
-		return err
-	}
-
-	cfg := s.defaults
-
-	if batchSizeRaw := config[configSourceBatchSize]; batchSizeRaw != "" {
-		batchSizeInt, err := strconv.Atoi(batchSizeRaw)
-		if err != nil {
-			return fmt.Errorf("invalid %q: %w", configSourceBatchSize, err)
-		}
-		cfg.BatchSize = &batchSizeInt
-	}
-
-	if delayRaw := config[configSourceBatchDelay]; delayRaw != "" {
-		delayDur, err := time.ParseDuration(delayRaw)
-		if err != nil {
-			return fmt.Errorf("invalid %q: %w", configSourceBatchDelay, err)
-		}
-		cfg.BatchDelay = &delayDur
-	}
-
-	if *cfg.BatchSize < 0 {
-		return fmt.Errorf("invalid %q: must not be negative", configSourceBatchSize)
-	}
-	if *cfg.BatchDelay < 0 {
-		return fmt.Errorf("invalid %q: must not be negative", configSourceBatchDelay)
-	}
-
-	s.batchSize = *cfg.BatchSize
-	s.batchDelay = *cfg.BatchDelay
-
-	return nil
-}
+// func (s *sourceWithBatch) Parameters() config.Parameters {
+// 	return mergeParameters(s.Source.Parameters(), s.defaults.parameters())
+// }
+//
+// func (s *sourceWithBatch) Configure(ctx context.Context, config config.Config) error {
+// 	err := s.Source.Configure(ctx, config)
+// 	if err != nil {
+// 		return err
+// 	}
+//
+// 	cfg := s.defaults
+//
+// 	if batchSizeRaw := config[configSourceBatchSize]; batchSizeRaw != "" {
+// 		batchSizeInt, err := strconv.Atoi(batchSizeRaw)
+// 		if err != nil {
+// 			return fmt.Errorf("invalid %q: %w", configSourceBatchSize, err)
+// 		}
+// 		cfg.BatchSize = &batchSizeInt
+// 	}
+//
+// 	if delayRaw := config[configSourceBatchDelay]; delayRaw != "" {
+// 		delayDur, err := time.ParseDuration(delayRaw)
+// 		if err != nil {
+// 			return fmt.Errorf("invalid %q: %w", configSourceBatchDelay, err)
+// 		}
+// 		cfg.BatchDelay = &delayDur
+// 	}
+//
+// 	if *cfg.BatchSize < 0 {
+// 		return fmt.Errorf("invalid %q: must not be negative", configSourceBatchSize)
+// 	}
+// 	if *cfg.BatchDelay < 0 {
+// 		return fmt.Errorf("invalid %q: must not be negative", configSourceBatchDelay)
+// 	}
+//
+// 	s.batchSize = *cfg.BatchSize
+// 	s.batchDelay = *cfg.BatchDelay
+//
+// 	return nil
+// }
 
 func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error {
 	err := s.Source.Open(ctx, pos)

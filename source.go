@@ -45,9 +45,8 @@ var (
 //
 //nolint:interfacebloat // Source interface is a contract and should not be split
 type Source interface {
-	// Parameters is a map of named Parameters that describe how to configure
-	// the Source.
-	Parameters() config.Parameters
+	// Config TODO: add description
+	Config() SourceConfig
 
 	// Configure is the first function to be called in a connector. It provides the
 	// connector with the configuration that needs to be validated and stored.
@@ -59,7 +58,7 @@ type Source interface {
 	// configuration will always contain all keys defined in Parameters
 	// (unprovided keys will have their default values) and all non-empty
 	// values will be of the correct type.
-	Configure(context.Context, config.Config) error
+	// Configure(context.Context, SourceConfig) error
 
 	// Open is called after Configure to signal the plugin it can prepare to
 	// start producing records. If needed, the plugin should open connections in
@@ -130,6 +129,13 @@ type Source interface {
 	mustEmbedUnimplementedSource()
 }
 
+type SourceConfig interface {
+	// Validate TODO: add description
+	Validate(context.Context) error
+
+	mustEmbedUnimplementedSourceConfig()
+}
+
 // NewSourcePlugin takes a Source and wraps it into an adapter that converts it
 // into a pconnector.SourcePlugin. If the parameter is nil it will wrap
 // UnimplementedSource instead.
@@ -168,7 +174,8 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.Sour
 		StateAfter:           internal.StateConfigured,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
-		return a.impl.Configure(ctx, req.Config)
+		// return a.impl.Configure(ctx, req.Config)
+		panic("not implemented")
 	})
 
 	return pconnector.SourceConfigureResponse{}, err

@@ -1,0 +1,51 @@
+// Copyright © 2024 Meroxa, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package specgen_test
+
+import (
+	"os"
+	"testing"
+
+	"example.com/basic"
+	sdk "github.com/conduitio/conduit-connector-sdk"
+	"github.com/conduitio/conduit-connector-sdk/specgen/specgen"
+	"github.com/google/go-cmp/cmp"
+	"github.com/matryer/is"
+)
+
+func TestParseSpecification(t *testing.T) {
+	testCases := []struct {
+		haveConnector sdk.Connector
+		wantPath      string
+	}{{
+		haveConnector: basic.Connector,
+		wantPath:      "./basic/want.yaml",
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.wantPath, func(t *testing.T) {
+			is := is.New(t)
+			specs, err := specgen.ParseSpecification(tc.haveConnector)
+			is.NoErr(err)
+			got, err := specgen.SpecificationToYaml(specs, "")
+			is.NoErr(err)
+
+			want, err := os.ReadFile(tc.wantPath)
+			is.NoErr(err)
+
+			is.Equal("", cmp.Diff(string(want), string(got)))
+		})
+	}
+}
