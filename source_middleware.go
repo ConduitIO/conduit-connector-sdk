@@ -669,6 +669,7 @@ func (s *sourceWithEncoding) schemaForKey(ctx context.Context, rec opencdc.Recor
 		// not both, this isn't valid.
 		return nil, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected key schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataKeySchemaSubject, subject, opencdc.MetadataKeySchemaVersion, version)
 	default:
+		//nolint:nilnil // we return nil to indicate that no schema is attached
 		return nil, nil
 	}
 }
@@ -739,6 +740,7 @@ func (s *sourceWithEncoding) schemaForPayload(ctx context.Context, rec opencdc.R
 		// not both, this isn't valid.
 		return nil, fmt.Errorf("found metadata fields %v=%v and %v=%v, expected payload schema subject and version to be both set to valid values, this is a bug in the connector", opencdc.MetadataPayloadSchemaSubject, subject, opencdc.MetadataPayloadSchemaVersion, version)
 	default:
+		//nolint:nilnil // we return nil to indicate that no schema is attached
 		return nil, nil
 	}
 }
