@@ -362,7 +362,7 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			src.EXPECT().Read(ctx).Return(tc.record, nil)
+			src.EXPECT().ReadN(ctx, 1).Return([]opencdc.Record{tc.record}, nil)
 
 			var wantKey, wantPayloadBefore, wantPayloadAfter opencdc.Data
 			if tc.record.Key != nil {
@@ -375,9 +375,11 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				wantPayloadAfter = tc.record.Payload.After.Clone()
 			}
 
-			got, err := s.Read(ctx)
+			gotN, err := s.ReadN(ctx, 1)
 			is.NoErr(err)
+			is.Equal(1, len(gotN))
 
+			got := gotN[0]
 			gotKey := got.Key
 			gotPayloadBefore := got.Payload.Before
 			gotPayloadAfter := got.Payload.After
@@ -395,12 +397,6 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				is.NoErr(err)
 
 				is.Equal("", cmp.Diff(wantSchema, string(sch.Bytes)))
-
-				var sd opencdc.StructuredData
-				err = sch.Unmarshal(gotKey.Bytes(), &sd)
-				is.NoErr(err)
-
-				gotKey = sd
 			} else {
 				_, err := got.Metadata.GetKeySchemaSubject()
 				is.True(errors.Is(err, opencdc.ErrMetadataFieldNotFound))
@@ -423,19 +419,6 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				is.NoErr(err)
 
 				is.Equal("", cmp.Diff(wantSchema, string(sch.Bytes)))
-
-				if isPayloadBeforeStructured {
-					var sd opencdc.StructuredData
-					err = sch.Unmarshal(gotPayloadBefore.Bytes(), &sd)
-					is.NoErr(err)
-					gotPayloadBefore = sd
-				}
-				if isPayloadAfterStructured {
-					var sd opencdc.StructuredData
-					err = sch.Unmarshal(gotPayloadAfter.Bytes(), &sd)
-					is.NoErr(err)
-					gotPayloadAfter = sd
-				}
 			} else {
 				_, err := got.Metadata.GetPayloadSchemaSubject()
 				is.True(errors.Is(err, opencdc.ErrMetadataFieldNotFound))
@@ -443,9 +426,9 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				is.True(errors.Is(err, opencdc.ErrMetadataFieldNotFound))
 			}
 
-			is.Equal("", cmp.Diff(gotKey, wantKey))
-			is.Equal("", cmp.Diff(gotPayloadBefore, wantPayloadBefore))
-			is.Equal("", cmp.Diff(gotPayloadAfter, wantPayloadAfter))
+			is.Equal("", cmp.Diff(wantKey, gotKey))
+			is.Equal("", cmp.Diff(wantPayloadBefore, gotPayloadBefore))
+			is.Equal("", cmp.Diff(wantPayloadAfter, gotPayloadAfter))
 		})
 	}
 }
@@ -655,6 +638,263 @@ func TestSourceWithSchemaContext_ContextValue(t *testing.T) {
 
 	err = underTest.Open(ctx, opencdc.Position{})
 	is.NoErr(err)
+}
+
+// -- SourceWithEncoding ------------------------------------------------------
+
+func TestSourceWithEncoding_Read(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	src := NewMockSource(ctrl)
+	ctx := context.Background()
+
+	s := (&SourceWithEncoding{}).Wrap(src)
+
+	src.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
+	err := s.Configure(ctx, config.Config{})
+	is.NoErr(err)
+
+	testDataStruct := opencdc.StructuredData{
+		"foo":   "bar",
+		"long":  int64(1),
+		"float": 2.34,
+		"time":  time.Now().UTC().Truncate(time.Microsecond), // avro precision is microseconds
+	}
+	wantSchema := `{"name":"record","type":"record","fields":[{"name":"float","type":"double"},{"name":"foo","type":"string"},{"name":"long","type":"long"},{"name":"time","type":{"type":"long","logicalType":"timestamp-micros"}}]}`
+
+	customTestSchema, err := schema.Create(ctx, schema.TypeAvro, "custom-test-schema", []byte(wantSchema))
+	is.NoErr(err)
+
+	bytes, err := customTestSchema.Marshal(testDataStruct)
+	is.NoErr(err)
+	testDataRaw := opencdc.RawData(bytes)
+
+	testCases := []struct {
+		name     string
+		inputRec opencdc.Record
+		wantRec  opencdc.Record
+	}{{
+		name: "no key, no payload",
+		inputRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  nil,
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  nil,
+			},
+		},
+	}, {
+		name: "raw key",
+		inputRec: opencdc.Record{
+			Key: opencdc.RawData("this should not be encoded"),
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  nil,
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: opencdc.RawData("this should not be encoded"),
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  nil,
+			},
+		},
+	}, {
+		name: "structured key",
+		inputRec: opencdc.Record{
+			Key: testDataStruct.Clone(),
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  nil,
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: testDataRaw,
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  nil,
+			},
+		},
+	}, {
+		name: "raw payload before",
+		inputRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: opencdc.RawData("this should not be encoded"),
+				After:  nil,
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: opencdc.RawData("this should not be encoded"),
+				After:  nil,
+			},
+		},
+	}, {
+		name: "structured payload before",
+		inputRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: testDataStruct.Clone(),
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: testDataRaw,
+			},
+		},
+	}, {
+		name: "raw payload after",
+		inputRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  opencdc.RawData("this should not be encoded"),
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  opencdc.RawData("this should not be encoded"),
+			},
+		},
+	}, {
+		name: "structured payload after",
+		inputRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  testDataStruct.Clone(),
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: nil,
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  testDataRaw,
+			},
+		},
+	}, {
+		name: "all structured",
+		inputRec: opencdc.Record{
+			Key: testDataStruct.Clone(),
+			Payload: opencdc.Change{
+				Before: testDataStruct.Clone(),
+				After:  testDataStruct.Clone(),
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: testDataRaw,
+			Payload: opencdc.Change{
+				Before: testDataRaw,
+				After:  testDataRaw,
+			},
+		},
+	}, {
+		name: "all raw",
+		inputRec: opencdc.Record{
+			Key: opencdc.RawData("this should not be encoded"),
+			Payload: opencdc.Change{
+				Before: opencdc.RawData("this should not be encoded"),
+				After:  opencdc.RawData("this should not be encoded"),
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: opencdc.RawData("this should not be encoded"),
+			Payload: opencdc.Change{
+				Before: opencdc.RawData("this should not be encoded"),
+				After:  opencdc.RawData("this should not be encoded"),
+			},
+		},
+	}, {
+		name: "key raw payload structured",
+		inputRec: opencdc.Record{
+			Key: opencdc.RawData("this should not be encoded"),
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  testDataStruct.Clone(),
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: opencdc.RawData("this should not be encoded"),
+			Payload: opencdc.Change{
+				Before: nil,
+				After:  testDataRaw,
+			},
+		},
+	}, {
+		name: "key structured payload raw",
+		inputRec: opencdc.Record{
+			Key: testDataStruct.Clone(),
+			Payload: opencdc.Change{
+				Before: opencdc.RawData("this should not be encoded"),
+				After:  nil,
+			},
+		},
+		wantRec: opencdc.Record{
+			Key: testDataRaw,
+			Payload: opencdc.Change{
+				Before: opencdc.RawData("this should not be encoded"),
+				After:  nil,
+			},
+		},
+	}, {
+		name: "all structured with collection",
+		inputRec: opencdc.Record{
+			Metadata: map[string]string{
+				opencdc.MetadataCollection: "foo",
+			},
+			Key: testDataStruct.Clone(),
+			Payload: opencdc.Change{
+				Before: testDataStruct.Clone(),
+				After:  testDataStruct.Clone(),
+			},
+		},
+		wantRec: opencdc.Record{
+			Metadata: map[string]string{
+				opencdc.MetadataCollection: "foo",
+			},
+			Key: testDataRaw,
+			Payload: opencdc.Change{
+				Before: testDataRaw,
+				After:  testDataRaw,
+			},
+		},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.inputRec.Metadata = map[string]string{
+				opencdc.MetadataCollection:           "foo",
+				opencdc.MetadataKeySchemaSubject:     customTestSchema.Subject,
+				opencdc.MetadataKeySchemaVersion:     strconv.Itoa(customTestSchema.Version),
+				opencdc.MetadataPayloadSchemaSubject: customTestSchema.Subject,
+				opencdc.MetadataPayloadSchemaVersion: strconv.Itoa(customTestSchema.Version),
+			}
+
+			src.EXPECT().Read(ctx).Return(tc.inputRec, nil)
+
+			got, err := s.Read(ctx)
+			is.NoErr(err)
+
+			gotKey := got.Key
+			gotPayloadBefore := got.Payload.Before
+			gotPayloadAfter := got.Payload.After
+
+			is.Equal("", cmp.Diff(tc.wantRec.Key, gotKey))
+			is.Equal("", cmp.Diff(tc.wantRec.Payload.Before, gotPayloadBefore))
+			is.Equal("", cmp.Diff(tc.wantRec.Payload.After, gotPayloadAfter))
+		})
+	}
 }
 
 // -- SourceWithBatch --------------------------------------------------
