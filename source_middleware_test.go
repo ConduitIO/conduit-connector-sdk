@@ -362,7 +362,7 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			src.EXPECT().Read(ctx).Return(tc.record, nil)
+			src.EXPECT().ReadN(ctx, 1).Return([]opencdc.Record{tc.record}, nil)
 
 			var wantKey, wantPayloadBefore, wantPayloadAfter opencdc.Data
 			if tc.record.Key != nil {
@@ -375,9 +375,11 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 				wantPayloadAfter = tc.record.Payload.After.Clone()
 			}
 
-			got, err := s.Read(ctx)
+			gotN, err := s.ReadN(ctx, 1)
 			is.NoErr(err)
+			is.Equal(1, len(gotN))
 
+			got := gotN[0]
 			gotKey := got.Key
 			gotPayloadBefore := got.Payload.Before
 			gotPayloadAfter := got.Payload.After
