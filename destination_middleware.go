@@ -19,173 +19,104 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
-	"strconv"
+	"reflect"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-sdk/schema"
 	"golang.org/x/time/rate"
 )
 
+var destinationMiddlewareType = reflect.TypeFor[DestinationMiddleware]()
+
 // DestinationMiddleware wraps a Destination and adds functionality to it.
 type DestinationMiddleware interface {
 	Wrap(Destination) Destination
 }
 
-// DestinationMiddlewareOption can be used to change the behavior of the default
-// destination middleware created with DefaultDestinationMiddleware.
-type DestinationMiddlewareOption interface {
-	Apply(DestinationMiddleware)
-}
-
-// Available destination middleware options.
 var (
-	_ DestinationMiddlewareOption = DestinationWithBatchConfig{}
-	_ DestinationMiddlewareOption = DestinationWithRecordFormatConfig{}
-	_ DestinationMiddlewareOption = DestinationWithRateLimitConfig{}
-	_ DestinationMiddlewareOption = DestinationWithSchemaExtractionConfig{}
+	_ DestinationMiddleware = (*DestinationWithRateLimit)(nil)
+	_ DestinationMiddleware = (*DestinationWithRecordFormat)(nil)
+	_ DestinationMiddleware = (*DestinationWithBatch)(nil)
+	_ DestinationMiddleware = (*DestinationWithSchemaExtraction)(nil)
 )
 
-// DefaultDestinationMiddleware returns a slice of middleware that should be
-// added to all destinations unless there's a good reason not to.
-func DefaultDestinationMiddleware(opts ...DestinationMiddlewareOption) []DestinationMiddleware {
-	middleware := []DestinationMiddleware{
-		&DestinationWithRateLimit{},
-		&DestinationWithRecordFormat{},
-		&DestinationWithBatch{},
-		&DestinationWithSchemaExtraction{},
-	}
-	// apply options to all middleware
-	for _, m := range middleware {
-		for _, opt := range opts {
-			opt.Apply(m)
-		}
-	}
-	return middleware
+type DefaultDestinationMiddleware struct {
+	UnimplementedDestinationConfig
+
+	DestinationWithRateLimit
+	DestinationWithRecordFormat
+	DestinationWithBatch
+	DestinationWithSchemaExtraction
 }
 
-// DestinationWithMiddleware wraps the destination into the supplied middleware.
-func DestinationWithMiddleware(d Destination, middleware ...DestinationMiddleware) Destination {
-	// apply middleware in reverse order to preserve the order as specified
-	for i := len(middleware) - 1; i >= 0; i-- {
-		d = middleware[i].Wrap(d)
+// DestinationWithMiddleware wraps the destination into the middleware defined
+// in the config.
+func DestinationWithMiddleware(d Destination) Destination {
+	cfg := d.Config()
+
+	cfgVal := reflect.ValueOf(cfg)
+	if cfgVal.Kind() != reflect.Ptr {
+		panic("config must be a pointer")
 	}
+	cfgVal = cfgVal.Elem()
+
+	var mw []DestinationMiddleware
+	for i := range cfgVal.NumField() {
+		field := cfgVal.Field(i)
+
+		// If the field is not a pointer, we need to get the address of it so
+		// that the values parsed in Configure are reflected in the config.
+		if field.Kind() != reflect.Ptr {
+			field = field.Addr()
+		}
+		if field.Type().Implements(destinationMiddlewareType) {
+			// This is a middleware config, store it.
+			mw = append(mw, field.Interface().(DestinationMiddleware))
+		}
+	}
+
+	// Wrap the middleware in reverse order to preserve the order as specified.
+	for i := len(mw) - 1; i >= 0; i-- {
+		d = mw[i].Wrap(d)
+	}
+
 	return d
 }
 
 // -- DestinationWithBatch -----------------------------------------------------
 
-const (
-	configDestinationBatchSize  = "sdk.batch.size"
-	configDestinationBatchDelay = "sdk.batch.delay"
-)
-
 type ctxKeyBatchConfig struct{}
 
-// DestinationWithBatchConfig is the configuration for the
-// DestinationWithBatch middleware. Fields set to their zero value are
-// ignored and will be set to the default value.
-//
-// DestinationWithBatchConfig can be used as a DestinationMiddlewareOption.
-type DestinationWithBatchConfig struct {
-	// BatchSize is the default value for the batch size.
-	BatchSize int
-	// BatchDelay is the default value for the batch delay.
-	BatchDelay time.Duration
-}
-
-// Apply sets the default configuration for the DestinationWithBatch middleware.
-func (c DestinationWithBatchConfig) Apply(m DestinationMiddleware) {
-	if d, ok := m.(*DestinationWithBatch); ok {
-		d.Config = c
-	}
-}
-
-func (c DestinationWithBatchConfig) BatchSizeParameterName() string {
-	return configDestinationBatchSize
-}
-
-func (c DestinationWithBatchConfig) BatchDelayParameterName() string {
-	return configDestinationBatchDelay
-}
-
-func (c DestinationWithBatchConfig) parameters() config.Parameters {
-	return config.Parameters{
-		configDestinationBatchSize: {
-			Default:     strconv.Itoa(c.BatchSize),
-			Description: "Maximum size of batch before it gets written to the destination.",
-			Type:        config.ParameterTypeInt,
-		},
-		configDestinationBatchDelay: {
-			Default:     c.BatchDelay.String(),
-			Description: "Maximum delay before an incomplete batch is written to the destination.",
-			Type:        config.ParameterTypeDuration,
-		},
-	}
-}
-
-// DestinationWithBatch adds support for batching on the destination. It adds
-// two parameters to the destination config:
-//   - `sdk.batch.size` - Maximum size of batch before it gets written to the
-//     destination.
-//   - `sdk.batch.delay` - Maximum delay before an incomplete batch is written
-//     to the destination.
-//
-// To change the defaults of these parameters use the fields of this struct.
+// DestinationWithBatch adds support for batching on the destination.
 type DestinationWithBatch struct {
-	Config DestinationWithBatchConfig
+	// Maximum size of batch before it gets written to the destination.
+	BatchSize *int `json:"sdk.batch.size" default:"0" validate:"gt=-1"`
+	// Maximum delay before an incomplete batch is written to the destination.
+	BatchDelay *time.Duration `json:"sdk.batch.delay" default:"0" validate:"gt=-1"`
 }
 
-// Wrap a Destination into the batching middleware.
-func (d *DestinationWithBatch) Wrap(impl Destination) Destination {
+// Wrap a Destination into the middleware.
+func (c *DestinationWithBatch) Wrap(impl Destination) Destination {
 	return &destinationWithBatch{
 		Destination: impl,
-		defaults:    d.Config,
+		config:      c,
 	}
 }
 
 type destinationWithBatch struct {
 	Destination
-	defaults DestinationWithBatchConfig
+	config *DestinationWithBatch
 }
 
-func (d *destinationWithBatch) Parameters() config.Parameters {
-	return mergeParameters(d.Destination.Parameters(), d.defaults.parameters())
-}
-
-func (d *destinationWithBatch) Configure(ctx context.Context, config config.Config) error {
-	err := d.Destination.Configure(ctx, config)
+func (d *destinationWithBatch) Open(ctx context.Context) error {
+	err := d.Destination.Open(ctx)
 	if err != nil {
 		return err
-	}
-
-	cfg := d.defaults
-
-	if batchSizeRaw := config[configDestinationBatchSize]; batchSizeRaw != "" {
-		batchSizeInt, err := strconv.Atoi(batchSizeRaw)
-		if err != nil {
-			return fmt.Errorf("invalid %q: %w", configDestinationBatchSize, err)
-		}
-		cfg.BatchSize = batchSizeInt
-	}
-
-	if delayRaw := config[configDestinationBatchDelay]; delayRaw != "" {
-		delayDur, err := time.ParseDuration(delayRaw)
-		if err != nil {
-			return fmt.Errorf("invalid %q: %w", configDestinationBatchDelay, err)
-		}
-		cfg.BatchDelay = delayDur
-	}
-
-	if cfg.BatchSize < 0 {
-		return fmt.Errorf("invalid %q: must not be negative", configDestinationBatchSize)
-	}
-	if cfg.BatchDelay < 0 {
-		return fmt.Errorf("invalid %q: must not be negative", configDestinationBatchDelay)
 	}
 
 	// TODO: emit this warning once we move to source batching
@@ -199,7 +130,7 @@ func (d *destinationWithBatch) Configure(ctx context.Context, config config.Conf
 	// this by changing a pointer that is stored in the context. It's a bit
 	// hacky, but the only way to propagate a value back to the adapter without
 	// changing the interface.
-	d.setBatchConfig(ctx, cfg)
+	d.setBatchConfig(ctx, *d.config)
 
 	return nil
 }
@@ -209,139 +140,67 @@ func (d *destinationWithBatch) Configure(ctx context.Context, config config.Conf
 // same context, otherwise it will return a new context with the stored value.
 // This is used to signal to destinationPluginAdapter if the Destination is
 // wrapped into DestinationWithBatchConfig middleware.
-func (*destinationWithBatch) setBatchConfig(ctx context.Context, cfg DestinationWithBatchConfig) context.Context {
-	ctxCfg, ok := ctx.Value(ctxKeyBatchConfig{}).(*DestinationWithBatchConfig)
+func (*destinationWithBatch) setBatchConfig(ctx context.Context, cfg DestinationWithBatch) context.Context {
+	ctxCfg, ok := ctx.Value(ctxKeyBatchConfig{}).(*DestinationWithBatch)
 	if ok {
 		*ctxCfg = cfg
 	} else {
-		ctx = context.WithValue(ctx, ctxKeyBatchConfig{}, &cfg)
+		ctx = context.WithValue(ctx, ctxKeyBatchConfig{}, cfg)
 	}
 	return ctx
 }
 
-func (*destinationWithBatch) getBatchConfig(ctx context.Context) DestinationWithBatchConfig {
-	ctxCfg, ok := ctx.Value(ctxKeyBatchConfig{}).(*DestinationWithBatchConfig)
+func (*destinationWithBatch) getBatchConfig(ctx context.Context) DestinationWithBatch {
+	ctxCfg, ok := ctx.Value(ctxKeyBatchConfig{}).(*DestinationWithBatch)
 	if !ok {
-		return DestinationWithBatchConfig{}
+		return DestinationWithBatch{}
 	}
 	return *ctxCfg
 }
 
 // -- DestinationWithRateLimit -------------------------------------------------
 
-const (
-	configDestinationRatePerSecond = "sdk.rate.perSecond"
-	configDestinationRateBurst     = "sdk.rate.burst"
-)
-
-// DestinationWithRateLimitConfig is the configuration for the
-// DestinationWithRateLimit middleware. Fields set to their zero value are
-// ignored and will be set to the default value.
-//
-// DestinationWithRateLimitConfig can be used as a DestinationMiddlewareOption.
-type DestinationWithRateLimitConfig struct {
-	// RatePerSecond is the default value for the rate per second.
-	RatePerSecond float64
-	// Burst is the default value for the allowed burst count.
-	Burst int
-}
-
-// Apply sets the default configuration for the DestinationWithRateLimit middleware.
-func (c DestinationWithRateLimitConfig) Apply(m DestinationMiddleware) {
-	if d, ok := m.(*DestinationWithRateLimit); ok {
-		d.Config = c
-	}
-}
-
-func (c DestinationWithRateLimitConfig) RatePerSecondParameterName() string {
-	return configDestinationRatePerSecond
-}
-
-func (c DestinationWithRateLimitConfig) RateBurstParameterName() string {
-	return configDestinationRateBurst
-}
-
-func (c DestinationWithRateLimitConfig) parameters() config.Parameters {
-	return config.Parameters{
-		configDestinationRatePerSecond: {
-			Default:     strconv.FormatFloat(c.RatePerSecond, 'f', -1, 64),
-			Description: "Maximum number of records written per second (0 means no rate limit).",
-			Type:        config.ParameterTypeFloat,
-		},
-		configDestinationRateBurst: {
-			Default:     strconv.Itoa(c.Burst),
-			Description: "Allow bursts of at most X records (0 or less means that bursts are not limited). Only takes effect if a rate limit per second is set. Note that if `sdk.batch.size` is bigger than `sdk.rate.burst`, the effective batch size will be equal to `sdk.rate.burst`.",
-			Type:        config.ParameterTypeInt,
-		},
-	}
-}
-
 // DestinationWithRateLimit adds support for rate limiting to the destination.
-// It adds two parameters to the destination config:
-//   - `sdk.rate.perSecond` - Maximum number of records written per second (0
-//     means no rate limit).
-//   - `sdk.rate.burst` - Allow bursts of at most X records (0 or less means
-//     that bursts are not limited). Only takes effect if a rate limit per
-//     second is set. Note that if `sdk.batch.size` is bigger than
-//     `sdk.rate.burst`, the effective batch size will be equal to `sdk.rate.burst`.
-//
-// To change the defaults of these parameters use the fields of this struct.
 type DestinationWithRateLimit struct {
-	Config DestinationWithRateLimitConfig
+	// Maximum number of records written per second (0 means no rate limit).
+	RatePerSecond float64 `json:"sdk.rate.perSecond" default:"0" validate:"gt=-1"`
+	// Allow bursts of at most X records (0 or less means that bursts are not
+	// limited). Only takes effect if a rate limit per second is set. Note that
+	// if `sdk.batch.size` is bigger than `sdk.rate.burst`, the effective batch
+	// size will be equal to `sdk.rate.burst`.
+	Burst int `json:"sdk.rate.burst" default:"0" validate:"gt=-1"`
 }
 
-// Wrap a Destination into the rate limiting middleware.
-func (d *DestinationWithRateLimit) Wrap(impl Destination) Destination {
+// Wrap a Destination into the middleware.
+func (c *DestinationWithRateLimit) Wrap(impl Destination) Destination {
 	return &destinationWithRateLimit{
 		Destination: impl,
-		defaults:    d.Config,
+		config:      c,
 	}
 }
 
 type destinationWithRateLimit struct {
 	Destination
 
-	defaults DestinationWithRateLimitConfig
-	limiter  *rate.Limiter
+	config  *DestinationWithRateLimit
+	limiter *rate.Limiter
 }
 
-func (d *destinationWithRateLimit) Parameters() config.Parameters {
-	return mergeParameters(d.Destination.Parameters(), d.defaults.parameters())
-}
-
-func (d *destinationWithRateLimit) Configure(ctx context.Context, config config.Config) error {
-	err := d.Destination.Configure(ctx, config)
+func (d *destinationWithRateLimit) Open(ctx context.Context) error {
+	err := d.Destination.Open(ctx)
 	if err != nil {
 		return err
 	}
 
-	limit := rate.Limit(d.defaults.RatePerSecond)
-	burst := d.defaults.Burst
-
-	limitRaw := config[configDestinationRatePerSecond]
-	if limitRaw != "" {
-		limitFloat, err := strconv.ParseFloat(limitRaw, 64)
-		if err != nil {
-			return fmt.Errorf("invalid %s: %w", configDestinationRatePerSecond, err)
-		}
-		limit = rate.Limit(limitFloat)
-	}
-	burstRaw := config[configDestinationRateBurst]
-	if burstRaw != "" {
-		burstInt, err := strconv.Atoi(burstRaw)
-		if err != nil {
-			return fmt.Errorf("invalid %s: %w", configDestinationRateBurst, err)
-		}
-		burst = burstInt
-	}
-
-	if limit > 0 {
-		if burst <= 0 {
+	if d.config.RatePerSecond > 0 {
+		burst := d.config.Burst
+		if d.config.Burst <= 0 {
 			// non-positive numbers would prevent all writes, we default it to
 			// be the same size as the per second limit
-			burst = int(math.Ceil(float64(limit)))
+			burst = int(math.Ceil(d.config.RatePerSecond))
 		}
-		d.limiter = rate.NewLimiter(limit, burst)
+		d.limiter = rate.NewLimiter(rate.Limit(d.config.RatePerSecond), burst)
+		Logger(ctx).Info().Msgf("Rate limiting enabled: %.2f records per second, bursts of %d records", d.config.RatePerSecond, burst)
 	}
 
 	return nil
@@ -378,40 +237,46 @@ func (d *destinationWithRateLimit) Write(ctx context.Context, recs []opencdc.Rec
 
 // -- DestinationWithRecordFormat ----------------------------------------------
 
-const (
-	configDestinationRecordFormat        = "sdk.record.format"
-	configDestinationRecordFormatOptions = "sdk.record.format.options"
-)
+// DestinationWithRecordFormat adds support for changing the output format of
+// records, specifically of the Record.Bytes method.
+type DestinationWithRecordFormat struct {
+	// The format of the output record. See the Conduit documentation for a full
+	// list of supported formats (https://conduit.io/docs/using/connectors/configuration-parameters/output-format).
+	RecordFormat *string `json:"sdk.record.format" default:"" validate:"required"`
+	// Options to configure the chosen output record format. Options are normally
+	// key=value pairs separated with comma (e.g. opt1=val2,opt2=val2), except
+	// for the `template` record format, where options are a Go template.
+	RecordFormatOptions string `json:"sdk.record.format.options" default:""`
 
-// DestinationWithRecordFormatConfig is the configuration for the
-// DestinationWithRecordFormat middleware. Fields set to their zero value are
-// ignored and will be set to the default value.
-//
-// DestinationWithRecordFormatConfig can be used as a DestinationMiddlewareOption.
-type DestinationWithRecordFormatConfig struct {
-	// DefaultRecordFormat is the default record format.
-	DefaultRecordFormat string
-	RecordSerializers   []RecordSerializer
+	// RecordSerializers can be set to change the list uf supported formats. It
+	// defaults to the output of DestinationWithRecordFormat.DefaultSerializers.
+	RecordSerializers []RecordSerializer `json:"-"`
 }
 
-// Apply sets the default configuration for the DestinationWithRecordFormat middleware.
-func (c DestinationWithRecordFormatConfig) Apply(m DestinationMiddleware) {
-	if d, ok := m.(*DestinationWithRecordFormat); ok {
-		d.Config = c
+// Wrap a Destination into the middleware.
+func (c *DestinationWithRecordFormat) Wrap(impl Destination) Destination {
+	if c.RecordFormat == nil {
+		c.RecordFormat = lang.Ptr(defaultSerializer.Name())
+	}
+	if c.RecordSerializers == nil {
+		c.RecordSerializers = c.DefaultRecordSerializers()
+	}
+	// sort record serializers by name to ensure we can binary search them
+	slices.SortFunc(
+		c.RecordSerializers,
+		func(a, b RecordSerializer) int {
+			return strings.Compare(a.Name(), b.Name())
+		},
+	)
+	return &destinationWithRecordFormat{
+		Destination: impl,
+		config:      c,
 	}
 }
 
-func (c DestinationWithRecordFormatConfig) RecordFormatParameterName() string {
-	return configDestinationRecordFormat
-}
-
-func (c DestinationWithRecordFormatConfig) RecordFormatOptionsParameterName() string {
-	return configDestinationRecordFormatOptions
-}
-
 // DefaultRecordSerializers returns the list of record serializers that are used
-// if DestinationWithRecordFormatConfig.RecordSerializers is nil.
-func (c DestinationWithRecordFormatConfig) DefaultRecordSerializers() []RecordSerializer {
+// if DestinationWithRecordFormat.RecordSerializers is nil.
+func (c *DestinationWithRecordFormat) DefaultRecordSerializers() []RecordSerializer {
 	serializers := []RecordSerializer{
 		// define specific serializers here
 		TemplateRecordSerializer{},
@@ -440,23 +305,9 @@ func (c DestinationWithRecordFormatConfig) DefaultRecordSerializers() []RecordSe
 	return serializers
 }
 
-func (c DestinationWithRecordFormatConfig) parameters() config.Parameters {
-	return config.Parameters{
-		configDestinationRecordFormat: {
-			Default:     c.DefaultRecordFormat,
-			Description: "The format of the output record.",
-			Validations: []config.Validation{
-				config.ValidationInclusion{List: c.formats()},
-			},
-		},
-		configDestinationRecordFormatOptions: {
-			Description: "Options to configure the chosen output record format. Options are key=value pairs separated with comma (e.g. opt1=val2,opt2=val2).",
-		},
-	}
-}
-
-func (c DestinationWithRecordFormatConfig) formats() []string {
+func (c *DestinationWithRecordFormat) formats() []string {
 	names := make([]string, len(c.RecordSerializers))
+
 	i := 0
 	for _, c := range c.RecordSerializers {
 		names[i] = c.Name()
@@ -465,74 +316,40 @@ func (c DestinationWithRecordFormatConfig) formats() []string {
 	return names
 }
 
-// DestinationWithRecordFormat adds support for changing the output format of
-// records, specifically of the Record.Bytes method. It adds two parameters to
-// the destination config:
-//   - `sdk.record.format` - The format of the output record. The inclusion
-//     validation exposes a list of valid options.
-//   - `sdk.record.format.options` - Options are used to configure the format.
-type DestinationWithRecordFormat struct {
-	Config DestinationWithRecordFormatConfig
+func (c *DestinationWithRecordFormat) getRecordSerializer() (RecordSerializer, error) {
+	i, ok := slices.BinarySearch(c.formats(), *c.RecordFormat)
+	if !ok {
+		return nil, fmt.Errorf("invalid sdk.record.format: %q not found in %v", c.RecordFormat, c.formats())
+	}
+
+	serializer := c.RecordSerializers[i]
+	serializer, err := serializer.Configure(c.RecordFormatOptions)
+	if err != nil {
+		return nil, fmt.Errorf("invalid sdk.record.format.options for %q: %w", *c.RecordFormat, err)
+	}
+
+	return serializer, nil
 }
 
-// Wrap a Destination into the record format middleware.
-func (d *DestinationWithRecordFormat) Wrap(impl Destination) Destination {
-	if d.Config.DefaultRecordFormat == "" {
-		d.Config.DefaultRecordFormat = defaultSerializer.Name()
-	}
-	if len(d.Config.RecordSerializers) == 0 {
-		d.Config.RecordSerializers = d.Config.DefaultRecordSerializers()
-	}
-
-	// sort record serializers by name to ensure we can binary search them
-	sort.Slice(
-		d.Config.RecordSerializers,
-		func(i, j int) bool {
-			return d.Config.RecordSerializers[i].Name() < d.Config.RecordSerializers[j].Name()
-		},
-	)
-
-	return &destinationWithRecordFormat{
-		Destination: impl,
-		defaults:    d.Config,
-	}
+func (c *DestinationWithRecordFormat) Validate(context.Context) error {
+	_, err := c.getRecordSerializer()
+	return err
 }
 
 type destinationWithRecordFormat struct {
 	Destination
-	defaults DestinationWithRecordFormatConfig
+	config *DestinationWithRecordFormat
 
 	serializer RecordSerializer
 }
 
-func (d *destinationWithRecordFormat) Parameters() config.Parameters {
-	return mergeParameters(d.Destination.Parameters(), d.defaults.parameters())
-}
-
-func (d *destinationWithRecordFormat) Configure(ctx context.Context, config config.Config) error {
-	err := d.Destination.Configure(ctx, config)
+func (d *destinationWithRecordFormat) Open(ctx context.Context) error {
+	err := d.Destination.Open(ctx)
 	if err != nil {
 		return err
 	}
 
-	format := d.defaults.DefaultRecordFormat
-	if f, ok := config[configDestinationRecordFormat]; ok {
-		format = f
-	}
-
-	i := sort.SearchStrings(d.defaults.formats(), format)
-	// if the string is not found i is equal to the size of the slice
-	if i == len(d.defaults.RecordSerializers) {
-		return fmt.Errorf("invalid %s: %q not found in %v", configDestinationRecordFormat, format, d.defaults.formats())
-	}
-
-	serializer := d.defaults.RecordSerializers[i]
-	serializer, err = serializer.Configure(config[configDestinationRecordFormatOptions])
-	if err != nil {
-		return fmt.Errorf("invalid %s for %q: %w", configDestinationRecordFormatOptions, format, err)
-	}
-
-	d.serializer = serializer
+	d.serializer, _ = d.config.getRecordSerializer()
 	return nil
 }
 
@@ -545,55 +362,6 @@ func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []opencdc.
 
 // -- DestinationWithSchemaExtraction ------------------------------------------
 
-const (
-	configDestinationWithSchemaExtractionPayloadEnabled = "sdk.schema.extract.payload.enabled"
-	configDestinationWithSchemaExtractionKeyEnabled     = "sdk.schema.extract.key.enabled"
-)
-
-// DestinationWithSchemaExtractionConfig is the configuration for the
-// DestinationWithSchemaExtraction middleware. Fields set to their zero value are
-// ignored and will be set to the default value.
-//
-// DestinationWithSchemaExtractionConfig can be used as a DestinationMiddlewareOption.
-type DestinationWithSchemaExtractionConfig struct {
-	// Whether to extract and decode the record payload with a schema.
-	// If unset, defaults to true.
-	PayloadEnabled *bool
-	// Whether to extract and decode the record key with a schema.
-	// If unset, defaults to true.
-	KeyEnabled *bool
-}
-
-// Apply sets the default configuration for the DestinationWithSchemaExtraction middleware.
-func (c DestinationWithSchemaExtractionConfig) Apply(m DestinationMiddleware) {
-	if d, ok := m.(*DestinationWithSchemaExtraction); ok {
-		d.Config = c
-	}
-}
-
-func (c DestinationWithSchemaExtractionConfig) SchemaPayloadEnabledParameterName() string {
-	return configDestinationWithSchemaExtractionPayloadEnabled
-}
-
-func (c DestinationWithSchemaExtractionConfig) SchemaKeyEnabledParameterName() string {
-	return configDestinationWithSchemaExtractionKeyEnabled
-}
-
-func (c DestinationWithSchemaExtractionConfig) parameters() config.Parameters {
-	return config.Parameters{
-		configDestinationWithSchemaExtractionKeyEnabled: {
-			Default:     strconv.FormatBool(*c.KeyEnabled),
-			Type:        config.ParameterTypeBool,
-			Description: "Whether to extract and decode the record key with a schema.",
-		},
-		configDestinationWithSchemaExtractionPayloadEnabled: {
-			Default:     strconv.FormatBool(*c.PayloadEnabled),
-			Type:        config.ParameterTypeBool,
-			Description: "Whether to extract and decode the record payload with a schema.",
-		},
-	}
-}
-
 // DestinationWithSchemaExtraction is a middleware that extracts and decodes the
 // key and/or payload of a record using a schema. It takes the schema subject and
 // version from the record metadata, fetches the schema from the schema service,
@@ -602,70 +370,31 @@ func (c DestinationWithSchemaExtractionConfig) parameters() config.Parameters {
 // log a warning and skip decoding the key and/or payload. This middleware is
 // useful when the source connector sends the data with the schema attached.
 // This middleware is the counterpart of SourceWithSchemaExtraction.
-//
-// It adds two parameters to the destination config:
-//   - `sdk.schema.extract.key.enabled` - Whether to extract and decode the
-//     record key with a schema.
-//   - `sdk.schema.extract.payload.enabled` - Whether to extract and decode the
-//     record payload with a schema.
 type DestinationWithSchemaExtraction struct {
-	Config DestinationWithSchemaExtractionConfig
+	// Whether to extract and decode the record payload with a schema.
+	PayloadEnabled *bool `json:"sdk.schema.extract.payload.enabled" default:"true"`
+	// Whether to extract and decode the record key with a schema.
+	KeyEnabled *bool `json:"sdk.schema.extract.key.enabled" default:"true"`
 }
 
-// Wrap a Destination into the schema middleware. It will apply default configuration
-// values if they are not explicitly set.
-func (s *DestinationWithSchemaExtraction) Wrap(impl Destination) Destination {
-	if s.Config.KeyEnabled == nil {
-		s.Config.KeyEnabled = lang.Ptr(true)
-	}
-	if s.Config.PayloadEnabled == nil {
-		s.Config.PayloadEnabled = lang.Ptr(true)
-	}
+// Apply sets the default configuration for the DestinationWithSchemaExtraction middleware.
+func (c *DestinationWithSchemaExtraction) Wrap(impl Destination) Destination {
 	return &destinationWithSchemaExtraction{
 		Destination: impl,
-		defaults:    s.Config,
+		config:      c,
 	}
 }
 
 // destinationWithSchemaExtraction is the actual middleware implementation.
 type destinationWithSchemaExtraction struct {
 	Destination
-	defaults DestinationWithSchemaExtractionConfig
+	config *DestinationWithSchemaExtraction
 
 	payloadEnabled bool
 	keyEnabled     bool
 
 	payloadWarnOnce sync.Once
 	keyWarnOnce     sync.Once
-}
-
-func (d *destinationWithSchemaExtraction) Parameters() config.Parameters {
-	return mergeParameters(d.Destination.Parameters(), d.defaults.parameters())
-}
-
-func (d *destinationWithSchemaExtraction) Configure(ctx context.Context, config config.Config) error {
-	err := d.Destination.Configure(ctx, config)
-	if err != nil {
-		return err
-	}
-
-	d.keyEnabled = *d.defaults.KeyEnabled
-	if val, ok := config[configDestinationWithSchemaExtractionKeyEnabled]; ok {
-		d.keyEnabled, err = strconv.ParseBool(val)
-		if err != nil {
-			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configDestinationWithSchemaExtractionKeyEnabled, err)
-		}
-	}
-
-	d.payloadEnabled = *d.defaults.PayloadEnabled
-	if val, ok := config[configDestinationWithSchemaExtractionPayloadEnabled]; ok {
-		d.payloadEnabled, err = strconv.ParseBool(val)
-		if err != nil {
-			return fmt.Errorf("invalid %s: failed to parse boolean: %w", configDestinationWithSchemaExtractionPayloadEnabled, err)
-		}
-	}
-
-	return nil
 }
 
 func (d *destinationWithSchemaExtraction) Write(ctx context.Context, records []opencdc.Record) (int, error) {
@@ -705,7 +434,7 @@ func (d *destinationWithSchemaExtraction) decodeKey(ctx context.Context, rec *op
 		errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
 		// log warning once, to avoid spamming the logs
 		d.keyWarnOnce.Do(func() {
-			Logger(ctx).Warn().Msgf(`record does not have an attached schema for the key, consider disabling the destination schema key decoding using "%s: false"`, configDestinationWithSchemaExtractionKeyEnabled)
+			Logger(ctx).Warn().Msg(`record does not have an attached schema for the key, consider disabling the destination schema key decoding using "sdk.schema.extract.key.enabled: false"`)
 		})
 		return nil
 	}
@@ -733,7 +462,7 @@ func (d *destinationWithSchemaExtraction) decodePayload(ctx context.Context, rec
 		errors.Is(errVersion, opencdc.ErrMetadataFieldNotFound):
 		// log warning once, to avoid spamming the logs
 		d.payloadWarnOnce.Do(func() {
-			Logger(ctx).Warn().Msgf(`record does not have an attached schema for the payload, consider disabling the destination schema payload decoding using "%s: false"`, configDestinationWithSchemaExtractionPayloadEnabled)
+			Logger(ctx).Warn().Msg(`record does not have an attached schema for the payload, consider disabling the destination schema payload decoding using "sdk.schema.extract.payload.enabled: false"`)
 		})
 		return nil
 	}

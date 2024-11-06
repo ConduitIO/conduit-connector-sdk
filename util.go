@@ -17,10 +17,17 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
+	v1 "github.com/conduitio/conduit-connector-sdk/specgen/specgen/model/v1"
+	"github.com/conduitio/evolviconf"
+	"github.com/conduitio/evolviconf/evolviyaml"
+	"github.com/conduitio/yaml/v3"
+	slogzerolog "github.com/samber/slog-zerolog/v2"
+
 	"github.com/conduitio/conduit-commons/config"
-	"gopkg.in/yaml.v3"
 )
 
 // Util provides utilities for implementing connectors.
@@ -50,11 +57,8 @@ var Util = struct {
 	//   - Copies configuration values into the target object. The target object must
 	//     be a pointer to a struct.
 	ParseConfig func(ctx context.Context, cfg config.Config, target any) error
-
-	YAMLSpecification func(ctx context.Context, rawYaml string) Specification
 }{
-	ParseConfig:       parseConfig,
-	YAMLSpecification: YAMLSpecification,
+	ParseConfig: parseConfig,
 }
 
 func mergeParameters(p1 config.Parameters, p2 config.Parameters) config.Parameters {
@@ -94,17 +98,52 @@ func parseConfig(
 	return c.DecodeInto(target)
 }
 
-func YAMLSpecification(ctx context.Context, rawYaml string) Specification {
+func YAMLSpecification(rawYaml string) func() Specification {
+	specs, err := ParseYAMLSpecification(context.Background(), rawYaml)
+	if err != nil {
+		panic("failed to parse YAML specification: " + err.Error())
+	}
+	return func() Specification { return specs }
+}
+
+func ParseYAMLSpecification(ctx context.Context, rawYaml string) (Specification, error) {
 	logger := Logger(ctx)
 
 	logger.Debug().Str("yaml", rawYaml).Msg("parsing YAML specification")
 
-	var spec Specification
-	err := yaml.NewDecoder(strings.NewReader(rawYaml)).Decode(&spec)
+	parser := evolviconf.NewParser[Specification, *yaml.Decoder](
+		evolviyaml.NewParser[Specification, v1.Specification](
+			must[*semver.Constraints](semver.NewConstraint("^1")),
+			v1.Changelog,
+		),
+	)
+	reader := strings.NewReader(rawYaml)
+
+	spec, warnings, err := parser.Parse(ctx, reader)
 	if err != nil {
-		logger.Error().Err(err).Msg("failed to parse YAML specification")
+		return Specification{}, fmt.Errorf("failed to parse YAML specification: %w", err)
+	}
+	if len(warnings) > 0 {
+		slogLogger := slog.New(slogzerolog.Option{Logger: logger}.NewZerologHandler())
+		warnings.Log(ctx, slogLogger)
 	}
 
-	logger.Debug().Any("specification", spec).Msg("specification successfully parsed")
-	return spec
+	switch len(spec) {
+	case 0:
+		logger.Debug().Msg("no specification found in YAML")
+		return Specification{}, fmt.Errorf("no specification found in YAML")
+	case 1:
+		logger.Debug().Any("specification", spec[0]).Msg("specification successfully parsed")
+		return spec[0], nil
+	default:
+		logger.Warn().Any("specification", spec[0]).Msg("multiple specifications found in YAML, returning the first one")
+		return spec[0], nil
+	}
+}
+
+func must[T any](out T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return out
 }

@@ -42,23 +42,17 @@ var (
 
 // Source fetches records from 3rd party resources and sends them to Conduit.
 // All implementations must embed UnimplementedSource for forward compatibility.
-//
-//nolint:interfacebloat // Source interface is a contract and should not be split
 type Source interface {
-	// Config TODO: add description
+	// Config returns the configuration that the source expects. It should return
+	// a pointer to a struct that contains all the configuration keys that the
+	// source expects. The struct should be annotated with the necessary
+	// validation tags. The value should be a pointer to allow the SDK to
+	// populate it using the values from the configuration.
+	//
+	// The returned SourceConfig should contain all the configuration keys that
+	// the source expects, including middleware fields (see
+	// [DefaultSourceMiddleware]).
 	Config() SourceConfig
-
-	// Configure is the first function to be called in a connector. It provides the
-	// connector with the configuration that needs to be validated and stored.
-	// In case the configuration is not valid it should return an error.
-	// Testing if your connector can reach the configured data source should be
-	// done in Open, not in Configure.
-	// The connector SDK will sanitize, apply defaults and validate the
-	// configuration before calling this function. This means that the
-	// configuration will always contain all keys defined in Parameters
-	// (unprovided keys will have their default values) and all non-empty
-	// values will be of the correct type.
-	// Configure(context.Context, SourceConfig) error
 
 	// Open is called after Configure to signal the plugin it can prepare to
 	// start producing records. If needed, the plugin should open connections in
@@ -130,7 +124,8 @@ type Source interface {
 }
 
 type SourceConfig interface {
-	// Validate TODO: add description
+	// Validate can be implemented to execute any non-trivial validations, which
+	// can't be implemented using the `validate` field tag.
 	Validate(context.Context) error
 
 	mustEmbedUnimplementedSourceConfig()
@@ -174,8 +169,7 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.Sour
 		StateAfter:           internal.StateConfigured,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
-		// return a.impl.Configure(ctx, req.Config)
-		panic("not implemented")
+		panic("not implemented") // TODO
 	})
 
 	return pconnector.SourceConfigureResponse{}, err
