@@ -83,7 +83,7 @@ var Connector = sdk.Connector{
 		return &Source{
 			config: SourceConfig{
 				DefaultSourceMiddleware: sdk.DefaultSourceMiddleware{
-					SourceWithSchemaExtractionConfig: sdk.SourceWithSchemaExtractionConfig{
+					SourceWithSchemaExtraction: sdk.SourceWithSchemaExtraction{
 						KeyEnabled:     lang.Ptr(false),
 						PayloadEnabled: lang.Ptr(false),
 					},

@@ -15,6 +15,7 @@
 package specgen_test
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -37,9 +38,9 @@ func TestParseSpecification(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.wantPath, func(t *testing.T) {
 			is := is.New(t)
-			specs, err := specgen.ParseSpecification(tc.haveConnector)
+			specs, err := specgen.ExtractSpecification(context.Background(), tc.haveConnector)
 			is.NoErr(err)
-			got, err := specgen.SpecificationToYaml(specs, "")
+			got, err := specgen.SpecificationToYaml(specs)
 			is.NoErr(err)
 
 			want, err := os.ReadFile(tc.wantPath)
