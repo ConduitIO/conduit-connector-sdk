@@ -141,7 +141,11 @@ func NewSourcePlugin(impl Source, cfg pconnector.PluginConfig, parameters config
 		impl = UnimplementedSource{}
 	}
 
-	return &sourcePluginAdapter{impl: impl, cfg: cfg, parameters: parameters}
+	return &sourcePluginAdapter{
+		impl:       impl,
+		cfg:        cfg,
+		parameters: parameters,
+	}
 }
 
 type sourcePluginAdapter struct {

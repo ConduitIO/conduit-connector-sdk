@@ -131,6 +131,11 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req pconnector
 	ctx = internal.Enrich(ctx, a.cfg)
 
 	cfg := a.impl.Config()
+	if cfg == nil {
+		// Connector without a config. Nothing to do.
+		return pconnector.DestinationConfigureResponse{}, nil
+	}
+
 	err := Util.ParseConfig(ctx, req.Config, cfg, a.parameters)
 	if err != nil {
 		return pconnector.DestinationConfigureResponse{}, fmt.Errorf("failed to parse configuration: %w", err)
@@ -179,8 +184,8 @@ func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context) {
 	a.writeStrategy = writeSingle // by default we write single records
 
 	batchConfig := (&destinationWithBatch{}).getBatchConfig(ctx)
-	if *batchConfig.BatchSize > 1 || *batchConfig.BatchDelay > 0 {
-		a.writeStrategy = newWriteStrategyBatch(writeSingle, *batchConfig.BatchSize, *batchConfig.BatchDelay)
+	if batchConfig.BatchSize > 1 || batchConfig.BatchDelay > 0 {
+		a.writeStrategy = newWriteStrategyBatch(writeSingle, batchConfig.BatchSize, batchConfig.BatchDelay)
 	}
 }
 

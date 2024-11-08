@@ -116,10 +116,12 @@ type ctxKeyBatchConfig struct{}
 
 // DestinationWithBatch adds support for batching on the destination.
 type DestinationWithBatch struct {
+	UnimplementedDestinationConfig
+
 	// Maximum size of batch before it gets written to the destination.
-	BatchSize *int `json:"sdk.batch.size" default:"0" validate:"gt=-1"`
+	BatchSize int `json:"sdk.batch.size" default:"0" validate:"gt=-1"`
 	// Maximum delay before an incomplete batch is written to the destination.
-	BatchDelay *time.Duration `json:"sdk.batch.delay" default:"0" validate:"gt=-1"`
+	BatchDelay time.Duration `json:"sdk.batch.delay" default:"0" validate:"gt=-1"`
 }
 
 // Wrap a Destination into the middleware.
@@ -184,7 +186,9 @@ func (*destinationWithBatch) getBatchConfig(ctx context.Context) DestinationWith
 
 // DestinationWithRateLimit adds support for rate limiting to the destination.
 type DestinationWithRateLimit struct {
-	// Maximum number of records written per second (0 means no rate limit).
+	UnimplementedDestinationConfig
+
+	// Maximum umber of records written per second (0 means no rate limit).
 	RatePerSecond float64 `json:"sdk.rate.perSecond" default:"0" validate:"gt=-1"`
 	// Allow bursts of at most X records (0 or less means that bursts are not
 	// limited). Only takes effect if a rate limit per second is set. Note that
@@ -262,6 +266,8 @@ func (d *destinationWithRateLimit) Write(ctx context.Context, recs []opencdc.Rec
 // DestinationWithRecordFormat adds support for changing the output format of
 // records, specifically of the Record.Bytes method.
 type DestinationWithRecordFormat struct {
+	UnimplementedDestinationConfig
+
 	// The format of the output record. See the Conduit documentation for a full
 	// list of supported formats (https://conduit.io/docs/using/connectors/configuration-parameters/output-format).
 	RecordFormat *string `json:"sdk.record.format" default:"" validate:"required"`
@@ -393,6 +399,8 @@ func (d *destinationWithRecordFormat) Write(ctx context.Context, recs []opencdc.
 // useful when the source connector sends the data with the schema attached.
 // This middleware is the counterpart of SourceWithSchemaExtraction.
 type DestinationWithSchemaExtraction struct {
+	UnimplementedDestinationConfig
+
 	// Whether to extract and decode the record payload with a schema.
 	PayloadEnabled *bool `json:"sdk.schema.extract.payload.enabled" default:"true"`
 	// Whether to extract and decode the record key with a schema.
