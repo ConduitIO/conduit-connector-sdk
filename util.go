@@ -21,13 +21,12 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/conduitio/conduit-commons/config"
 	v1 "github.com/conduitio/conduit-connector-sdk/specgen/specgen/model/v1"
 	"github.com/conduitio/evolviconf"
 	"github.com/conduitio/evolviconf/evolviyaml"
 	"github.com/conduitio/yaml/v3"
 	slogzerolog "github.com/samber/slog-zerolog/v2"
-
-	"github.com/conduitio/conduit-commons/config"
 )
 
 // Util provides utilities for implementing connectors.
@@ -56,42 +55,38 @@ var Util = struct {
 	//     validations, and value validations.
 	//   - Copies configuration values into the target object. The target object must
 	//     be a pointer to a struct.
-	ParseConfig func(ctx context.Context, cfg config.Config, target any) error
+	ParseConfig func(ctx context.Context, cfg config.Config, target any, parameters config.Parameters) error
 }{
 	ParseConfig: parseConfig,
 }
 
-func mergeParameters(p1 config.Parameters, p2 config.Parameters) config.Parameters {
-	params := make(config.Parameters, len(p1)+len(p2))
-	for k, v := range p1 {
-		params[k] = v
-	}
-	for k, v := range p2 {
-		_, ok := params[k]
-		if ok {
-			panic(fmt.Errorf("parameter %q declared twice", k))
-		}
-		params[k] = v
-	}
-	return params
+// Validatable can be implemented by a SourceConfig or DestinationConfig or any
+// embedded struct, to provide custom validation logic. Validate will be
+// triggered automatically by the SDK after parsing the config. If it returns an
+// error, the configuration is considered invalid and the connector won't be
+// opened.
+type Validatable interface {
+	// Validate executes any custom validations on the configuration and returns
+	// an error if it is invalid.
+	Validate(context.Context) error
 }
 
 func parseConfig(
 	ctx context.Context,
 	cfg config.Config,
 	target any,
-	// params config.Parameters,
+	params config.Parameters,
 ) error {
 	logger := Logger(ctx)
 
 	logger.Debug().Msg("sanitizing configuration and applying defaults")
-	c := cfg.Sanitize() // .ApplyDefaults(params)
+	c := cfg.Sanitize().ApplyDefaults(params)
 
 	logger.Debug().Msg("validating configuration according to the specifications")
-	// err := c.Validate(params)
-	// if err != nil {
-	// 	return fmt.Errorf("config invalid: %w", err)
-	// }
+	err := c.Validate(params)
+	if err != nil {
+		return fmt.Errorf("config invalid: %w", err)
+	}
 
 	logger.Debug().Type("target", target).Msg("decoding configuration into the target object")
 	//nolint:wrapcheck // error is already wrapped by DecodeInto

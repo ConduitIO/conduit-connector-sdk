@@ -123,10 +123,11 @@ type Source interface {
 	mustEmbedUnimplementedSource()
 }
 
+// SourceConfig represents the configuration containing all configuration keys
+// that a source expects. The type needs to implement [Validatable], which will
+// be used to automatically validate the config when configuring the connector.
 type SourceConfig interface {
-	// Validate can be implemented to execute any non-trivial validations, which
-	// can't be implemented using the `validate` field tag.
-	Validate(context.Context) error
+	Validatable
 
 	mustEmbedUnimplementedSourceConfig()
 }
@@ -134,18 +135,19 @@ type SourceConfig interface {
 // NewSourcePlugin takes a Source and wraps it into an adapter that converts it
 // into a pconnector.SourcePlugin. If the parameter is nil it will wrap
 // UnimplementedSource instead.
-func NewSourcePlugin(impl Source, cfg pconnector.PluginConfig) pconnector.SourcePlugin {
+func NewSourcePlugin(impl Source, cfg pconnector.PluginConfig, parameters config.Parameters) pconnector.SourcePlugin {
 	if impl == nil {
 		// prevent nil pointers
 		impl = UnimplementedSource{}
 	}
 
-	return &sourcePluginAdapter{impl: impl, cfg: cfg}
+	return &sourcePluginAdapter{impl: impl, cfg: cfg, parameters: parameters}
 }
 
 type sourcePluginAdapter struct {
-	impl Source
-	cfg  pconnector.PluginConfig
+	impl       Source
+	cfg        pconnector.PluginConfig
+	parameters config.Parameters
 
 	state internal.ConnectorStateWatcher
 
@@ -169,7 +171,18 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.Sour
 		StateAfter:           internal.StateConfigured,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
-		panic("not implemented") // TODO
+		cfg := a.impl.Config()
+		err := Util.ParseConfig(ctx, req.Config, cfg, a.parameters)
+		if err != nil {
+			return fmt.Errorf("failed to parse configuration: %w", err)
+		}
+
+		err = cfg.Validate(ctx)
+		if err != nil {
+			return fmt.Errorf("configuration invalid: %w", err)
+		}
+
+		return nil
 	})
 
 	return pconnector.SourceConfigureResponse{}, err

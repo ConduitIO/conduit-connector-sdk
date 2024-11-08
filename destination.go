@@ -37,15 +37,15 @@ import (
 // All implementations must embed UnimplementedDestination for forward
 // compatibility.
 type Destination interface {
-	// Config returns the configuration that the source expects. It should return
-	// a pointer to a struct that contains all the configuration keys that the
-	// source expects. The struct should be annotated with the necessary
+	// Config returns the configuration that the destination expects. It should
+	// return a pointer to a struct that contains all the configuration keys that
+	// the destination expects. The struct should be annotated with the necessary
 	// validation tags. The value should be a pointer to allow the SDK to
 	// populate it using the values from the configuration.
 	//
-	// The returned SourceConfig should contain all the configuration keys that
-	// the source expects, including middleware fields (see
-	// [DefaultSourceMiddleware]).
+	// The returned DestinationConfig should contain all the configuration keys
+	// that the destination expects, including middleware fields (see
+	// [DefaultDestinationMiddleware]).
 	Config() DestinationConfig
 
 	// Open is called after Configure to signal the plugin it can prepare to
@@ -88,10 +88,12 @@ type Destination interface {
 	mustEmbedUnimplementedDestination()
 }
 
+// DestinationConfig represents the configuration containing all configuration
+// keys that a destination expects. The type needs to implement [Validatable],
+// which will be used to automatically validate the config when configuring the
+// connector.
 type DestinationConfig interface {
-	// Validate can be implemented to execute any non-trivial validations, which
-	// can't be implemented using the `validate` field tag.
-	Validate(context.Context) error
+	Validatable
 
 	mustEmbedUnimplementedDestinationConfig()
 }
@@ -99,17 +101,22 @@ type DestinationConfig interface {
 // NewDestinationPlugin takes a Destination and wraps it into an adapter that
 // converts it into a pconnector.DestinationPlugin. If the parameter is nil it
 // will wrap UnimplementedDestination instead.
-func NewDestinationPlugin(impl Destination, cfg pconnector.PluginConfig) pconnector.DestinationPlugin {
+func NewDestinationPlugin(impl Destination, cfg pconnector.PluginConfig, parameters config.Parameters) pconnector.DestinationPlugin {
 	if impl == nil {
 		// prevent nil pointers
 		impl = UnimplementedDestination{}
 	}
-	return &destinationPluginAdapter{impl: impl, cfg: cfg}
+	return &destinationPluginAdapter{
+		impl:       impl,
+		cfg:        cfg,
+		parameters: parameters,
+	}
 }
 
 type destinationPluginAdapter struct {
-	impl Destination
-	cfg  pconnector.PluginConfig
+	impl       Destination
+	cfg        pconnector.PluginConfig
+	parameters config.Parameters
 
 	// lastPosition holds the position of the last record passed to the connector's
 	// Write method. It is used to determine when the connector should stop.
@@ -123,19 +130,18 @@ type destinationPluginAdapter struct {
 func (a *destinationPluginAdapter) Configure(ctx context.Context, req pconnector.DestinationConfigureRequest) (pconnector.DestinationConfigureResponse, error) {
 	ctx = internal.Enrich(ctx, a.cfg)
 
-	panic("not implemented") // TODO
+	cfg := a.impl.Config()
+	err := Util.ParseConfig(ctx, req.Config, cfg, a.parameters)
+	if err != nil {
+		return pconnector.DestinationConfigureResponse{}, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	err = cfg.Validate(ctx)
+	if err != nil {
+		return pconnector.DestinationConfigureResponse{}, fmt.Errorf("configuration invalid: %w", err)
+	}
 
 	return pconnector.DestinationConfigureResponse{}, nil
-}
-
-func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context) {
-	writeSingle := &writeStrategySingle{impl: a.impl, ackFn: a.ack}
-	a.writeStrategy = writeSingle // by default we write single records
-
-	batchConfig := (&destinationWithBatch{}).getBatchConfig(ctx)
-	if *batchConfig.BatchSize > 1 || *batchConfig.BatchDelay > 0 {
-		a.writeStrategy = newWriteStrategyBatch(writeSingle, *batchConfig.BatchSize, *batchConfig.BatchDelay)
-	}
 }
 
 func (a *destinationPluginAdapter) Open(ctx context.Context, _ pconnector.DestinationOpenRequest) (pconnector.DestinationOpenResponse, error) {
@@ -166,6 +172,16 @@ func (a *destinationPluginAdapter) Open(ctx context.Context, _ pconnector.Destin
 	a.configureWriteStrategy(ctxOpen)
 
 	return pconnector.DestinationOpenResponse{}, err
+}
+
+func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context) {
+	writeSingle := &writeStrategySingle{impl: a.impl, ackFn: a.ack}
+	a.writeStrategy = writeSingle // by default we write single records
+
+	batchConfig := (&destinationWithBatch{}).getBatchConfig(ctx)
+	if *batchConfig.BatchSize > 1 || *batchConfig.BatchDelay > 0 {
+		a.writeStrategy = newWriteStrategyBatch(writeSingle, *batchConfig.BatchSize, *batchConfig.BatchDelay)
+	}
 }
 
 func (a *destinationPluginAdapter) Run(ctx context.Context, stream pconnector.DestinationRunStream) error {

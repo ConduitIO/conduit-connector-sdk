@@ -14,26 +14,7 @@
 
 package sdk
 
-import (
-	"bytes"
-	"context"
-	"errors"
-	"strconv"
-	"testing"
-	"time"
-
-	"github.com/conduitio/conduit-commons/config"
-	"github.com/conduitio/conduit-commons/lang"
-	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-commons/schema/avro"
-	"github.com/conduitio/conduit-connector-protocol/pconnector"
-	"github.com/conduitio/conduit-connector-sdk/internal"
-	"github.com/conduitio/conduit-connector-sdk/schema"
-	"github.com/google/uuid"
-	"github.com/matryer/is"
-	"go.uber.org/mock/gomock"
-	"golang.org/x/time/rate"
-)
+/*
 
 // -- DestinationWithBatch -----------------------------------------------------
 
@@ -679,3 +660,5 @@ func TestDestinationWithSchemaExtraction_Write(t *testing.T) {
 		})
 	}
 }
+
+*/

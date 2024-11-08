@@ -52,6 +52,24 @@ type DefaultSourceMiddleware struct {
 	SourceWithSchemaExtraction
 }
 
+// Validate validates all the [Validatable] structs in the middleware.
+func (c *DefaultSourceMiddleware) Validate(ctx context.Context) error {
+	val := reflect.ValueOf(c)
+	valType := val.Type()
+	validatableInterface := reflect.TypeOf((*Validatable)(nil)).Elem()
+
+	var errs []error
+	for i := range valType.NumField() {
+		f := valType.Field(i)
+		if f.Type.Implements(validatableInterface) {
+			// This is a DestinationConfig struct, validate it.
+			errs = append(errs, val.Field(i).Interface().(Validatable).Validate(ctx))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
 // SourceWithMiddleware wraps the source into the middleware defined in the
 // config.
 func SourceWithMiddleware(s Source) Source {
@@ -59,7 +77,7 @@ func SourceWithMiddleware(s Source) Source {
 
 	cfgVal := reflect.ValueOf(cfg)
 	if cfgVal.Kind() != reflect.Ptr {
-		panic("config must be a pointer")
+		panic("The struct returned in Config() must be a pointer")
 	}
 	cfgVal = cfgVal.Elem()
 

@@ -30,6 +30,15 @@ func ExampleUtil_ParseConfig() {
 		"nested.baz": "1m",
 	}
 
+	params := config.Parameters{
+		"foo": config.Parameter{Type: config.ParameterTypeString},
+		"bar": config.Parameter{
+			Type:    config.ParameterTypeInt,
+			Default: "42",
+		},
+		"nested.baz": config.Parameter{Type: config.ParameterTypeDuration},
+	}
+
 	var target struct {
 		Foo    string `json:"foo"`
 		Bar    int    `json:"bar"`
@@ -38,7 +47,7 @@ func ExampleUtil_ParseConfig() {
 		} `json:"nested"`
 	}
 
-	err := Util.ParseConfig(context.Background(), cfg, &target)
+	err := Util.ParseConfig(context.Background(), cfg, &target, params)
 	if err != nil {
 		panic(err)
 	}

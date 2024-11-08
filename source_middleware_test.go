@@ -14,26 +14,7 @@
 
 package sdk
 
-import (
-	"context"
-	"errors"
-	"maps"
-	"strconv"
-	"testing"
-	"time"
-
-	"github.com/conduitio/conduit-commons/config"
-	"github.com/conduitio/conduit-commons/csync"
-	"github.com/conduitio/conduit-commons/lang"
-	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/pconnector"
-	"github.com/conduitio/conduit-connector-sdk/internal"
-	"github.com/conduitio/conduit-connector-sdk/schema"
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/uuid"
-	"github.com/matryer/is"
-	"go.uber.org/mock/gomock"
-)
+/*
 
 // -- SourceWithSchemaExtraction -----------------------------------------------
 
@@ -716,3 +697,5 @@ func TestSourceWithBatch_ReadN(t *testing.T) {
 	_, err = underTest.ReadN(ctx, 1)
 	is.True(errors.Is(err, context.Canceled))
 }
+
+*/

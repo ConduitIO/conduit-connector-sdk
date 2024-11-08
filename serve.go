@@ -72,10 +72,14 @@ func serve(c Connector) error {
 		c.NewDestination = func() Destination { return nil }
 	}
 
+	spec := c.NewSpecification()
+
 	return server.Serve(
-		func() pconnector.SpecifierPlugin { return NewSpecifierPlugin(c.NewSpecification()) },
-		func() pconnector.SourcePlugin { return NewSourcePlugin(c.NewSource(), cfg) },
-		func() pconnector.DestinationPlugin { return NewDestinationPlugin(c.NewDestination(), cfg) },
+		func() pconnector.SpecifierPlugin { return NewSpecifierPlugin(spec) },
+		func() pconnector.SourcePlugin { return NewSourcePlugin(c.NewSource(), cfg, spec.SourceParams) },
+		func() pconnector.DestinationPlugin {
+			return NewDestinationPlugin(c.NewDestination(), cfg, spec.DestinationParams)
+		},
 	)
 }
 

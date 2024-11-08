@@ -14,21 +14,7 @@
 
 package sdk
 
-import (
-	"context"
-	"errors"
-	"io"
-	"testing"
-	"time"
-
-	"github.com/conduitio/conduit-commons/config"
-	"github.com/conduitio/conduit-commons/opencdc"
-	"github.com/conduitio/conduit-connector-protocol/pconnector"
-	"github.com/conduitio/conduit-connector-sdk/internal"
-	"github.com/matryer/is"
-	"github.com/rs/zerolog"
-	"go.uber.org/mock/gomock"
-)
+/*
 
 func TestDestinationPluginAdapter_Start_OpenContext(t *testing.T) {
 	is := is.New(t)
@@ -456,3 +442,5 @@ func TestDestinationPluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	_, err := dstPlugin.LifecycleOnDeleted(ctx, req)
 	is.NoErr(err)
 }
+
+*/

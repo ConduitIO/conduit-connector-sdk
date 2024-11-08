@@ -45,6 +45,10 @@ var (
 	_ DestinationMiddleware = (*DestinationWithSchemaExtraction)(nil)
 )
 
+// DefaultDestinationMiddleware should be embedded in the DestinationConfig
+// struct to provide a list of default middlewares. Note that if the embedding
+// struct overwrites Validate manually, it should call Validate on this struct
+// as well.
 type DefaultDestinationMiddleware struct {
 	UnimplementedDestinationConfig
 
@@ -54,6 +58,24 @@ type DefaultDestinationMiddleware struct {
 	DestinationWithSchemaExtraction
 }
 
+// Validate validates all the [Validatable] structs in the middleware.
+func (c *DefaultDestinationMiddleware) Validate(ctx context.Context) error {
+	val := reflect.ValueOf(c)
+	valType := val.Type()
+	validatableInterface := reflect.TypeOf((*Validatable)(nil)).Elem()
+
+	var errs []error
+	for i := range valType.NumField() {
+		f := valType.Field(i)
+		if f.Type.Implements(validatableInterface) {
+			// This is a DestinationConfig struct, validate it.
+			errs = append(errs, val.Field(i).Interface().(Validatable).Validate(ctx))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
 // DestinationWithMiddleware wraps the destination into the middleware defined
 // in the config.
 func DestinationWithMiddleware(d Destination) Destination {
@@ -61,7 +83,7 @@ func DestinationWithMiddleware(d Destination) Destination {
 
 	cfgVal := reflect.ValueOf(cfg)
 	if cfgVal.Kind() != reflect.Ptr {
-		panic("config must be a pointer")
+		panic("The struct returned in Config() must be a pointer")
 	}
 	cfgVal = cfgVal.Elem()
 
@@ -291,13 +313,13 @@ func (c *DestinationWithRecordFormat) DefaultRecordSerializers() []RecordSeriali
 		JSONEncoder{},
 	}
 
-	for _, c := range genericConverters {
-		for _, e := range genericEncoders {
+	for _, conv := range genericConverters {
+		for _, enc := range genericEncoders {
 			serializers = append(
 				serializers,
 				GenericRecordSerializer{
-					Converter: c,
-					Encoder:   e,
+					Converter: conv,
+					Encoder:   enc,
 				},
 			)
 		}
@@ -319,7 +341,7 @@ func (c *DestinationWithRecordFormat) formats() []string {
 func (c *DestinationWithRecordFormat) getRecordSerializer() (RecordSerializer, error) {
 	i, ok := slices.BinarySearch(c.formats(), *c.RecordFormat)
 	if !ok {
-		return nil, fmt.Errorf("invalid sdk.record.format: %q not found in %v", c.RecordFormat, c.formats())
+		return nil, fmt.Errorf("invalid sdk.record.format: %q not found in %v", *c.RecordFormat, c.formats())
 	}
 
 	serializer := c.RecordSerializers[i]
@@ -377,7 +399,7 @@ type DestinationWithSchemaExtraction struct {
 	KeyEnabled *bool `json:"sdk.schema.extract.key.enabled" default:"true"`
 }
 
-// Apply sets the default configuration for the DestinationWithSchemaExtraction middleware.
+// Wrap a Destination into the middleware.
 func (c *DestinationWithSchemaExtraction) Wrap(impl Destination) Destination {
 	return &destinationWithSchemaExtraction{
 		Destination: impl,
