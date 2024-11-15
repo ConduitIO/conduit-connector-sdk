@@ -30,34 +30,105 @@ func TestTraverse(t *testing.T) {
 		{
 			name: "struct with primitive fields",
 			testObject: func() any {
-				type simpleStruct struct {
-					Name string
-					Age  int
+				type Foo struct {
+					Bar string
+					Baz int
 				}
-				return simpleStruct{
-					Name: "John Doe",
-					Age:  30,
-				}
+				return Foo{}
 			},
-			wantPaths: []string{"name", "age"},
+			wantPaths: []string{"bar", "baz"},
 		},
 		{
 			name: "struct with embedded struct",
 			testObject: func() any {
-				type EmbeddedStruct struct {
-					EmbeddedField string
+				type Bar struct {
+					Baz string
 				}
-				type testStruct struct {
-					EmbeddedStruct
+				type Foo struct {
+					Bar
 				}
 
-				return testStruct{
-					EmbeddedStruct{
-						EmbeddedField: "foo",
+				return Foo{}
+			},
+			wantPaths: []string{"baz"},
+		},
+		{
+			name: "struct with struct field",
+			testObject: func() any {
+				type Bar struct {
+					Baz string
+				}
+				type Foo struct {
+					Bar Bar
+				}
+
+				return Foo{}
+			},
+			wantPaths: []string{"bar", "bar.baz"},
+		},
+		{
+			name: "struct with pointer-to-struct field",
+			testObject: func() any {
+				type Bar struct {
+					Baz string
+				}
+				type Foo struct {
+					Bar *Bar
+				}
+
+				return Foo{
+					Bar: &Bar{},
+				}
+			},
+			wantPaths: []string{"bar", "bar.baz"},
+		},
+		{
+			name: "struct with map field",
+			testObject: func() any {
+				type Foo struct {
+					Bar map[string]string
+				}
+
+				return Foo{
+					Bar: map[string]string{
+						"baz": "baz-val",
+						"qux": "qux-val",
 					},
 				}
 			},
-			wantPaths: []string{"embeddedField"},
+			wantPaths: []string{"barMap"},
+		},
+		{
+			name: "struct with map field, value is a struct",
+			testObject: func() any {
+				type Baz struct {
+					Qux string
+				}
+				type Foo struct {
+					BarMap map[string]Baz
+				}
+
+				return Foo{
+					BarMap: map[string]Baz{
+						"bar-map-key": {Qux: "qux-val"},
+					},
+				}
+			},
+			wantPaths: []string{"barMap.*.qux"},
+		},
+		{
+			name: "struct with nested struct field",
+			testObject: func() any {
+				type Foo struct {
+					Bar struct {
+						Baz string
+						Qux string
+					}
+				}
+
+				return Foo{}
+			},
+			wantPaths: []string{"bar", "bar.baz", "bar.qux"},
 		},
 	}
 
