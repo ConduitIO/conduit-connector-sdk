@@ -88,6 +88,7 @@ func DestinationWithMiddleware(d Destination) Destination {
 	}
 	cfgVal = cfgVal.Elem()
 
+	// Collect all middlewares from the config and wrap the destination with them
 	var mw []DestinationMiddleware
 	for i := range cfgVal.NumField() {
 		field := cfgVal.Field(i)

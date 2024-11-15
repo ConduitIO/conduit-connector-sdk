@@ -83,6 +83,7 @@ func SourceWithMiddleware(s Source) Source {
 	}
 	cfgVal = cfgVal.Elem()
 
+	// Collect all middlewares from the config and wrap the source with them
 	var mw []SourceMiddleware
 	for i := range cfgVal.NumField() {
 		field := cfgVal.Field(i)
