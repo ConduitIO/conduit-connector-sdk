@@ -20,14 +20,14 @@ import (
 	"unicode"
 )
 
-// fieldHook is a function type that gets called for each field during traversal
-// path is the JSON path to the field (using dot notation)
-// field is the reflect.StructField information
-// value is the actual value of the field
+// fieldHook is a function type that gets called for each field during traversal.
+// path is the JSON path to the field (using dot notation).
+// field is the reflect.StructField information.
+// value is the actual value of the field.
 type fieldHook func(path string, field reflect.StructField, value reflect.Value)
 
 // TraverseFields traverses all fields in a struct, including nested structs,
-// calling the provided hook function for each field encountered
+// calling the provided hook function for each field encountered.
 func traverseFields(v any, hook fieldHook) {
 	traverseFieldsInternal(reflect.ValueOf(v), "", hook)
 }
@@ -37,11 +37,12 @@ func traverseFieldsInternal(v reflect.Value, parentPath string, hook fieldHook) 
 	v = reflect.Indirect(v)
 
 	// Handle different kinds of values
+	//nolint:exhaustive // we only need to traverse fields structs and map key-value pairs
 	switch v.Kind() {
-	case reflect.Struct:
-		traverseStructFields(v, parentPath, hook)
 	case reflect.Map:
 		traverseMapFields(v, parentPath, hook)
+	case reflect.Struct:
+		traverseStructFields(v, parentPath, hook)
 	}
 }
 

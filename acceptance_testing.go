@@ -14,6 +14,7 @@
 
 package sdk
 
+//nolint:dupword // the tests are commented out while specgen is WIP
 /*
 
 import (

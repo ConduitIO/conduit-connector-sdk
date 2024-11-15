@@ -37,27 +37,27 @@ var Changelog = evolviconf.Changelog{
 }
 
 type Specification struct {
-	Version   string    `json:"version"`
-	Connector Connector `json:"connector"`
+	Version                string                 `json:"version" yaml:"version"`
+	ConnectorSpecification ConnectorSpecification `json:"specification" yaml:"specification"`
 }
 
-type Connector struct {
-	Name        string `json:"name"`
-	Summary     string `json:"summary"`
-	Description string `json:"description"`
-	Version     string `json:"version"`
-	Author      string `json:"author"`
+type ConnectorSpecification struct {
+	Name        string `json:"name" yaml:"name"`
+	Summary     string `json:"summary" yaml:"summary"`
+	Description string `json:"description" yaml:"description"`
+	Version     string `json:"version" yaml:"version"`
+	Author      string `json:"author" yaml:"author"`
 
-	Source      Source      `json:"source,omitempty"`
-	Destination Destination `json:"destination,omitempty"`
+	Source      Source      `json:"source,omitempty" yaml:"source,omitempty"`
+	Destination Destination `json:"destination,omitempty" yaml:"destination,omitempty"`
 }
 
 type Source struct {
-	Parameters Parameters `json:"parameters,omitempty"`
+	Parameters Parameters `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 }
 
 type Destination struct {
-	Parameters Parameters `json:"parameters,omitempty"`
+	Parameters Parameters `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 }
 
 type Parameters []Parameter
@@ -83,10 +83,10 @@ type Validation struct {
 
 // ToConfig implements evolviconf.VersionedConfig.
 func (s Specification) ToConfig() (pconnector.Specification, error) {
-	return s.Connector.ToConfig()
+	return s.ConnectorSpecification.ToConfig()
 }
 
-func (c Connector) ToConfig() (pconnector.Specification, error) {
+func (c ConnectorSpecification) ToConfig() (pconnector.Specification, error) {
 	sourceParams, err := c.Source.ToConfig()
 	if err != nil {
 		return pconnector.Specification{}, err
@@ -220,12 +220,12 @@ func (v Validation) ToConfig() (config.Validation, error) {
 
 func (s Specification) FromConfig(spec pconnector.Specification) Specification {
 	return Specification{
-		Version:   LatestVersion,
-		Connector: Connector{}.FromConfig(spec),
+		Version:                LatestVersion,
+		ConnectorSpecification: ConnectorSpecification{}.FromConfig(spec),
 	}
 }
 
-func (c Connector) FromConfig(spec pconnector.Specification) Connector {
+func (c ConnectorSpecification) FromConfig(spec pconnector.Specification) ConnectorSpecification {
 	c.Name = spec.Name
 	c.Summary = spec.Summary
 	c.Description = spec.Description
@@ -238,7 +238,7 @@ func (c Connector) FromConfig(spec pconnector.Specification) Connector {
 }
 
 func (Parameters) FromConfig(params config.Parameters) Parameters {
-	var p Parameters
+	p := make(Parameters, len(params))
 
 	names := make([]string, 0, len(params))
 	for k := range maps.Keys(params) {
@@ -246,10 +246,10 @@ func (Parameters) FromConfig(params config.Parameters) Parameters {
 	}
 	slices.Sort(names)
 
-	for _, name := range names {
+	for i, name := range names {
 		paramOut := Parameter{}.FromConfig(params[name])
 		paramOut.Name = name
-		p = append(p, paramOut)
+		p[i] = paramOut
 	}
 	return p
 }
@@ -284,9 +284,9 @@ func (ParameterType) FromConfig(t config.ParameterType) ParameterType {
 }
 
 func (Validations) FromConfig(v []config.Validation) Validations {
-	var validations Validations
-	for _, validation := range v {
-		validations = append(validations, Validation{}.FromConfig(validation))
+	validations := make(Validations, len(v))
+	for i, validation := range v {
+		validations[i] = Validation{}.FromConfig(validation)
 	}
 	return validations
 }

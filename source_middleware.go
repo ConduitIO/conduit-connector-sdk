@@ -22,11 +22,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/conduitio/conduit-connector-sdk/internal"
-
 	"github.com/conduitio/conduit-commons/cchan"
 	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
+	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/schema"
 	"github.com/jpillora/backoff"
 )
@@ -65,6 +64,7 @@ func (c *DefaultSourceMiddleware) Validate(ctx context.Context) error {
 		f := valType.Field(i)
 		if f.Type.Implements(validatableInterface) {
 			// This is a DestinationConfig struct, validate it.
+			//nolint:forcetypeassert // type checked above with f.Type.Implements()
 			errs = append(errs, val.Field(i).Interface().(Validatable).Validate(ctx))
 		}
 	}
@@ -94,6 +94,7 @@ func SourceWithMiddleware(s Source) Source {
 		}
 		if field.Type().Implements(sourceMiddlewareType) {
 			// This is a middleware config, store it.
+			//nolint:forcetypeassert // type checked above with field.Type().Implements()
 			mw = append(mw, field.Interface().(SourceMiddleware))
 		}
 	}

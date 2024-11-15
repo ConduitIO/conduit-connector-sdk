@@ -1,0 +1,45 @@
+version: "1.0"
+specification:
+  name: ""
+  summary: ""
+  description: ""
+  version: ""
+  author: ""
+  source:
+    parameters:
+      - name: global.foo
+        description: |-
+          MyGlobalString is a required field in the global config with the name
+          "foo" and default value "bar".
+        type: string
+        default: bar
+        validations:
+          - type: required
+            value: ""
+      - name: global.myGlobalNestedStruct.myGlobalNestedField
+        description: ""
+        type: string
+        default: ""
+        validations: []
+      - name: mapWithNestedStruct.*.name
+        description: Name is a field within the nested struct value of MapWithNestedStruct
+        type: string
+        default: ""
+        validations: []
+      - name: nestMeHere.anotherNested
+        description: |-
+          AnotherNested is also nested under nestMeHere.
+          Also, This is a block comment.
+        type: int
+        default: ""
+        validations: []
+      - name: nestMeHere.levelTwoNestedStruct.levelTwoNestedField
+        description: LevelTwoNestedField is a float32 field that is within LevelTwoNestedStruct
+        type: float
+        default: ""
+        validations: []
+      - name: nestMeHere.nestedFloat
+        description: ""
+        type: float
+        default: this is not a float
+        validations: []

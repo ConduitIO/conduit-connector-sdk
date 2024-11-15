@@ -1,0 +1,30 @@
+version: "1.0"
+specification:
+  name: ""
+  summary: ""
+  description: ""
+  version: ""
+  author: ""
+  source:
+    parameters:
+      - name: global.foo
+        description: |-
+          MyGlobalString is a required field in the global config with the name
+          "foo" and default value "bar".
+        type: string
+        default: bar
+        validations:
+          - type: required
+            value: ""
+      - name: myInt
+        description: |-
+          MyInt has a block comment.
+          And it spans multiple lines.
+        type: int
+        default: ""
+        validations: []
+      - name: myString
+        description: MyString has a line comment.
+        type: string
+        default: ""
+        validations: []

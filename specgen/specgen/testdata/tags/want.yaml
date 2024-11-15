@@ -1,0 +1,45 @@
+version: "1.0"
+specification:
+  name: ""
+  summary: ""
+  description: ""
+  version: ""
+  author: ""
+  source:
+    parameters:
+      - name: my-name
+        description: ""
+        type: string
+        default: ""
+        validations:
+          - type: required
+            value: ""
+      - name: my-param
+        description: Param1 i am a parameter comment
+        type: int
+        default: "3"
+        validations:
+          - type: required
+            value: ""
+          - type: greater-than
+            value: "0.000000"
+          - type: less-than
+            value: "100.000000"
+      - name: param2
+        description: ""
+        type: bool
+        default: t
+        validations:
+          - type: inclusion
+            value: true,t
+          - type: exclusion
+            value: false,f
+      - name: param3
+        description: ""
+        type: string
+        default: "yes"
+        validations:
+          - type: required
+            value: ""
+          - type: regex
+            value: .*
