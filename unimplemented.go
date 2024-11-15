@@ -25,14 +25,9 @@ import (
 // UnimplementedDestination should be embedded to have forward compatible implementations.
 type UnimplementedDestination struct{}
 
-// Parameters needs to be overridden in the actual implementation.
-func (UnimplementedDestination) Parameters() config.Parameters {
-	return nil
-}
-
-// Configure needs to be overridden in the actual implementation.
-func (UnimplementedDestination) Configure(context.Context, config.Config) error {
-	return fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
+// Config needs to be overridden in the actual implementation.
+func (UnimplementedDestination) Config() DestinationConfig {
+	panic("it is required to implement Config")
 }
 
 // Open needs to be overridden in the actual implementation.
@@ -67,17 +62,20 @@ func (UnimplementedDestination) LifecycleOnDeleted(context.Context, config.Confi
 
 func (UnimplementedDestination) mustEmbedUnimplementedDestination() {}
 
-// UnimplementedSource should be embedded to have forward compatible implementations.
-type UnimplementedSource struct{}
+type UnimplementedDestinationConfig struct{}
 
-// Parameters needs to be overridden in the actual implementation.
-func (UnimplementedSource) Parameters() config.Parameters {
+func (UnimplementedDestinationConfig) mustEmbedUnimplementedDestinationConfig() {}
+
+func (UnimplementedDestinationConfig) Validate(context.Context) error {
 	return nil
 }
 
-// Configure needs to be overridden in the actual implementation.
-func (UnimplementedSource) Configure(context.Context, config.Config) error {
-	return fmt.Errorf("action \"Configure\": %w", ErrUnimplemented)
+// UnimplementedSource should be embedded to have forward compatible implementations.
+type UnimplementedSource struct{}
+
+// Config needs to be overridden in the actual implementation.
+func (UnimplementedSource) Config() SourceConfig {
+	panic("it is required to implement Config")
 }
 
 // Open needs to be overridden in the actual implementation.
@@ -122,3 +120,11 @@ func (UnimplementedSource) LifecycleOnDeleted(context.Context, config.Config) er
 }
 
 func (UnimplementedSource) mustEmbedUnimplementedSource() {}
+
+type UnimplementedSourceConfig struct{}
+
+func (UnimplementedSourceConfig) mustEmbedUnimplementedSourceConfig() {}
+
+func (UnimplementedSourceConfig) Validate(context.Context) error {
+	return nil
+}

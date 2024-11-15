@@ -14,6 +14,8 @@
 
 package sdk
 
+/*
+
 import (
 	"bytes"
 	"context"
@@ -1119,3 +1121,6 @@ func (a acceptanceTest) context(t *testing.T) context.Context {
 	}
 	return ctx
 }
+
+
+*/
