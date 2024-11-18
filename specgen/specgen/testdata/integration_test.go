@@ -104,4 +104,12 @@ func TestWriteAndCombine(t *testing.T) {
 
 	err = specgen.WriteAndCombine(specBytes, "./simple/existing_specs.yaml")
 	is.NoErr(err)
+
+	got, err := os.ReadFile("./simple/existing_specs.yaml")
+	is.NoErr(err)
+
+	want, err := os.ReadFile("./simple/want.yaml")
+	is.NoErr(err)
+
+	is.Equal("", cmp.Diff(got, want))
 }
