@@ -34,8 +34,10 @@ var Connector = sdk.Connector{
 			config: SourceConfig{
 				DefaultSourceMiddleware: sdk.DefaultSourceMiddleware{
 					SourceWithSchemaExtraction: sdk.SourceWithSchemaExtraction{
-						KeyEnabled:     lang.Ptr(false),
-						PayloadEnabled: lang.Ptr(false),
+						KeyEnabled: lang.Ptr(false),
+					},
+					SourceWithBatch: sdk.SourceWithBatch{
+						BatchSize: lang.Ptr(1234),
 					},
 				},
 			},

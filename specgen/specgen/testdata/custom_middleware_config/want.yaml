@@ -22,7 +22,7 @@ specification:
       - name: sdk.batch.size
         description: Maximum size of batch before it gets read from the source.
         type: int
-        default: "0"
+        default: "1234"
         validations:
           - type: greater-than
             value: "-1"
@@ -57,7 +57,7 @@ specification:
       - name: sdk.schema.extract.payload.enabled
         description: Whether to extract and encode the record payload with a schema.
         type: bool
-        default: "false"
+        default: "true"
         validations: []
       - name: sdk.schema.extract.payload.subject
         description: |-
