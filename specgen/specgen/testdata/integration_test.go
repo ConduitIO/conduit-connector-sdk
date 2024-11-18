@@ -22,6 +22,7 @@ import (
 	"example.com/comments"
 	"example.com/custom_embedded_struct"
 	"example.com/custom_middleware_config"
+	"example.com/defaults"
 	"example.com/field_names"
 	"example.com/nesting"
 	"example.com/primitive_field_types"
@@ -69,6 +70,10 @@ func TestParseSpecification(t *testing.T) {
 		{
 			haveConnector: field_names.Connector,
 			wantPath:      "./field_names/want.yaml",
+		},
+		{
+			haveConnector: defaults.Connector,
+			wantPath:      "./defaults/want.yaml",
 		},
 	}
 
