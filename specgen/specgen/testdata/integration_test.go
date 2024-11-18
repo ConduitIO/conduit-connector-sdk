@@ -26,6 +26,7 @@ import (
 	"example.com/field_names"
 	"example.com/nesting"
 	"example.com/primitive_field_types"
+	"example.com/simple"
 	"example.com/tags"
 	"example.com/type_aliases"
 	sdk "github.com/conduitio/conduit-connector-sdk"
@@ -91,4 +92,16 @@ func TestParseSpecification(t *testing.T) {
 			is.Equal("", cmp.Diff(string(want), string(got)))
 		})
 	}
+}
+
+func TestWriteAndCombine(t *testing.T) {
+	is := is.New(t)
+
+	specs, err := specgen.ExtractSpecification(context.Background(), simple.Connector)
+	is.NoErr(err)
+	specBytes, err := specgen.SpecificationToYaml(specs)
+	is.NoErr(err)
+
+	err = specgen.WriteAndCombine(specBytes, "./simple/existing_specs.yaml")
+	is.NoErr(err)
 }

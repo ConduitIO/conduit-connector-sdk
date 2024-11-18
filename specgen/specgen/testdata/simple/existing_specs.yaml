@@ -1,0 +1,7 @@
+version: "1.0"
+specification:
+  name: "test connector name"
+  summary: "test connector summary"
+  description: "test connector description"
+  version: "v12.34.56"
+  author: "Acme"
