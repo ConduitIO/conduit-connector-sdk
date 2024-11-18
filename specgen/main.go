@@ -81,8 +81,12 @@ func parseFlags() Args {
 	return args
 }
 
+// extractYAMLSpecification extracts the YAML specification from the connector
+// found in `path`.
+// `path` is the directory path to the package that contains the `Connector` variable.
 func extractYAMLSpecification(ctx context.Context, path string) ([]byte, error) {
-	// Get the import path of the package.
+	// Get the import path of the package (that contains the connector code).
+	// It's needed in extractYAMLProgram to get the `Connector` variable.
 	out, err := specgen.Run(ctx, path, "go", "list", "-m")
 	if err != nil {
 		return nil, err
@@ -97,12 +101,14 @@ func extractYAMLSpecification(ctx context.Context, path string) ([]byte, error) 
 	return runInDir(ctx, program, path)
 }
 
-func writeProgram(importPath string) ([]byte, error) {
+// writeProgram writes the program that extracts the YAML specs
+// from the connector that can be found at the connectorImportPath.
+func writeProgram(connectorImportPath string) ([]byte, error) {
 	var program bytes.Buffer
 	data := reflectData{
-		ImportPath: importPath,
+		ImportPath: connectorImportPath,
 	}
-	if err := reflectProgram.Execute(&program, &data); err != nil {
+	if err := extractYAMLProgram.Execute(&program, &data); err != nil {
 		return nil, err
 	}
 	return program.Bytes(), nil
@@ -122,13 +128,13 @@ func runInDir(ctx context.Context, program []byte, dir string) ([]byte, error) {
 		}
 	}()
 	const progSource = "prog.go"
-	var progBinary = "prog.bin"
+	progBinary := "prog.bin"
 	if runtime.GOOS == "windows" {
 		// Windows won't execute a program unless it has a ".exe" suffix.
 		progBinary += ".exe"
 	}
 
-	if err := os.WriteFile(filepath.Join(tmpDir, progSource), program, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, progSource), program, 0o600); err != nil {
 		return nil, err
 	}
 
@@ -155,9 +161,9 @@ type reflectData struct {
 	ImportPath string
 }
 
-// This program uses reflection to traverse the connector configuration and
-// prints the extracted specification to standard output.
-var reflectProgram = template.Must(template.New("program").Parse(`
+// extractYAMLProgram extract the YAML specs from a connector and writes it
+// to standard output. This program uses reflection to traverse the connector configuration.
+var extractYAMLProgram = template.Must(template.New("program").Parse(`
 package main
 
 import (

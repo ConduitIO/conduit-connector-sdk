@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package basic
+package primitive_field_types
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -22,18 +23,9 @@ import (
 	sdk "github.com/conduitio/conduit-connector-sdk"
 )
 
-// GlobalConfig is a reusable config struct used in the source and destination
-// config.
-type GlobalConfig struct {
-	// MyGlobalString is a required field in the global config with the name
-	// "foo" and default value "bar".
-	MyGlobalString string `json:"foo" default:"bar" validate:"required"`
-}
-
 // SourceConfig this comment will be ignored.
 type SourceConfig struct {
-	sdk.DefaultSourceMiddleware
-	GlobalConfig
+	sdk.UnimplementedSourceConfig
 
 	// MyString my string description
 	MyString string
@@ -58,6 +50,9 @@ type SourceConfig struct {
 
 	MyDuration time.Duration
 
+	// arrays are not supported
+	// see: https://github.com/ConduitIO/conduit-commons/issues/137
+
 	MyIntSlice   []int
 	MyFloatSlice []float32
 	MyDurSlice   []time.Duration
@@ -72,6 +67,10 @@ type SourceConfig struct {
 	ignoreThis http.Client
 }
 
+func (s SourceConfig) Validate(ctx context.Context) error {
+	return nil
+}
+
 type structMapVal struct {
 	MyString string
 	MyInt    int
@@ -82,12 +81,6 @@ var Connector = sdk.Connector{
 	NewSource: func() sdk.Source {
 		return &Source{
 			config: SourceConfig{
-				DefaultSourceMiddleware: sdk.DefaultSourceMiddleware{
-					SourceWithSchemaExtraction: sdk.SourceWithSchemaExtraction{
-						KeyEnabled:     lang.Ptr(false),
-						PayloadEnabled: lang.Ptr(false),
-					},
-				},
 				MyIntSlice:    []int{1, 2},
 				MyDuration:    time.Second,
 				MyDurationPtr: lang.Ptr(time.Minute),

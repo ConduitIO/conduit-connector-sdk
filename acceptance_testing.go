@@ -14,6 +14,8 @@
 
 package sdk
 
+//nolint:dupword // the tests are commented out while specgen is WIP
+// todo acceptance tests will be re-enabled in https://github.com/ConduitIO/conduit-connector-sdk/issues/210
 /*
 
 import (

@@ -19,7 +19,15 @@ import (
 	"os"
 	"testing"
 
-	"example.com/basic"
+	"example.com/comments"
+	"example.com/custom_embedded_struct"
+	"example.com/custom_middleware_config"
+	"example.com/defaults"
+	"example.com/field_names"
+	"example.com/nesting"
+	"example.com/primitive_field_types"
+	"example.com/tags"
+	"example.com/type_aliases"
 	sdk "github.com/conduitio/conduit-connector-sdk"
 	"github.com/conduitio/conduit-connector-sdk/specgen/specgen"
 	"github.com/google/go-cmp/cmp"
@@ -30,10 +38,44 @@ func TestParseSpecification(t *testing.T) {
 	testCases := []struct {
 		haveConnector sdk.Connector
 		wantPath      string
-	}{{
-		haveConnector: basic.Connector,
-		wantPath:      "./basic/want.yaml",
-	}}
+	}{
+		{
+			haveConnector: custom_embedded_struct.Connector,
+			wantPath:      "./custom_embedded_struct/want.yaml",
+		},
+		{
+			haveConnector: custom_middleware_config.Connector,
+			wantPath:      "./custom_middleware_config/want.yaml",
+		},
+		{
+			haveConnector: primitive_field_types.Connector,
+			wantPath:      "./primitive_field_types/want.yaml",
+		},
+		{
+			haveConnector: comments.Connector,
+			wantPath:      "./comments/want.yaml",
+		},
+		{
+			haveConnector: nesting.Connector,
+			wantPath:      "./nesting/want.yaml",
+		},
+		{
+			haveConnector: tags.Connector,
+			wantPath:      "./tags/want.yaml",
+		},
+		{
+			haveConnector: type_aliases.Connector,
+			wantPath:      "./type_aliases/want.yaml",
+		},
+		{
+			haveConnector: field_names.Connector,
+			wantPath:      "./field_names/want.yaml",
+		},
+		{
+			haveConnector: defaults.Connector,
+			wantPath:      "./defaults/want.yaml",
+		},
+	}
 
 	for _, tc := range testCases {
 		t.Run(tc.wantPath, func(t *testing.T) {

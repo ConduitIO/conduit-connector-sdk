@@ -64,13 +64,17 @@ func SpecificationToYaml(spec pconnector.Specification) ([]byte, error) {
 	return yamlMarshal(v1.Specification{}.FromConfig(spec))
 }
 
+// WriteAndCombine combines the user-provided, custom information from an existing YAML file
+// with the connector spec.
+// `path` is the path to the existing YAML file.
+// `yamlBytes` contains the connector's YAML spec.
 func WriteAndCombine(yamlBytes []byte, path string) error {
 	// Read the existing YAML file.
 	existingRaw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// If the file doesn't exist, just write the new YAML directly
-			if err := os.WriteFile(path, yamlBytes, 0600); err != nil {
+			if err := os.WriteFile(path, yamlBytes, 0o600); err != nil {
 				return fmt.Errorf("failed to write YAML to file: %w", err)
 			}
 			return nil
@@ -79,11 +83,11 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 	}
 
 	out := struct {
-		Version   string `yaml:"version"`
-		Connector struct {
-			v1.Connector  `yaml:",inline"`
-			UnknownFields map[string]any `yaml:",inline"`
-		} `yaml:"connector"`
+		Version       string `yaml:"version"`
+		Specification struct {
+			v1.ConnectorSpecification `yaml:",inline"`
+			UnknownFields             map[string]any `yaml:",inline"`
+		} `yaml:"specification"`
 		UnknownFields map[string]any `yaml:",inline"`
 	}{}
 
@@ -102,7 +106,7 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 
 	// Merge the new map into the existing map, preserving existing fields
 	connectorUnknownFields, _ := unknownFields["connector"].(map[string]any)
-	connTyp := reflect.TypeFor[v1.Connector]()
+	connTyp := reflect.TypeFor[v1.ConnectorSpecification]()
 	for i := range connTyp.NumField() {
 		f := connTyp.Field(i)
 		fieldName := getYAMLFieldName(f)
@@ -113,7 +117,7 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 	delete(unknownFields, "connector")
 
 	out.UnknownFields = unknownFields
-	out.Connector.UnknownFields = connectorUnknownFields
+	out.Specification.UnknownFields = connectorUnknownFields
 
 	// Marshal the merged map back to YAML bytes
 	mergedYAML, err := yamlMarshal(out)
@@ -122,7 +126,7 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 	}
 
 	// Write the merged YAML to the file
-	if err := os.WriteFile(path, mergedYAML, 0600); err != nil {
+	if err := os.WriteFile(path, mergedYAML, 0o600); err != nil {
 		return fmt.Errorf("failed to write merged YAML to file: %w", err)
 	}
 
@@ -168,7 +172,7 @@ func parseParameters(ctx context.Context, cfg any) (config.Parameters, error) {
 // from the cfg struct and updates the default value if that field is set to
 // anything other than the zero value. It ignores fields that are not found.
 func overwriteDefaults(params config.Parameters, cfg any) {
-	traverseFields(cfg, func(path string, field reflect.StructField, value reflect.Value) {
+	traverseFields(cfg, func(path string, _ reflect.StructField, value reflect.Value) {
 		param, ok := params[path]
 		if !ok {
 			// This shouldn't happen if the parameters were extracted from the

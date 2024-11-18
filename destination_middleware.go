@@ -69,6 +69,7 @@ func (c *DefaultDestinationMiddleware) Validate(ctx context.Context) error {
 		f := valType.Field(i)
 		if f.Type.Implements(validatableInterface) {
 			// This is a DestinationConfig struct, validate it.
+			//nolint:forcetypeassert // type checked above with f.Type.Implements()
 			errs = append(errs, val.Field(i).Interface().(Validatable).Validate(ctx))
 		}
 	}
@@ -87,6 +88,7 @@ func DestinationWithMiddleware(d Destination) Destination {
 	}
 	cfgVal = cfgVal.Elem()
 
+	// Collect all middlewares from the config and wrap the destination with them
 	var mw []DestinationMiddleware
 	for i := range cfgVal.NumField() {
 		field := cfgVal.Field(i)
@@ -98,6 +100,7 @@ func DestinationWithMiddleware(d Destination) Destination {
 		}
 		if field.Type().Implements(destinationMiddlewareType) {
 			// This is a middleware config, store it.
+			//nolint:forcetypeassert // type checked above with field.Type().Implements()
 			mw = append(mw, field.Interface().(DestinationMiddleware))
 		}
 	}
@@ -188,7 +191,7 @@ func (*destinationWithBatch) getBatchConfig(ctx context.Context) DestinationWith
 type DestinationWithRateLimit struct {
 	UnimplementedDestinationConfig
 
-	// Maximum umber of records written per second (0 means no rate limit).
+	// Maximum number of records written per second (0 means no rate limit).
 	RatePerSecond float64 `json:"sdk.rate.perSecond" default:"0" validate:"gt=-1"`
 	// Allow bursts of at most X records (0 or less means that bursts are not
 	// limited). Only takes effect if a rate limit per second is set. Note that
