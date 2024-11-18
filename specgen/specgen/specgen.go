@@ -105,7 +105,7 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 	}
 
 	// Merge the new map into the existing map, preserving existing fields
-	connectorUnknownFields, _ := unknownFields["connector"].(map[string]any)
+	connectorUnknownFields, _ := unknownFields["specification"].(map[string]any)
 	connTyp := reflect.TypeFor[v1.ConnectorSpecification]()
 	for i := range connTyp.NumField() {
 		f := connTyp.Field(i)
@@ -114,7 +114,7 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 	}
 
 	delete(unknownFields, "version")
-	delete(unknownFields, "connector")
+	delete(unknownFields, "specification")
 
 	out.UnknownFields = unknownFields
 	out.Specification.UnknownFields = connectorUnknownFields

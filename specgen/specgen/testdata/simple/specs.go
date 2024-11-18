@@ -18,20 +18,9 @@ import (
 	sdk "github.com/conduitio/conduit-connector-sdk"
 )
 
-// GlobalConfig is a reusable config struct used in the source and destination
-// config.
-type GlobalConfig struct {
-	// MyGlobalString is a required field in the global config with the name
-	// "foo" and default value "bar".
-	MyGlobalString string `json:"foo" default:"bar" validate:"required"`
-}
-
 type SourceConfig struct {
 	sdk.UnimplementedSourceConfig
 
-	// GlobalConfig parameters should be nested under "global". This comment
-	// should be ignored.
-	Global GlobalConfig `json:"global"`
 	/*
 		MyInt has a block comment.
 		And it spans multiple lines.
