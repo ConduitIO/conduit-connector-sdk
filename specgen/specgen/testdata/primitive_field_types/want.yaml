@@ -58,9 +58,9 @@ specification:
         default: ""
         validations:
           - type: less-than
-            value: "100.000000"
+            value: "100"
           - type: greater-than
-            value: "0.000000"
+            value: "0"
       - name: myInt16
         description: ""
         type: int

@@ -18,14 +18,14 @@ specification:
         default: "0"
         validations:
           - type: greater-than
-            value: "-1.000000"
+            value: "-1"
       - name: sdk.batch.size
         description: Maximum size of batch before it gets read from the source.
         type: int
         default: "0"
         validations:
           - type: greater-than
-            value: "-1.000000"
+            value: "-1"
       - name: sdk.schema.context.enabled
         description: |-
           Specifies whether to use a schema context name. If set to false, no schema context name will

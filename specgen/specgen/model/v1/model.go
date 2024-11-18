@@ -300,12 +300,12 @@ func (v Validation) FromConfig(validation config.Validation) Validation {
 	case config.ValidationGreaterThan:
 		return Validation{
 			Type:  config.ValidationTypeGreaterThan.String(),
-			Value: fmt.Sprintf("%f", val.V),
+			Value: fmt.Sprintf("%g", val.V),
 		}
 	case config.ValidationLessThan:
 		return Validation{
 			Type:  config.ValidationTypeLessThan.String(),
-			Value: fmt.Sprintf("%f", val.V),
+			Value: fmt.Sprintf("%g", val.V),
 		}
 	case config.ValidationInclusion:
 		return Validation{
