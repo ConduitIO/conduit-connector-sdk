@@ -96,7 +96,7 @@ func TestTraverse(t *testing.T) {
 					},
 				}
 			},
-			wantPaths: []string{"barMap"},
+			wantPaths: []string{"bar"},
 		},
 		{
 			name: "struct with map field, value is a struct",

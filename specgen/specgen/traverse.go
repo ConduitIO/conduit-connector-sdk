@@ -40,7 +40,7 @@ func traverseFieldsInternal(v reflect.Value, parentPath string, hook fieldHook) 
 	//nolint:exhaustive // we only need to traverse fields structs and map key-value pairs
 	switch v.Kind() {
 	case reflect.Map:
-		traverseMapFields(v, parentPath, hook)
+		traverseMapWithStructFields(v, parentPath, hook)
 	case reflect.Struct:
 		traverseStructFields(v, parentPath, hook)
 	}
@@ -96,9 +96,9 @@ func traverseStructFields(v reflect.Value, parentPath string, hook fieldHook) {
 			finalType = finalType.Elem()
 		}
 
-		// Handle maps specially
-		if finalType.Kind() == reflect.Map {
-			traverseMapFields(fieldValue, fullPath, hook)
+		// Handle maps with struct values specially
+		if finalType.Kind() == reflect.Map && fieldValue.Type().Elem().Kind() == reflect.Struct {
+			traverseMapWithStructFields(fieldValue, fullPath, hook)
 			continue
 		}
 
@@ -120,7 +120,7 @@ func traverseStructFields(v reflect.Value, parentPath string, hook fieldHook) {
 	}
 }
 
-func traverseMapFields(v reflect.Value, parentPath string, hook fieldHook) {
+func traverseMapWithStructFields(v reflect.Value, parentPath string, hook fieldHook) {
 	// For maps, we're interested in the type of the values
 	valueType := v.Type().Elem()
 
