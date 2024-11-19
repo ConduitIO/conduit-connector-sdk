@@ -30,12 +30,7 @@ type SourceConfig struct {
 }
 
 var Connector = sdk.Connector{
-	NewSpecification: func() sdk.Specification {
-		return sdk.Specification{
-			Name:    "name taken from code",
-			Summary: "summary taken from code",
-		}
-	},
+	NewSpecification: nil,
 	NewSource: func() sdk.Source {
 		return &Source{}
 	},

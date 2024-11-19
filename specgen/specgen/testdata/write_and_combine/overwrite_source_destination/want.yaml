@@ -1,8 +1,8 @@
 version: "1.0"
 specification:
-  name: name taken from code
-  summary: summary taken from code
-  description: description taken from yaml
+  name: test connector name
+  summary: test connector summary
+  description: test connector description
   version: v12.34.56
   author: Acme
   source:
