@@ -82,45 +82,51 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 		return fmt.Errorf("failed to read existing file: %w", err)
 	}
 
-	out := struct {
+	type specWithUnknowns struct {
 		Version       string `yaml:"version"`
 		Specification struct {
 			v1.ConnectorSpecification `yaml:",inline"`
 			UnknownFields             map[string]any `yaml:",inline"`
 		} `yaml:"specification"`
 		UnknownFields map[string]any `yaml:",inline"`
-	}{}
+	}
 
-	err = yaml.Unmarshal(yamlBytes, &out)
+	generatedYAML := specWithUnknowns{}
+	err = yaml.Unmarshal(yamlBytes, &generatedYAML)
 	if err != nil {
 		// This shouldn't happen, since we produced the YAML in this program.
-		return fmt.Errorf("failed to unmarshal specifications YAML: %w", err)
+		return fmt.Errorf("failed to unmarshal generated specifications YAML: %w", err)
 	}
 
-	var unknownFields map[string]any
+	existingSpecs := specWithUnknowns{}
 	// Unmarshal the existing YAML file and check for unknown fields.
-	if err := yaml.Unmarshal(existingRaw, &unknownFields); err != nil {
+	err = yaml.Unmarshal(existingRaw, &existingSpecs)
+	if err != nil {
 		// This shouldn't happen, since we produced the YAML in this program.
-		return fmt.Errorf("failed to unmarshal specifications YAML: %w", err)
+		return fmt.Errorf("failed to unmarshal existing specifications YAML: %w", err)
 	}
 
-	// Merge the new map into the existing map, preserving existing fields
-	connectorUnknownFields, _ := unknownFields["specification"].(map[string]any)
-	connTyp := reflect.TypeFor[v1.ConnectorSpecification]()
-	for i := range connTyp.NumField() {
-		f := connTyp.Field(i)
-		fieldName := getYAMLFieldName(f)
-		delete(connectorUnknownFields, fieldName)
+	existingSpecs.Version = generatedYAML.Version
+	existingSpecs.Specification.Source = generatedYAML.Specification.Source
+	existingSpecs.Specification.Destination = generatedYAML.Specification.Destination
+	if existingSpecs.Specification.Name == "" {
+		existingSpecs.Specification.Name = generatedYAML.Specification.Name
 	}
-
-	delete(unknownFields, "version")
-	delete(unknownFields, "specification")
-
-	out.UnknownFields = unknownFields
-	out.Specification.UnknownFields = connectorUnknownFields
+	if existingSpecs.Specification.Summary == "" {
+		existingSpecs.Specification.Summary = generatedYAML.Specification.Summary
+	}
+	if existingSpecs.Specification.Description == "" {
+		existingSpecs.Specification.Description = generatedYAML.Specification.Description
+	}
+	if existingSpecs.Specification.Version == "" {
+		existingSpecs.Specification.Version = generatedYAML.Specification.Version
+	}
+	if existingSpecs.Specification.Author == "" {
+		existingSpecs.Specification.Author = generatedYAML.Specification.Author
+	}
 
 	// Marshal the merged map back to YAML bytes
-	mergedYAML, err := yamlMarshal(out)
+	mergedYAML, err := yamlMarshal(existingSpecs)
 	if err != nil {
 		return fmt.Errorf("failed to marshal merged YAML: %w", err)
 	}
@@ -131,14 +137,6 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 	}
 
 	return nil
-}
-
-func getYAMLFieldName(field reflect.StructField) string {
-	tag := field.Tag.Get("yaml")
-	if tag == "" {
-		tag = field.Tag.Get("json")
-	}
-	return strings.Split(tag, ",")[0]
 }
 
 func yamlMarshal(obj any) ([]byte, error) {
