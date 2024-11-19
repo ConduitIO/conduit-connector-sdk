@@ -1,42 +1,8 @@
-module github.com/conduitio/conduit-connector-sdk/specgen/specgen/testdata
+module example.com/simple
 
 go 1.23.2
 
-// todo try refactoring
-replace (
-	example.com/comments => ./comments
-	example.com/custom_embedded_struct => ./custom_embedded_struct
-	example.com/custom_middleware_config => ./custom_middleware_config
-	example.com/defaults => ./defaults
-	example.com/field_names => ./field_names
-	example.com/nesting => ./nesting
-	example.com/overwrite_source_destination => ./write_and_combine/overwrite_source_destination
-	example.com/partial_specification => ./write_and_combine/partial_specification
-	example.com/primitive_field_types => ./primitive_field_types
-	example.com/simple => ./write_and_combine/simple
-	example.com/tags => ./tags
-	example.com/type_aliases => ./type_aliases
-
-	github.com/conduitio/conduit-connector-sdk => ../../../
-)
-
-require (
-	example.com/comments v0.0.0-00010101000000-000000000000
-	example.com/custom_embedded_struct v0.0.0-00010101000000-000000000000
-	example.com/custom_middleware_config v0.0.0-00010101000000-000000000000
-	example.com/defaults v0.0.0-00010101000000-000000000000
-	example.com/field_names v0.0.0-00010101000000-000000000000
-	example.com/nesting v0.0.0-00010101000000-000000000000
-	example.com/overwrite_source_destination v0.0.0-00010101000000-000000000000
-	example.com/partial_specification v0.0.0-00010101000000-000000000000
-	example.com/primitive_field_types v0.0.0-00010101000000-000000000000
-	example.com/simple v0.0.0-00010101000000-000000000000
-	example.com/tags v0.0.0-00010101000000-000000000000
-	example.com/type_aliases v0.0.0-00010101000000-000000000000
-	github.com/conduitio/conduit-connector-sdk v0.0.0
-	github.com/google/go-cmp v0.6.0
-	github.com/matryer/is v1.4.1
-)
+require github.com/conduitio/conduit-connector-sdk v0.0.0
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.2.1 // indirect
@@ -114,6 +80,7 @@ require (
 	github.com/golangci/plugin-module-register v0.1.1 // indirect
 	github.com/golangci/revgrep v0.5.3 // indirect
 	github.com/golangci/unconvert v0.0.0-20240309020433-c5143eacb3ed // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gordonklaus/ineffassign v0.1.0 // indirect
 	github.com/gostaticanalysis/analysisutil v0.7.1 // indirect
@@ -257,3 +224,5 @@ require (
 	mvdan.cc/gofumpt v0.7.0 // indirect
 	mvdan.cc/unparam v0.0.0-20240528143540-8a5130ca722f // indirect
 )
+
+replace github.com/conduitio/conduit-connector-sdk => ../../../../../

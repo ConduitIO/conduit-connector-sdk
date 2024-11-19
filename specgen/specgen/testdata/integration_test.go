@@ -25,6 +25,8 @@ import (
 	"example.com/defaults"
 	"example.com/field_names"
 	"example.com/nesting"
+	"example.com/overwrite_source_destination"
+	"example.com/partial_specification"
 	"example.com/primitive_field_types"
 	"example.com/simple"
 	"example.com/tags"
@@ -94,60 +96,56 @@ func TestParseSpecification(t *testing.T) {
 	}
 }
 
-func TestWriteAndCombine_Simple(t *testing.T) {
-	is := is.New(t)
-	existingSpecsPath := "./write_and_combine/simple/existing_specs.yaml"
-	oldExisting, err := os.ReadFile(existingSpecsPath)
-	is.NoErr(err)
-	t.Cleanup(func() {
-		err := os.WriteFile(existingSpecsPath, oldExisting, 0o644)
-		if err != nil {
-			t.Logf("failed reverting changes to existing specs file: %v", err)
-		}
-	})
+func TestWriteAndCombine(t *testing.T) {
+	testCases := []struct {
+		haveConnector     sdk.Connector
+		existingSpecsPath string
+		wantPath          string
+	}{
+		{
+			haveConnector:     simple.Connector,
+			existingSpecsPath: "./write_and_combine/simple/existing_specs.yaml",
+			wantPath:          "./write_and_combine/simple/want.yaml",
+		},
+		{
+			haveConnector:     overwrite_source_destination.Connector,
+			existingSpecsPath: "./write_and_combine/overwrite_source_destination/existing_specs.yaml",
+			wantPath:          "./write_and_combine/overwrite_source_destination/want.yaml",
+		},
+		{
+			haveConnector:     partial_specification.Connector,
+			existingSpecsPath: "./write_and_combine/partial_specification/existing_specs.yaml",
+			wantPath:          "./write_and_combine/partial_specification/want.yaml",
+		},
+	}
 
-	specs, err := specgen.ExtractSpecification(context.Background(), simple.Connector)
-	is.NoErr(err)
-	specBytes, err := specgen.SpecificationToYaml(specs)
-	is.NoErr(err)
+	for _, tc := range testCases {
+		t.Run(tc.wantPath, func(t *testing.T) {
+			is := is.New(t)
+			oldExisting, err := os.ReadFile(tc.existingSpecsPath)
+			is.NoErr(err)
+			t.Cleanup(func() {
+				err := os.WriteFile(tc.existingSpecsPath, oldExisting, 0o644)
+				if err != nil {
+					t.Logf("failed reverting changes to existing specs file: %v", err)
+				}
+			})
 
-	err = specgen.WriteAndCombine(specBytes, existingSpecsPath)
-	is.NoErr(err)
+			specs, err := specgen.ExtractSpecification(context.Background(), tc.haveConnector)
+			is.NoErr(err)
+			specBytes, err := specgen.SpecificationToYaml(specs)
+			is.NoErr(err)
 
-	got, err := os.ReadFile(existingSpecsPath)
-	is.NoErr(err)
+			err = specgen.WriteAndCombine(specBytes, tc.existingSpecsPath)
+			is.NoErr(err)
 
-	want, err := os.ReadFile("./write_and_combine/simple/want.yaml")
-	is.NoErr(err)
+			got, err := os.ReadFile(tc.existingSpecsPath)
+			is.NoErr(err)
 
-	is.Equal("", cmp.Diff(got, want))
-}
+			want, err := os.ReadFile(tc.wantPath)
+			is.NoErr(err)
 
-func TestWriteAndCombine_OverwriteSourceDestination(t *testing.T) {
-	is := is.New(t)
-	existingSpecsPath := "./write_and_combine/overwrite_source_destination/existing_specs.yaml"
-	oldExisting, err := os.ReadFile(existingSpecsPath)
-	is.NoErr(err)
-	t.Cleanup(func() {
-		err := os.WriteFile(existingSpecsPath, oldExisting, 0o644)
-		if err != nil {
-			t.Logf("failed reverting changes to existing specs file: %v", err)
-		}
-	})
-
-	specs, err := specgen.ExtractSpecification(context.Background(), simple.Connector)
-	is.NoErr(err)
-	specBytes, err := specgen.SpecificationToYaml(specs)
-	is.NoErr(err)
-
-	err = specgen.WriteAndCombine(specBytes, existingSpecsPath)
-	is.NoErr(err)
-
-	got, err := os.ReadFile(existingSpecsPath)
-	is.NoErr(err)
-
-	want, err := os.ReadFile("./write_and_combine/overwrite_source_destination/want.yaml")
-	is.NoErr(err)
-
-	is.Equal("", cmp.Diff(got, want))
+			is.Equal("", cmp.Diff(got, want))
+		})
+	}
 }

@@ -1,4 +1,4 @@
-module example.com/simple
+module example.com/overwrite_source_destination
 
 go 1.23.2
 

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package overwrite_source_destination
+package partial_specification
 
 import (
 	sdk "github.com/conduitio/conduit-connector-sdk"
@@ -30,12 +30,7 @@ type SourceConfig struct {
 }
 
 var Connector = sdk.Connector{
-	NewSpecification: func() sdk.Specification {
-		return sdk.Specification{
-			Name:    "name taken from code",
-			Summary: "summary taken from code",
-		}
-	},
+	NewSpecification: nil,
 	NewSource: func() sdk.Source {
 		return &Source{}
 	},
