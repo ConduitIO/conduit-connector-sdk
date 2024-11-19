@@ -4,7 +4,8 @@ test:
 	echo
 	echo "Running integration tests..."
 	echo
-	cd specgen/specgen/testdata/ && go test $(GOTEST_FLAGS) -race ./...
+	cd specgen/specgen/tests/parse_specs/ && go test $(GOTEST_FLAGS) -race ./...
+	cd specgen/specgen/tests/write_and_combine/ && go test $(GOTEST_FLAGS) -race ./...
 
 
 .PHONY: fmt
