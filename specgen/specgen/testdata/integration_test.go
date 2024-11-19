@@ -96,7 +96,7 @@ func TestParseSpecification(t *testing.T) {
 
 func TestWriteAndCombine(t *testing.T) {
 	is := is.New(t)
-	existingSpecsPath := "./simple/existing_specs.yaml"
+	existingSpecsPath := "./write_and_combine/simple/existing_specs.yaml"
 	oldExisting, err := os.ReadFile(existingSpecsPath)
 	is.NoErr(err)
 	t.Cleanup(func() {
@@ -117,7 +117,7 @@ func TestWriteAndCombine(t *testing.T) {
 	got, err := os.ReadFile(existingSpecsPath)
 	is.NoErr(err)
 
-	want, err := os.ReadFile("./simple/want.yaml")
+	want, err := os.ReadFile("./write_and_combine/simple/want.yaml")
 	is.NoErr(err)
 
 	is.Equal("", cmp.Diff(got, want))
