@@ -14,10 +14,6 @@
 
 package sdk
 
-//nolint:dupword // the tests are commented out while specgen is WIP
-// todo acceptance tests will be re-enabled in https://github.com/ConduitIO/conduit-connector-sdk/issues/210
-/*
-
 import (
 	"bytes"
 	"context"
@@ -377,7 +373,7 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []
 	// writing something to the destination should result in the same record
 	// being produced by the source
 	dest := d.Connector().NewDestination()
-	err := dest.Configure(ctx, d.DestinationConfig(t))
+	err := configureDestination(ctx, dest, d.DestinationConfig(t), d.Connector().NewSpecification().DestinationParams)
 	is.NoErr(err)
 
 	err = dest.Open(ctx)
@@ -416,7 +412,7 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	// writing something to the destination should result in the same record
 	// being produced by the source
 	src := d.Connector().NewSource()
-	err := src.Configure(ctx, d.SourceConfig(t))
+	err := configureSource(ctx, src, d.SourceConfig(t), d.Connector().NewSpecification().SourceParams)
 	is.NoErr(err)
 
 	err = src.Open(ctx, nil)
@@ -551,8 +547,7 @@ func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
 	is := is.New(t)
 	defer a.verifyGoleaks(t)
 
-	source := a.driver.Connector().NewSource()
-	params := source.Parameters()
+	params := a.driver.Connector().NewSpecification().SourceParams
 
 	// we enforce that there is at least 1 parameter, any real source will
 	// require some configuration
@@ -573,7 +568,7 @@ func (a acceptanceTest) TestSource_Configure_Success(t *testing.T) {
 	defer a.verifyGoleaks(t)
 
 	source := a.driver.Connector().NewSource()
-	err := source.Configure(ctx, a.driver.SourceConfig(t))
+	err := a.configureSource(ctx, t, source)
 	is.NoErr(err)
 
 	// calling Teardown after Configure is valid and happens when connector is created
@@ -586,10 +581,10 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 	is := is.New(t)
 	ctx := a.context(t)
 
-	srcSpec := a.driver.Connector().NewSource()
+	srcParams := a.driver.Connector().NewSpecification().SourceParams
 	origCfg := a.driver.SourceConfig(t)
 
-	for name, p := range srcSpec.Parameters() {
+	for name, p := range srcParams {
 		isRequired := false
 		for _, v := range p.Validations {
 			if _, ok := v.(config.ValidationRequired); ok {
@@ -606,7 +601,7 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 				is.Equal(len(haveCfg)+1, len(origCfg)) // source config does not contain required parameter, please check the test setup
 
 				source := a.driver.Connector().NewSource()
-				err := source.Configure(ctx, haveCfg)
+				err := configureSource(ctx, source, haveCfg, a.driver.Connector().NewSpecification().SourceParams)
 				is.True(err != nil)
 
 				err = source.Teardown(ctx)
@@ -785,8 +780,7 @@ func (a acceptanceTest) TestDestination_Parameters_Success(t *testing.T) {
 	is := is.New(t)
 	defer a.verifyGoleaks(t)
 
-	dest := a.driver.Connector().NewDestination()
-	params := dest.Parameters()
+	params := a.driver.Connector().NewSpecification().DestinationParams
 
 	// we enforce that there is at least 1 parameter, any real destination will
 	// require some configuration
@@ -807,7 +801,7 @@ func (a acceptanceTest) TestDestination_Configure_Success(t *testing.T) {
 	defer a.verifyGoleaks(t)
 
 	dest := a.driver.Connector().NewDestination()
-	err := dest.Configure(ctx, a.driver.DestinationConfig(t))
+	err := a.configureDestination(ctx, t, dest)
 	is.NoErr(err)
 
 	// calling Teardown after Configure is valid and happens when connector is created
@@ -820,10 +814,10 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 	is := is.New(t)
 	ctx := a.context(t)
 
-	destSpec := a.driver.Connector().NewDestination()
+	dstParams := a.driver.Connector().NewSpecification().DestinationParams
 	origCfg := a.driver.DestinationConfig(t)
 
-	for name, p := range destSpec.Parameters() {
+	for name, p := range dstParams {
 		isRequired := false
 		for _, v := range p.Validations {
 			if _, ok := v.(config.ValidationRequired); ok {
@@ -840,7 +834,12 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 				is.Equal(len(origCfg), len(haveCfg)+1) // destination config does not contain required parameter, please check the test setup
 
 				dest := a.driver.Connector().NewDestination()
-				err := dest.Configure(ctx, haveCfg)
+				err := configureDestination(
+					ctx,
+					dest,
+					haveCfg,
+					a.driver.Connector().NewSpecification().DestinationParams,
+				)
 				is.True(err != nil) // expected error if required param is removed
 
 				err = dest.Teardown(ctx)
@@ -909,7 +908,7 @@ func (a acceptanceTest) openSource(ctx context.Context, t *testing.T, pos opencd
 	is := is.New(t)
 
 	source = a.driver.Connector().NewSource()
-	err := source.Configure(ctx, a.driver.SourceConfig(t))
+	err := a.configureSource(ctx, t, source)
 	is.NoErr(err)
 
 	openCtx, cancelOpenCtx := context.WithCancel(ctx)
@@ -933,7 +932,7 @@ func (a acceptanceTest) openDestination(ctx context.Context, t *testing.T) (dest
 	is := is.New(t)
 
 	dest = a.driver.Connector().NewDestination()
-	err := dest.Configure(ctx, a.driver.DestinationConfig(t))
+	err := a.configureDestination(ctx, t, dest)
 	is.NoErr(err)
 
 	openCtx, cancelOpenCtx := context.WithCancel(ctx)
@@ -1124,5 +1123,60 @@ func (a acceptanceTest) context(t *testing.T) context.Context {
 	return ctx
 }
 
+func (a acceptanceTest) configureSource(ctx context.Context, t *testing.T, src Source) error {
+	return configureSource(
+		ctx,
+		src,
+		a.driver.SourceConfig(t),
+		a.driver.Connector().NewSpecification().SourceParams,
+	)
+}
 
-*/
+func (a acceptanceTest) configureDestination(ctx context.Context, t *testing.T, dest Destination) error {
+	return configureDestination(
+		ctx,
+		dest,
+		a.driver.DestinationConfig(t),
+		a.driver.Connector().NewSpecification().DestinationParams,
+	)
+}
+
+func configureSource(ctx context.Context, src Source, cfgMap config.Config, params config.Parameters) error {
+	cfg := src.Config()
+	if cfg == nil {
+		// Connector without a config. Nothing to do.
+		return nil
+	}
+
+	err := Util.ParseConfig(ctx, cfgMap, cfg, params)
+	if err != nil {
+		return fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	err = cfg.Validate(ctx)
+	if err != nil {
+		return fmt.Errorf("configuration invalid: %w", err)
+	}
+
+	return nil
+}
+
+func configureDestination(ctx context.Context, dest Destination, cfgMap config.Config, params config.Parameters) error {
+	cfg := dest.Config()
+	if cfg == nil {
+		// Connector without a config. Nothing to do.
+		return nil
+	}
+
+	err := Util.ParseConfig(ctx, cfgMap, cfg, params)
+	if err != nil {
+		return fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	err = cfg.Validate(ctx)
+	if err != nil {
+		return fmt.Errorf("configuration invalid: %w", err)
+	}
+
+	return nil
+}
