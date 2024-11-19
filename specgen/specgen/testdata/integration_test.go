@@ -94,7 +94,7 @@ func TestParseSpecification(t *testing.T) {
 	}
 }
 
-func TestWriteAndCombine(t *testing.T) {
+func TestWriteAndCombine_Simple(t *testing.T) {
 	is := is.New(t)
 	existingSpecsPath := "./write_and_combine/simple/existing_specs.yaml"
 	oldExisting, err := os.ReadFile(existingSpecsPath)
@@ -118,6 +118,35 @@ func TestWriteAndCombine(t *testing.T) {
 	is.NoErr(err)
 
 	want, err := os.ReadFile("./write_and_combine/simple/want.yaml")
+	is.NoErr(err)
+
+	is.Equal("", cmp.Diff(got, want))
+}
+
+func TestWriteAndCombine_OverwriteSourceDestination(t *testing.T) {
+	is := is.New(t)
+	existingSpecsPath := "./write_and_combine/overwrite_source_destination/existing_specs.yaml"
+	oldExisting, err := os.ReadFile(existingSpecsPath)
+	is.NoErr(err)
+	t.Cleanup(func() {
+		err := os.WriteFile(existingSpecsPath, oldExisting, 0o644)
+		if err != nil {
+			t.Logf("failed reverting changes to existing specs file: %v", err)
+		}
+	})
+
+	specs, err := specgen.ExtractSpecification(context.Background(), simple.Connector)
+	is.NoErr(err)
+	specBytes, err := specgen.SpecificationToYaml(specs)
+	is.NoErr(err)
+
+	err = specgen.WriteAndCombine(specBytes, existingSpecsPath)
+	is.NoErr(err)
+
+	got, err := os.ReadFile(existingSpecsPath)
+	is.NoErr(err)
+
+	want, err := os.ReadFile("./write_and_combine/overwrite_source_destination/want.yaml")
 	is.NoErr(err)
 
 	is.Equal("", cmp.Diff(got, want))
