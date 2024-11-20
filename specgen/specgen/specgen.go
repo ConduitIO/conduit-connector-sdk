@@ -82,6 +82,7 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 		return fmt.Errorf("failed to read existing file: %w", err)
 	}
 
+	// specWithUnknowns is a connector specification that can also hold unknown fields
 	type specWithUnknowns struct {
 		Version       string `yaml:"version"`
 		Specification struct {
@@ -90,6 +91,10 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 		} `yaml:"specification"`
 		UnknownFields map[string]any `yaml:",inline"`
 	}
+
+	// Below we take the generated spec (generatedYAML)
+	// and the existing specs (existingSpecs, taken from an existing connector.yaml file)
+	// and merge them.
 
 	generatedYAML := specWithUnknowns{}
 	err = yaml.Unmarshal(yamlBytes, &generatedYAML)
