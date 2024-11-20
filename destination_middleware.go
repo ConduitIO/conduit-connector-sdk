@@ -60,7 +60,9 @@ type DefaultDestinationMiddleware struct {
 
 // Validate validates all the [Validatable] structs in the middleware.
 func (c *DefaultDestinationMiddleware) Validate(ctx context.Context) error {
-	val := reflect.ValueOf(c)
+	// c is a pointer, we need the value to which the pointer points to
+	// (so we can enumerate the fields below)
+	val := reflect.ValueOf(c).Elem()
 	valType := val.Type()
 	validatableInterface := reflect.TypeOf((*Validatable)(nil)).Elem()
 
