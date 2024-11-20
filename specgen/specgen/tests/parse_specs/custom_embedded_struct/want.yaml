@@ -78,7 +78,7 @@ specification:
         validations: []
       - name: sdk.schema.extract.type
         description: The type of the payload schema.
-        type: int
+        type: string
         default: avro
         validations:
           - type: inclusion
