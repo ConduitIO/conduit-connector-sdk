@@ -137,7 +137,7 @@ type SourceWithSchemaExtraction struct {
 // SchemaType returns the typed schema type (and not the string value as it's
 // in the configuration itself).
 // todo: use https://github.com/ConduitIO/conduit-commons/issues/142 to parse
-// the string value into schema.Type directly
+// the string value into schema.Type directly.
 func (c *SourceWithSchemaExtraction) SchemaType() schema.Type {
 	t := lang.Ptr(schema.Type(0))
 	err := t.UnmarshalText([]byte(c.SchemaTypeStr))
