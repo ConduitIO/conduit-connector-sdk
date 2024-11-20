@@ -555,7 +555,7 @@ func (a acceptanceTest) TestSource_Parameters_Success(t *testing.T) {
 	is.True(params != nil)   // Source.Parameters() shouldn't return nil
 	is.True(len(params) > 0) // Source.Parameters() shouldn't return empty map
 
-	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.]+$`)
+	paramNameRegex := regexp.MustCompile(`^[a-zA-Z0-9.*]+$`)
 	for name, p := range params {
 		is.True(paramNameRegex.MatchString(name)) // parameter contains invalid characters
 		is.True(p.Description != "")              // parameter description is empty
