@@ -273,7 +273,7 @@ type DestinationWithRecordFormat struct {
 
 	// The format of the output record. See the Conduit documentation for a full
 	// list of supported formats (https://conduit.io/docs/using/connectors/configuration-parameters/output-format).
-	RecordFormat *string `json:"sdk.record.format" default:"" validate:"required"`
+	RecordFormat *string `json:"sdk.record.format" default:"opencdc/json"`
 	// Options to configure the chosen output record format. Options are normally
 	// key=value pairs separated with comma (e.g. opt1=val2,opt2=val2), except
 	// for the `template` record format, where options are a Go template.

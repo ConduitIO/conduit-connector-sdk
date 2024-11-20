@@ -55,7 +55,9 @@ type DefaultSourceMiddleware struct {
 
 // Validate validates all the [Validatable] structs in the middleware.
 func (c *DefaultSourceMiddleware) Validate(ctx context.Context) error {
-	val := reflect.ValueOf(c)
+	// c is a pointer, we need the value to which the pointer points to
+	// (so we can enumerate the fields below)
+	val := reflect.ValueOf(c).Elem()
 	valType := val.Type()
 	validatableInterface := reflect.TypeOf((*Validatable)(nil)).Elem()
 
@@ -115,8 +117,9 @@ func SourceWithMiddleware(s Source) Source {
 // for each record produced by the source. The schema is registered with the
 // schema service and the schema subject is attached to the record metadata.
 type SourceWithSchemaExtraction struct {
+	SchemaType schema.Type `json:"-"`
 	// The type of the payload schema.
-	SchemaType schema.Type `json:"sdk.schema.extract.type" validate:"inclusion=avro" default:"avro"`
+	SchemaTypeStr string `json:"sdk.schema.extract.type" validate:"inclusion=avro" default:"avro"`
 	// Whether to extract and encode the record payload with a schema.
 	PayloadEnabled *bool `json:"sdk.schema.extract.payload.enabled" default:"true"`
 	// The subject of the payload schema. If the record metadata contains the
