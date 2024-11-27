@@ -7,6 +7,15 @@ specification:
   author: ""
   source:
     parameters:
+      - name: foo
+        description: |-
+          MyGlobalString is a required field in the global config with the name
+          "foo" and default value "bar".
+        type: string
+        default: bar
+        validations:
+          - type: required
+            value: ""
       - name: myString
         description: MyString my string description
         type: string
@@ -22,7 +31,7 @@ specification:
       - name: sdk.batch.size
         description: Maximum size of batch before it gets read from the source.
         type: int
-        default: "1234"
+        default: "0"
         validations:
           - type: greater-than
             value: "-1"
@@ -44,7 +53,7 @@ specification:
       - name: sdk.schema.extract.key.enabled
         description: Whether to extract and encode the record key with a schema.
         type: bool
-        default: "false"
+        default: "true"
         validations: []
       - name: sdk.schema.extract.key.subject
         description: |-
@@ -69,7 +78,7 @@ specification:
         validations: []
       - name: sdk.schema.extract.type
         description: The type of the payload schema.
-        type: int
+        type: string
         default: avro
         validations:
           - type: inclusion

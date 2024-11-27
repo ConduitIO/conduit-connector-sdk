@@ -60,7 +60,9 @@ type DefaultDestinationMiddleware struct {
 
 // Validate validates all the [Validatable] structs in the middleware.
 func (c *DefaultDestinationMiddleware) Validate(ctx context.Context) error {
-	val := reflect.ValueOf(c)
+	// c is a pointer, we need the value to which the pointer points to
+	// (so we can enumerate the fields below)
+	val := reflect.ValueOf(c).Elem()
 	valType := val.Type()
 	validatableInterface := reflect.TypeOf((*Validatable)(nil)).Elem()
 
@@ -273,7 +275,7 @@ type DestinationWithRecordFormat struct {
 
 	// The format of the output record. See the Conduit documentation for a full
 	// list of supported formats (https://conduit.io/docs/using/connectors/configuration-parameters/output-format).
-	RecordFormat *string `json:"sdk.record.format" default:"" validate:"required"`
+	RecordFormat *string `json:"sdk.record.format" default:"opencdc/json"`
 	// Options to configure the chosen output record format. Options are normally
 	// key=value pairs separated with comma (e.g. opt1=val2,opt2=val2), except
 	// for the `template` record format, where options are a Go template.

@@ -24,6 +24,7 @@ import (
 
 	"github.com/conduitio/conduit-commons/cchan"
 	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/conduit-connector-sdk/schema"
@@ -55,7 +56,9 @@ type DefaultSourceMiddleware struct {
 
 // Validate validates all the [Validatable] structs in the middleware.
 func (c *DefaultSourceMiddleware) Validate(ctx context.Context) error {
-	val := reflect.ValueOf(c)
+	// c is a pointer, we need the value to which the pointer points to
+	// (so we can enumerate the fields below)
+	val := reflect.ValueOf(c).Elem()
 	valType := val.Type()
 	validatableInterface := reflect.TypeOf((*Validatable)(nil)).Elem()
 
@@ -116,7 +119,7 @@ func SourceWithMiddleware(s Source) Source {
 // schema service and the schema subject is attached to the record metadata.
 type SourceWithSchemaExtraction struct {
 	// The type of the payload schema.
-	SchemaType schema.Type `json:"sdk.schema.extract.type" validate:"inclusion=avro" default:"avro"`
+	SchemaTypeStr string `json:"sdk.schema.extract.type" validate:"inclusion=avro" default:"avro"`
 	// Whether to extract and encode the record payload with a schema.
 	PayloadEnabled *bool `json:"sdk.schema.extract.payload.enabled" default:"true"`
 	// The subject of the payload schema. If the record metadata contains the
@@ -129,6 +132,20 @@ type SourceWithSchemaExtraction struct {
 	// "opencdc.collection" it is prepended to the subject name and separated
 	// with a dot.
 	KeySubject *string `json:"sdk.schema.extract.key.subject" default:"key"`
+}
+
+// SchemaType returns the typed schema type (and not the string value as it's
+// in the configuration itself).
+// todo: use https://github.com/ConduitIO/conduit-commons/issues/142 to parse
+// the string value into schema.Type directly.
+func (c *SourceWithSchemaExtraction) SchemaType() schema.Type {
+	t := lang.Ptr(schema.Type(0))
+	err := t.UnmarshalText([]byte(c.SchemaTypeStr))
+	if err != nil {
+		// shouldn't happen, because we have validations on SchemaTypeStr
+		panic(err)
+	}
+	return *t
 }
 
 // Wrap a Source into the middleware.
@@ -309,12 +326,12 @@ func (s *sourceWithSchemaExtraction) extractPayloadSchema(ctx context.Context, r
 }
 
 func (s *sourceWithSchemaExtraction) schemaForType(ctx context.Context, data any, subject string) (schema.Schema, error) {
-	srd, err := schema.KnownSerdeFactories[s.config.SchemaType].SerdeForType(data)
+	srd, err := schema.KnownSerdeFactories[s.config.SchemaType()].SerdeForType(data)
 	if err != nil {
 		return schema.Schema{}, fmt.Errorf("failed to create schema for value: %w", err)
 	}
 
-	sch, err := schema.Create(ctx, s.config.SchemaType, subject, []byte(srd.String()))
+	sch, err := schema.Create(ctx, s.config.SchemaType(), subject, []byte(srd.String()))
 	if err != nil {
 		return schema.Schema{}, fmt.Errorf("failed to create schema: %w", err)
 	}
