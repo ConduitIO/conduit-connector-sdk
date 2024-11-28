@@ -40,18 +40,18 @@ func TestDestinationWithBatch_Open(t *testing.T) {
 	dst := NewMockDestination(gomock.NewController(t))
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 
-	mw := DestinationWithBatch{
+	underTest := DestinationWithBatch{
 		BatchSize:  10,
 		BatchDelay: 123 * time.Second,
 	}
-	d := mw.Wrap(dst)
+	d := underTest.Wrap(dst)
 
 	ctx := (&destinationWithBatch{}).setBatchConfig(context.Background(), DestinationWithBatch{})
 	err := d.Open(ctx)
 	is.NoErr(err)
 
 	is.NoErr(err)
-	is.Equal(mw, (&destinationWithBatch{}).getBatchConfig(ctx))
+	is.Equal(underTest, (&destinationWithBatch{}).getBatchConfig(ctx))
 }
 
 // -- DestinationWithRateLimit -------------------------------------------------
