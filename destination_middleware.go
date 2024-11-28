@@ -430,8 +430,8 @@ type destinationWithSchemaExtraction struct {
 }
 
 func (d *destinationWithSchemaExtraction) Write(ctx context.Context, records []opencdc.Record) (int, error) {
-	if *d.config.KeyEnabled {
-		for i := range records {
+	for i := range records {
+		if *d.config.KeyEnabled {
 			if err := d.decodeKey(ctx, &records[i]); err != nil {
 				if len(records) > 0 {
 					err = fmt.Errorf("record %d: %w", i, err)
@@ -439,9 +439,8 @@ func (d *destinationWithSchemaExtraction) Write(ctx context.Context, records []o
 				return 0, err
 			}
 		}
-	}
-	if *d.config.PayloadEnabled {
-		for i := range records {
+
+		if *d.config.PayloadEnabled {
 			if err := d.decodePayload(ctx, &records[i]); err != nil {
 				if len(records) > 0 {
 					err = fmt.Errorf("record %d: %w", i, err)
