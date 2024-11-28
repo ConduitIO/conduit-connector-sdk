@@ -433,11 +433,7 @@ func TestSourceWithSchemaContext_Configure(t *testing.T) {
 
 func TestSourceWithEncoding_Read(t *testing.T) {
 	is := is.New(t)
-	ctrl := gomock.NewController(t)
-	src := NewMockSource(ctrl)
 	ctx := context.Background()
-
-	s := (&SourceWithEncoding{}).Wrap(src)
 
 	testDataStruct := opencdc.StructuredData{
 		"foo":   "bar",
@@ -459,113 +455,71 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 		inputRec opencdc.Record
 		wantRec  opencdc.Record
 	}{{
-		name: "no key, no payload",
-		inputRec: opencdc.Record{
-			Key: nil,
-			Payload: opencdc.Change{
-				Before: nil,
-				After:  nil,
-			},
-		},
-		wantRec: opencdc.Record{
-			Key: nil,
-			Payload: opencdc.Change{
-				Before: nil,
-				After:  nil,
-			},
-		},
+		name:     "no key, no payload",
+		inputRec: opencdc.Record{},
+		wantRec:  opencdc.Record{},
 	}, {
-		name: "raw key",
+		name: "raw key, no payload",
 		inputRec: opencdc.Record{
 			Key: opencdc.RawData("this should not be encoded"),
-			Payload: opencdc.Change{
-				Before: nil,
-				After:  nil,
-			},
 		},
 		wantRec: opencdc.Record{
 			Key: opencdc.RawData("this should not be encoded"),
-			Payload: opencdc.Change{
-				Before: nil,
-				After:  nil,
-			},
 		},
 	}, {
-		name: "structured key",
+		name: "structured key, no payload",
 		inputRec: opencdc.Record{
 			Key: testDataStruct.Clone(),
-			Payload: opencdc.Change{
-				Before: nil,
-				After:  nil,
-			},
 		},
 		wantRec: opencdc.Record{
 			Key: testDataRaw,
-			Payload: opencdc.Change{
-				Before: nil,
-				After:  nil,
-			},
 		},
 	}, {
-		name: "raw payload before",
+		name: "raw payload.before, no key, no payload.after",
 		inputRec: opencdc.Record{
-			Key: nil,
 			Payload: opencdc.Change{
 				Before: opencdc.RawData("this should not be encoded"),
-				After:  nil,
 			},
 		},
 		wantRec: opencdc.Record{
-			Key: nil,
 			Payload: opencdc.Change{
 				Before: opencdc.RawData("this should not be encoded"),
-				After:  nil,
 			},
 		},
 	}, {
-		name: "structured payload before",
+		name: "structured payload.before, no key, no payload.after",
 		inputRec: opencdc.Record{
-			Key: nil,
 			Payload: opencdc.Change{
 				Before: testDataStruct.Clone(),
 			},
 		},
 		wantRec: opencdc.Record{
-			Key: nil,
 			Payload: opencdc.Change{
 				Before: testDataRaw,
 			},
 		},
 	}, {
-		name: "raw payload after",
+		name: "raw payload.after, no key, no payload.before",
 		inputRec: opencdc.Record{
-			Key: nil,
 			Payload: opencdc.Change{
-				Before: nil,
-				After:  opencdc.RawData("this should not be encoded"),
+				After: opencdc.RawData("this should not be encoded"),
 			},
 		},
 		wantRec: opencdc.Record{
-			Key: nil,
 			Payload: opencdc.Change{
-				Before: nil,
-				After:  opencdc.RawData("this should not be encoded"),
+				After: opencdc.RawData("this should not be encoded"),
 			},
 		},
 	}, {
-		name: "structured payload after",
+		name: "structured payload after, no key, no payload.before",
 		inputRec: opencdc.Record{
-			Key: nil,
 			Payload: opencdc.Change{
-				Before: nil,
-				After:  testDataStruct.Clone(),
+				After: testDataStruct.Clone(),
 			},
 		},
 		wantRec: opencdc.Record{
-			Key: nil,
 			Payload: opencdc.Change{
-				Before: nil,
-				After:  testDataRaw,
+				After: testDataRaw,
 			},
 		},
 	}, {
@@ -601,35 +555,31 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 			},
 		},
 	}, {
-		name: "key raw payload structured",
+		name: "raw key, payload.after structured, no payload.before",
 		inputRec: opencdc.Record{
 			Key: opencdc.RawData("this should not be encoded"),
 			Payload: opencdc.Change{
-				Before: nil,
-				After:  testDataStruct.Clone(),
+				After: testDataStruct.Clone(),
 			},
 		},
 		wantRec: opencdc.Record{
 			Key: opencdc.RawData("this should not be encoded"),
 			Payload: opencdc.Change{
-				Before: nil,
-				After:  testDataRaw,
+				After: testDataRaw,
 			},
 		},
 	}, {
-		name: "key structured payload raw",
+		name: "structured key, raw payload.before, no payload.after",
 		inputRec: opencdc.Record{
 			Key: testDataStruct.Clone(),
 			Payload: opencdc.Change{
 				Before: opencdc.RawData("this should not be encoded"),
-				After:  nil,
 			},
 		},
 		wantRec: opencdc.Record{
 			Key: testDataRaw,
 			Payload: opencdc.Change{
 				Before: opencdc.RawData("this should not be encoded"),
-				After:  nil,
 			},
 		},
 	}, {
@@ -658,6 +608,11 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			src := NewMockSource(gomock.NewController(t))
+
+			underTest := (&SourceWithEncoding{}).Wrap(src)
+
 			tc.inputRec.Metadata = map[string]string{
 				opencdc.MetadataCollection:           "foo",
 				opencdc.MetadataKeySchemaSubject:     customTestSchema.Subject,
@@ -668,7 +623,7 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 
 			src.EXPECT().Read(ctx).Return(tc.inputRec, nil)
 
-			got, err := s.Read(ctx)
+			got, err := underTest.Read(ctx)
 			is.NoErr(err)
 
 			gotKey := got.Key
