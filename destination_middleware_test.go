@@ -34,7 +34,7 @@ import (
 
 // -- DestinationWithBatch -----------------------------------------------------
 
-func TestDestinationWithBatch_Configure(t *testing.T) {
+func TestDestinationWithBatch_Open(t *testing.T) {
 	is := is.New(t)
 
 	dst := NewMockDestination(gomock.NewController(t))
@@ -56,7 +56,7 @@ func TestDestinationWithBatch_Configure(t *testing.T) {
 
 // -- DestinationWithRateLimit -------------------------------------------------
 
-func TestDestinationWithRateLimit_Configure(t *testing.T) {
+func TestDestinationWithRateLimit_Open(t *testing.T) {
 	testCases := []struct {
 		name        string
 		middleware  DestinationWithRateLimit
@@ -199,7 +199,7 @@ func TestDestinationWithRateLimit_Write_CancelledContext(t *testing.T) {
 
 // -- DestinationWithRecordFormat ----------------------------------------------
 
-func TestDestinationWithRecordFormat_Configure(t *testing.T) {
+func TestDestinationWithRecordFormat_Open(t *testing.T) {
 	testCases := []struct {
 		name           string
 		middleware     DestinationWithRecordFormat
@@ -239,7 +239,7 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 
 // -- DestinationWithSchemaExtraction ------------------------------------------
 
-func TestDestinationWithSchemaExtraction_Configure(t *testing.T) {
+func TestDestinationWithSchemaExtraction_Open(t *testing.T) {
 	testCases := []struct {
 		name       string
 		middleware DestinationWithSchemaExtraction
