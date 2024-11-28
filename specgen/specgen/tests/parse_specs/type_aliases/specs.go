@@ -28,8 +28,10 @@ type SourceConfig struct {
 	CustomDurationTwoField CustomDuration2
 }
 
-type CustomDuration CustomDuration2
-type CustomDuration2 time.Duration
+type (
+	CustomDuration  CustomDuration2
+	CustomDuration2 time.Duration
+)
 
 var Connector = sdk.Connector{
 	NewSpecification: nil,

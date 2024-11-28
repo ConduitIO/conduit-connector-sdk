@@ -14,14 +14,29 @@
 
 package sdk
 
-/*
+import (
+	"context"
+	"errors"
+	"io"
+	"testing"
+	"time"
+
+	"github.com/conduitio/conduit-commons/cchan"
+	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/opencdc"
+	"github.com/conduitio/conduit-connector-protocol/pconnector"
+	"github.com/conduitio/conduit-connector-sdk/internal"
+	"github.com/matryer/is"
+	"github.com/rs/zerolog"
+	"go.uber.org/mock/gomock"
+)
 
 func TestSourcePluginAdapter_Start_OpenContext(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	var gotCtx context.Context
@@ -46,7 +61,7 @@ func TestSourcePluginAdapter_Open_ClosedContext(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	var gotCtx context.Context
@@ -75,7 +90,7 @@ func TestSourcePluginAdapter_Open_Logger(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 	wantLogger := zerolog.New(zerolog.NewTestWriter(t))
 
@@ -98,7 +113,7 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	want := opencdc.Record{
@@ -185,7 +200,7 @@ func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 		stopTimeout = time.Minute
 	}()
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	want := opencdc.Record{
@@ -244,7 +259,7 @@ func TestSourcePluginAdapter_Stop_WaitsForRun(t *testing.T) {
 		stopTimeout = time.Minute // reset
 	}()
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	want := opencdc.Record{
@@ -306,7 +321,7 @@ func TestSourcePluginAdapter_Teardown(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 	srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
 
 	src.EXPECT().Open(gomock.Any(), nil).Return(nil)
@@ -366,7 +381,7 @@ func TestSourcePluginAdapter_LifecycleOnCreated(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 
 	wantCtx := internal.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
@@ -383,7 +398,7 @@ func TestSourcePluginAdapter_LifecycleOnUpdated(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 	wantCtx := internal.Enrich(ctx, pconnector.PluginConfig{})
 
 	wantBefore := config.Config{"foo": "bar"}
@@ -404,7 +419,7 @@ func TestSourcePluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	src := NewMockSource(ctrl)
 
-	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}).(*sourcePluginAdapter)
+	srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
 
 	wantCtx := internal.Enrich(ctx, pconnector.PluginConfig{})
 	want := config.Config{"foo": "bar"}
@@ -414,5 +429,3 @@ func TestSourcePluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	_, err := srcPlugin.LifecycleOnDeleted(ctx, req)
 	is.NoErr(err)
 }
-
-*/

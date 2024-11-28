@@ -133,7 +133,7 @@ type SourceConfig interface {
 }
 
 // NewSourcePlugin takes a Source and wraps it into an adapter that converts it
-// into a pconnector.SourcePlugin. If the parameter is nil it will wrap
+// into a pconnector.SourcePlugin. If the Source is nil it will wrap
 // UnimplementedSource instead.
 func NewSourcePlugin(impl Source, cfg pconnector.PluginConfig, parameters config.Parameters) pconnector.SourcePlugin {
 	if impl == nil {
