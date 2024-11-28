@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/csync"
 	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
@@ -276,7 +275,7 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 			src := NewMockSource(ctrl)
 
 			s := (&SourceWithSchemaExtraction{
-				SchemaTypeStr:  "avro",
+				SchemaTypeStr:  schema.TypeAvro.String(),
 				PayloadEnabled: lang.Ptr(true),
 				PayloadSubject: lang.Ptr("payload"),
 				KeyEnabled:     lang.Ptr(true),
@@ -356,97 +355,76 @@ func TestSourceWithSchemaExtraction_Read(t *testing.T) {
 
 // -- SourceWithSchemaContext --------------------------------------------------
 
+// TestSourceWithSchemaContext_Configure tests that the configured schema
+// context name is added to relevant Go contexts in the tested methods.
 func TestSourceWithSchemaContext_Configure(t *testing.T) {
 	connID := "test-connector-id"
 
 	testCases := []struct {
 		name            string
 		middlewareCfg   SourceWithSchemaContext
-		connectorCfg    config.Config
 		wantContextName string
 	}{
 		{
-			name:            "default middleware config, no user config",
-			middlewareCfg:   SourceWithSchemaContext{},
-			connectorCfg:    config.Config{},
+			name: "enabled, with custom name",
+			middlewareCfg: SourceWithSchemaContext{
+				Enabled: lang.Ptr(true),
+				Name:    lang.Ptr("foobar"),
+			},
+			wantContextName: "foobar",
+		},
+		{
+			name: "disabled, with custom name",
+			middlewareCfg: SourceWithSchemaContext{
+				Enabled: lang.Ptr(false),
+				Name:    lang.Ptr("foobar"),
+			},
+			wantContextName: "",
+		},
+		{
+			name: "enabled, no custom name",
+			middlewareCfg: SourceWithSchemaContext{
+				Enabled: lang.Ptr(true),
+			},
 			wantContextName: connID,
-		},
-		{
-			name: "custom context in middleware, no user config",
-			middlewareCfg: SourceWithSchemaContext{
-				Enabled: lang.Ptr(true),
-				Name:    lang.Ptr("foobar"),
-			},
-			connectorCfg:    config.Config{},
-			wantContextName: "foobar",
-		},
-		{
-			name: "middleware config: use context false, no user config",
-			middlewareCfg: SourceWithSchemaContext{
-				Enabled: lang.Ptr(false),
-				Name:    lang.Ptr("foobar"),
-			},
-			connectorCfg:    config.Config{},
-			wantContextName: "",
-		},
-		{
-			name: "user config overrides use context",
-			middlewareCfg: SourceWithSchemaContext{
-				Enabled: lang.Ptr(false),
-				Name:    lang.Ptr("foobar"),
-			},
-			connectorCfg: config.Config{
-				"sdk.schema.context.enabled": "true",
-			},
-			wantContextName: "foobar",
-		},
-		{
-			name: "user config overrides context name, non-empty",
-			middlewareCfg: SourceWithSchemaContext{
-				Enabled: lang.Ptr(true),
-				Name:    lang.Ptr("foobar"),
-			},
-			connectorCfg: config.Config{
-				"sdk.schema.context.use":  "true",
-				"sdk.schema.context.name": "user-context-name",
-			},
-			wantContextName: "user-context-name",
-		},
-		{
-			name: "user config overrides context name, empty",
-			middlewareCfg: SourceWithSchemaContext{
-				Enabled: lang.Ptr(true),
-				Name:    lang.Ptr("foobar"),
-			},
-			connectorCfg: config.Config{
-				"sdk.schema.context.use":  "true",
-				"sdk.schema.context.name": "",
-			},
-			wantContextName: "",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			is := is.New(t)
-			wantContextName := "user-context-name"
 			ctx := internal.ContextWithConnectorID(context.Background(), connID)
 
-			s := NewMockSource(gomock.NewController(t))
-			underTest := (&SourceWithSchemaContext{
-				Enabled: lang.Ptr(true),
-				Name:    &wantContextName,
-			}).Wrap(s)
+			src := NewMockSource(gomock.NewController(t))
+			underTest := tc.middlewareCfg.Wrap(src)
 
-			s.EXPECT().
+			src.EXPECT().
 				Open(gomock.Any(), opencdc.Position{}).
 				DoAndReturn(func(ctx context.Context, _ opencdc.Position) error {
-					is.Equal(wantContextName, schema.GetSchemaContextName(ctx))
+					is.Equal(tc.wantContextName, schema.GetSchemaContextName(ctx))
 					return nil
+				})
+			src.EXPECT().Read(gomock.Any()).
+				DoAndReturn(func(ctx context.Context) (opencdc.Record, error) {
+					is.Equal(tc.wantContextName, schema.GetSchemaContextName(ctx))
+					return opencdc.Record{}, ErrBackoffRetry
+				})
+			src.EXPECT().ReadN(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(ctx context.Context, i int) ([]opencdc.Record, error) {
+					is.Equal(tc.wantContextName, schema.GetSchemaContextName(ctx))
+					return nil, ErrBackoffRetry
 				})
 
 			err := underTest.Open(ctx, opencdc.Position{})
 			is.NoErr(err)
+
+			rec, err := underTest.Read(ctx)
+			is.True(errors.Is(err, ErrBackoffRetry))
+			is.Equal(opencdc.Record{}, rec)
+
+			recs, err := underTest.ReadN(ctx, 123)
+			is.True(errors.Is(err, ErrBackoffRetry))
+			is.True(recs == nil)
 		})
 	}
 }

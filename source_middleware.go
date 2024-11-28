@@ -374,10 +374,8 @@ type sourceWithSchemaContext struct {
 
 func (s *sourceWithSchemaContext) Open(ctx context.Context, pos opencdc.Position) error {
 	if *s.config.Enabled {
-		// The order of precedence is (from highest to lowest):
-		// 1. user config
-		// 2. default middleware config
-		// 3. connector ID (if no context name is configured anywhere)
+		// The connector ID will serve as the schema context
+		// if no schema context was provided in the configuration.
 		s.contextName = internal.ConnectorIDFromContext(ctx)
 		if s.config.Name != nil {
 			s.contextName = *s.config.Name
@@ -416,9 +414,6 @@ func (s *sourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config
 // with the provided schema. The schema is registered with the schema service
 // and the schema subject is attached to the record metadata.
 type SourceWithEncoding struct{}
-
-func (s SourceWithEncoding) Apply(SourceMiddleware) {
-}
 
 func (s SourceWithEncoding) Wrap(impl Source) Source {
 	return &sourceWithEncoding{Source: impl}
