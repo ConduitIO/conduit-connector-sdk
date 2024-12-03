@@ -126,7 +126,7 @@ type DestinationWithBatch struct {
 	// Maximum size of batch before it gets written to the destination.
 	BatchSize int `json:"sdk.batch.size" default:"0" validate:"gt=-1"`
 	// Maximum delay before an incomplete batch is written to the destination.
-	BatchDelay time.Duration `json:"sdk.batch.delay" default:"0" validate:"gt=-1"`
+	BatchDelay time.Duration `json:"sdk.batch.delay" default:"0"`
 }
 
 // Wrap a Destination into the middleware.
