@@ -1,0 +1,50 @@
+version: "1.0"
+specification:
+  name: ""
+  summary: ""
+  description: ""
+  version: ""
+  author: ""
+  source:
+    parameters:
+      - name: duration
+        description: Duration does not have a name so the type name is used.
+        type: duration
+        default: 1s
+        validations: []
+      - name: embeddedConfigAsField.embeddedConfigField
+        description: |-
+          Name of this field can be:
+          (1) embeddedConfigField (no JSON tag, when this struct is embedded)
+          (2) embeddedConfigAsField.embeddedConfigField (no JSON tag, when this struct is used as a field)
+        type: int
+        default: ""
+        validations: []
+      - name: embeddedConfigField
+        description: |-
+          Name of this field can be:
+          (1) embeddedConfigField (no JSON tag, when this struct is embedded)
+          (2) embeddedConfigAsField.embeddedConfigField (no JSON tag, when this struct is used as a field)
+        type: int
+        default: ""
+        validations: []
+      - name: field_with_json_tag_here
+        description: Name of this field should be field_with_json_tag_here, because of the JSON tag
+        type: string
+        default: ""
+        validations: []
+      - name: mixedCaseField
+        description: ""
+        type: float
+        default: ""
+        validations: []
+      - name: snake_case_field
+        description: ""
+        type: float
+        default: ""
+        validations: []
+      - name: yaml-tag-is-ignored
+        description: Name of this field should be yaml-tag-is-ignored, because the YAML tag should be ignored
+        type: string
+        default: ""
+        validations: []

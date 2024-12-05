@@ -1,0 +1,138 @@
+version: "1.0"
+specification:
+  name: ""
+  summary: ""
+  description: ""
+  version: ""
+  author: ""
+  source:
+    parameters:
+      - name: myBool
+        description: ""
+        type: bool
+        default: ""
+        validations: []
+      - name: myBoolPtr
+        description: ""
+        type: bool
+        default: ""
+        validations: []
+      - name: myByte
+        description: ""
+        type: string
+        default: ""
+        validations: []
+      - name: myDurSlice
+        description: ""
+        type: string
+        default: ""
+        validations: []
+      - name: myDuration
+        description: ""
+        type: duration
+        default: 1s
+        validations: []
+      - name: myDurationPtr
+        description: ""
+        type: duration
+        default: 1m0s
+        validations: []
+      - name: myFloat32
+        description: ""
+        type: float
+        default: ""
+        validations: []
+      - name: myFloat64
+        description: ""
+        type: float
+        default: ""
+        validations: []
+      - name: myFloatSlice
+        description: ""
+        type: string
+        default: ""
+        validations: []
+      - name: myInt
+        description: ""
+        type: int
+        default: ""
+        validations:
+          - type: less-than
+            value: "100"
+          - type: greater-than
+            value: "0"
+      - name: myInt16
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myInt32
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myInt64
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myInt8
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myIntSlice
+        description: ""
+        type: string
+        default: 1,2
+        validations: []
+      - name: myRune
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myString
+        description: MyString my string description
+        type: string
+        default: ""
+        validations: []
+      - name: myStringMap.*
+        description: ""
+        type: string
+        default: ""
+        validations: []
+      - name: myStructMap.*.myInt
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myStructMap.*.myString
+        description: ""
+        type: string
+        default: ""
+        validations: []
+      - name: myUint
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myUint16
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myUint32
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myUint64
+        description: ""
+        type: int
+        default: ""
+        validations: []
+      - name: myUint8
+        description: ""
+        type: int
+        default: ""
+        validations: []

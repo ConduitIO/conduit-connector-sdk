@@ -42,24 +42,17 @@ var (
 
 // Source fetches records from 3rd party resources and sends them to Conduit.
 // All implementations must embed UnimplementedSource for forward compatibility.
-//
-//nolint:interfacebloat // Source interface is a contract and should not be split
 type Source interface {
-	// Parameters is a map of named Parameters that describe how to configure
-	// the Source.
-	Parameters() config.Parameters
-
-	// Configure is the first function to be called in a connector. It provides the
-	// connector with the configuration that needs to be validated and stored.
-	// In case the configuration is not valid it should return an error.
-	// Testing if your connector can reach the configured data source should be
-	// done in Open, not in Configure.
-	// The connector SDK will sanitize, apply defaults and validate the
-	// configuration before calling this function. This means that the
-	// configuration will always contain all keys defined in Parameters
-	// (unprovided keys will have their default values) and all non-empty
-	// values will be of the correct type.
-	Configure(context.Context, config.Config) error
+	// Config returns the configuration that the source expects. It should return
+	// a pointer to a struct that contains all the configuration keys that the
+	// source expects. The struct should be annotated with the necessary
+	// validation tags. The value should be a pointer to allow the SDK to
+	// populate it using the values from the configuration.
+	//
+	// The returned SourceConfig should contain all the configuration keys that
+	// the source expects, including middleware fields (see
+	// [DefaultSourceMiddleware]).
+	Config() SourceConfig
 
 	// Open is called after Configure to signal the plugin it can prepare to
 	// start producing records. If needed, the plugin should open connections in
@@ -130,21 +123,35 @@ type Source interface {
 	mustEmbedUnimplementedSource()
 }
 
+// SourceConfig represents the configuration containing all configuration keys
+// that a source expects. The type needs to implement [Validatable], which will
+// be used to automatically validate the config when configuring the connector.
+type SourceConfig interface {
+	Validatable
+
+	mustEmbedUnimplementedSourceConfig()
+}
+
 // NewSourcePlugin takes a Source and wraps it into an adapter that converts it
-// into a pconnector.SourcePlugin. If the parameter is nil it will wrap
+// into a pconnector.SourcePlugin. If the Source is nil it will wrap
 // UnimplementedSource instead.
-func NewSourcePlugin(impl Source, cfg pconnector.PluginConfig) pconnector.SourcePlugin {
+func NewSourcePlugin(impl Source, cfg pconnector.PluginConfig, parameters config.Parameters) pconnector.SourcePlugin {
 	if impl == nil {
 		// prevent nil pointers
 		impl = UnimplementedSource{}
 	}
 
-	return &sourcePluginAdapter{impl: impl, cfg: cfg}
+	return &sourcePluginAdapter{
+		impl:       impl,
+		cfg:        cfg,
+		parameters: parameters,
+	}
 }
 
 type sourcePluginAdapter struct {
-	impl Source
-	cfg  pconnector.PluginConfig
+	impl       Source
+	cfg        pconnector.PluginConfig
+	parameters config.Parameters
 
 	state internal.ConnectorStateWatcher
 
@@ -168,7 +175,18 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.Sour
 		StateAfter:           internal.StateConfigured,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
-		return a.impl.Configure(ctx, req.Config)
+		cfg := a.impl.Config()
+		err := Util.ParseConfig(ctx, req.Config, cfg, a.parameters)
+		if err != nil {
+			return fmt.Errorf("failed to parse configuration: %w", err)
+		}
+
+		err = cfg.Validate(ctx)
+		if err != nil {
+			return fmt.Errorf("configuration invalid: %w", err)
+		}
+
+		return nil
 	})
 
 	return pconnector.SourceConfigureResponse{}, err

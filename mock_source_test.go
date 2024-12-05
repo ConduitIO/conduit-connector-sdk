@@ -79,40 +79,40 @@ func (c *MockSourceAckCall) DoAndReturn(f func(context.Context, opencdc.Position
 	return c
 }
 
-// Configure mocks base method.
-func (m *MockSource) Configure(arg0 context.Context, arg1 config.Config) error {
+// Config mocks base method.
+func (m *MockSource) Config() SourceConfig {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Configure", arg0, arg1)
-	ret0, _ := ret[0].(error)
+	ret := m.ctrl.Call(m, "Config")
+	ret0, _ := ret[0].(SourceConfig)
 	return ret0
 }
 
-// Configure indicates an expected call of Configure.
-func (mr *MockSourceMockRecorder) Configure(arg0, arg1 any) *MockSourceConfigureCall {
+// Config indicates an expected call of Config.
+func (mr *MockSourceMockRecorder) Config() *MockSourceConfigCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Configure", reflect.TypeOf((*MockSource)(nil).Configure), arg0, arg1)
-	return &MockSourceConfigureCall{Call: call}
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Config", reflect.TypeOf((*MockSource)(nil).Config))
+	return &MockSourceConfigCall{Call: call}
 }
 
-// MockSourceConfigureCall wrap *gomock.Call
-type MockSourceConfigureCall struct {
+// MockSourceConfigCall wrap *gomock.Call
+type MockSourceConfigCall struct {
 	*gomock.Call
 }
 
 // Return rewrite *gomock.Call.Return
-func (c *MockSourceConfigureCall) Return(arg0 error) *MockSourceConfigureCall {
+func (c *MockSourceConfigCall) Return(arg0 SourceConfig) *MockSourceConfigCall {
 	c.Call = c.Call.Return(arg0)
 	return c
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockSourceConfigureCall) Do(f func(context.Context, config.Config) error) *MockSourceConfigureCall {
+func (c *MockSourceConfigCall) Do(f func() SourceConfig) *MockSourceConfigCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockSourceConfigureCall) DoAndReturn(f func(context.Context, config.Config) error) *MockSourceConfigureCall {
+func (c *MockSourceConfigCall) DoAndReturn(f func() SourceConfig) *MockSourceConfigCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -265,44 +265,6 @@ func (c *MockSourceOpenCall) Do(f func(context.Context, opencdc.Position) error)
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockSourceOpenCall) DoAndReturn(f func(context.Context, opencdc.Position) error) *MockSourceOpenCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// Parameters mocks base method.
-func (m *MockSource) Parameters() config.Parameters {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Parameters")
-	ret0, _ := ret[0].(config.Parameters)
-	return ret0
-}
-
-// Parameters indicates an expected call of Parameters.
-func (mr *MockSourceMockRecorder) Parameters() *MockSourceParametersCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Parameters", reflect.TypeOf((*MockSource)(nil).Parameters))
-	return &MockSourceParametersCall{Call: call}
-}
-
-// MockSourceParametersCall wrap *gomock.Call
-type MockSourceParametersCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *MockSourceParametersCall) Return(arg0 config.Parameters) *MockSourceParametersCall {
-	c.Call = c.Call.Return(arg0)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *MockSourceParametersCall) Do(f func() config.Parameters) *MockSourceParametersCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockSourceParametersCall) DoAndReturn(f func() config.Parameters) *MockSourceParametersCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
