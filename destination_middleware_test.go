@@ -14,184 +14,91 @@
 
 package sdk
 
-/*
+import (
+	"bytes"
+	"context"
+	"errors"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/lang"
+	"github.com/conduitio/conduit-commons/opencdc"
+	"github.com/conduitio/conduit-commons/schema/avro"
+	"github.com/conduitio/conduit-connector-sdk/schema"
+	"github.com/matryer/is"
+	"go.uber.org/mock/gomock"
+	"golang.org/x/time/rate"
+)
 
 // -- DestinationWithBatch -----------------------------------------------------
 
-func TestDestinationWithBatch_Parameters(t *testing.T) {
+func TestDestinationWithBatch_Open(t *testing.T) {
 	is := is.New(t)
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
 
-	d := (&DestinationWithBatch{}).Wrap(dst)
+	dst := NewMockDestination(gomock.NewController(t))
+	dst.EXPECT().Open(gomock.Any()).Return(nil)
 
-	want := config.Parameters{
-		"foo": {
-			Default:     "bar",
-			Description: "baz",
-		},
+	underTest := DestinationWithBatch{
+		BatchSize:  10,
+		BatchDelay: 123 * time.Second,
 	}
+	d := underTest.Wrap(dst)
 
-	dst.EXPECT().Parameters().Return(want)
-	got := d.Parameters()
+	ctx := (&destinationWithBatch{}).setBatchConfig(context.Background(), DestinationWithBatch{})
+	err := d.Open(ctx)
+	is.NoErr(err)
 
-	is.Equal(got["foo"], want["foo"])
-	is.Equal(len(got), 3) // expected middleware to inject 2 parameters
-}
-
-func TestDestinationWithBatch_Configure(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
-
-	testCases := []struct {
-		name       string
-		middleware DestinationWithBatch
-		have       config.Config
-		want       DestinationWithBatchConfig
-	}{{
-		name:       "empty config",
-		middleware: DestinationWithBatch{},
-		have:       config.Config{},
-		want: DestinationWithBatchConfig{
-			BatchSize:  0,
-			BatchDelay: 0,
-		},
-	}, {
-		name: "empty config, custom defaults",
-		middleware: DestinationWithBatch{
-			Config: DestinationWithBatchConfig{
-				BatchSize:  5,
-				BatchDelay: time.Second,
-			},
-		},
-		have: config.Config{},
-		want: DestinationWithBatchConfig{
-			BatchSize:  5,
-			BatchDelay: time.Second * 1,
-		},
-	}, {
-		name: "config with values",
-		middleware: DestinationWithBatch{
-			Config: DestinationWithBatchConfig{
-				BatchSize:  5,
-				BatchDelay: time.Second,
-			},
-		},
-		have: config.Config{
-			configDestinationBatchSize:  "12",
-			configDestinationBatchDelay: "2s",
-		},
-		want: DestinationWithBatchConfig{
-			BatchSize:  12,
-			BatchDelay: time.Second * 2,
-		},
-	}}
-
-	for _, tt := range testCases {
-		t.Run(tt.name, func(t *testing.T) {
-			is := is.New(t)
-			d := tt.middleware.Wrap(dst)
-
-			ctx := (&destinationWithBatch{}).setBatchConfig(context.Background(), DestinationWithBatchConfig{})
-			dst.EXPECT().Configure(ctx, gomock.AssignableToTypeOf(config.Config{})).Return(nil)
-
-			err := d.Configure(ctx, tt.have)
-
-			is.NoErr(err)
-			is.Equal(tt.want, (&destinationWithBatch{}).getBatchConfig(ctx))
-		})
-	}
+	is.NoErr(err)
+	is.Equal(underTest, (&destinationWithBatch{}).getBatchConfig(ctx))
 }
 
 // -- DestinationWithRateLimit -------------------------------------------------
 
-func TestDestinationWithRateLimit_Parameters(t *testing.T) {
-	is := is.New(t)
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
-
-	d := (&DestinationWithRateLimit{}).Wrap(dst)
-
-	want := config.Parameters{
-		"foo": {
-			Default:     "bar",
-			Description: "baz",
-		},
-	}
-
-	dst.EXPECT().Parameters().Return(want)
-	got := d.Parameters()
-
-	is.Equal(got["foo"], want["foo"])
-	is.Equal(len(got), 3) // expected middleware to inject 2 parameters
-}
-
-func TestDestinationWithRateLimit_Configure(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
-	ctx := context.Background()
-
+func TestDestinationWithRateLimit_Open(t *testing.T) {
 	testCases := []struct {
 		name        string
 		middleware  DestinationWithRateLimit
-		have        config.Config
 		wantLimiter bool
 		wantLimit   rate.Limit
 		wantBurst   int
 	}{{
 		name:        "empty config",
 		middleware:  DestinationWithRateLimit{},
-		have:        config.Config{},
 		wantLimiter: false,
 	}, {
-		name: "empty config, custom defaults",
+		name: "custom defaults",
 		middleware: DestinationWithRateLimit{
-			Config: DestinationWithRateLimitConfig{
-				RatePerSecond: 1.23,
-				Burst:         4,
-			},
+			RatePerSecond: 1.23,
+			Burst:         4,
 		},
-		have:        config.Config{},
 		wantLimiter: true,
 		wantLimit:   rate.Limit(1.23),
 		wantBurst:   4,
 	}, {
 		name: "negative burst default",
 		middleware: DestinationWithRateLimit{
-			Config: DestinationWithRateLimitConfig{
-				RatePerSecond: 1.23,
-				Burst:         -2,
-			},
+			RatePerSecond: 1.23,
+			Burst:         -2,
 		},
-		have:        config.Config{},
 		wantLimiter: true,
 		wantLimit:   rate.Limit(1.23),
 		wantBurst:   2, // burst will be set to ceil of rate per second
 	}, {
 		name: "config with values",
 		middleware: DestinationWithRateLimit{
-			Config: DestinationWithRateLimitConfig{
-				RatePerSecond: 1.23,
-				Burst:         4,
-			},
-		},
-		have: config.Config{
-			configDestinationRatePerSecond: "12.34",
-			configDestinationRateBurst:     "5",
+			RatePerSecond: 1.23,
+			Burst:         4,
 		},
 		wantLimiter: true,
-		wantLimit:   rate.Limit(12.34),
-		wantBurst:   5,
+		wantLimit:   rate.Limit(1.23),
+		wantBurst:   4,
 	}, {
 		name: "config with zero burst",
 		middleware: DestinationWithRateLimit{
-			Config: DestinationWithRateLimitConfig{
-				RatePerSecond: 1.23,
-				Burst:         4,
-			},
-		},
-		have: config.Config{
-			configDestinationRateBurst: "0",
+			RatePerSecond: 1.23,
+			Burst:         0,
 		},
 		wantLimiter: true,
 		wantLimit:   rate.Limit(1.23),
@@ -201,11 +108,13 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			is := is.New(t)
+
+			dst := NewMockDestination(gomock.NewController(t))
+			dst.EXPECT().Open(gomock.Any()).Return(nil)
+
 			d := tt.middleware.Wrap(dst).(*destinationWithRateLimit)
 
-			dst.EXPECT().Configure(ctx, tt.have).Return(nil)
-
-			err := d.Configure(ctx, tt.have)
+			err := d.Open(context.Background())
 			is.NoErr(err)
 
 			if !tt.wantLimiter {
@@ -220,18 +129,16 @@ func TestDestinationWithRateLimit_Configure(t *testing.T) {
 
 func TestDestinationWithRateLimit_Write(t *testing.T) {
 	is := is.New(t)
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
 	ctx := context.Background()
 
-	d := (&DestinationWithRateLimit{}).Wrap(dst)
+	dst := NewMockDestination(gomock.NewController(t))
+	dst.EXPECT().Open(gomock.Any()).Return(nil)
 
-	dst.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
-
-	err := d.Configure(ctx, config.Config{
-		configDestinationRatePerSecond: "8",
-		configDestinationRateBurst:     "2",
-	})
+	d := (&DestinationWithRateLimit{
+		RatePerSecond: 8,
+		Burst:         2,
+	}).Wrap(dst)
+	err := d.Open(ctx)
 	is.NoErr(err)
 
 	recs := []opencdc.Record{{}, {}, {}, {}}
@@ -271,46 +178,40 @@ func TestDestinationWithRateLimit_Write(t *testing.T) {
 
 func TestDestinationWithRateLimit_Write_CancelledContext(t *testing.T) {
 	is := is.New(t)
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
+	ctx := context.Background()
 
-	d := (&DestinationWithRateLimit{}).Wrap(dst)
+	dst := NewMockDestination(gomock.NewController(t))
+	dst.EXPECT().Open(gomock.Any()).Return(nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	underTest := (&DestinationWithRateLimit{
+		RatePerSecond: 10,
+	}).Wrap(dst)
 
-	dst.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
-	err := d.Configure(ctx, config.Config{
-		configDestinationRatePerSecond: "10",
-	})
+	err := underTest.Open(ctx)
 	is.NoErr(err)
 
+	ctx, cancel := context.WithCancel(ctx)
 	cancel()
-	_, err = d.Write(ctx, []opencdc.Record{{}})
+
+	_, err = underTest.Write(ctx, []opencdc.Record{{}})
 	is.True(errors.Is(err, ctx.Err()))
 }
 
 // -- DestinationWithRecordFormat ----------------------------------------------
 
-func TestDestinationWithRecordFormat_Configure(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
-	ctx := context.Background()
-
+func TestDestinationWithRecordFormat_Open(t *testing.T) {
 	testCases := []struct {
 		name           string
 		middleware     DestinationWithRecordFormat
-		have           config.Config
 		wantSerializer RecordSerializer
 	}{{
 		name:           "empty config",
 		middleware:     DestinationWithRecordFormat{},
-		have:           config.Config{},
 		wantSerializer: defaultSerializer,
 	}, {
-		name:       "valid config",
-		middleware: DestinationWithRecordFormat{},
-		have: config.Config{
-			configDestinationRecordFormat: "debezium/json",
+		name: "valid config",
+		middleware: DestinationWithRecordFormat{
+			RecordFormat: lang.Ptr("debezium/json"),
 		},
 		wantSerializer: GenericRecordSerializer{
 			Converter: DebeziumConverter{
@@ -323,11 +224,12 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			is := is.New(t)
+
+			dst := NewMockDestination(gomock.NewController(t))
+			dst.EXPECT().Open(gomock.Any()).Return(nil)
+
 			d := tt.middleware.Wrap(dst).(*destinationWithRecordFormat)
-
-			dst.EXPECT().Configure(ctx, tt.have).Return(nil)
-
-			err := d.Configure(ctx, tt.have)
+			err := d.Open(context.Background())
 			is.NoErr(err)
 
 			is.Equal(d.serializer, tt.wantSerializer)
@@ -337,49 +239,7 @@ func TestDestinationWithRecordFormat_Configure(t *testing.T) {
 
 // -- DestinationWithSchemaExtraction ------------------------------------------
 
-func TestDestinationWithSchemaExtractionConfig_Apply(t *testing.T) {
-	is := is.New(t)
-
-	wantCfg := DestinationWithSchemaExtractionConfig{
-		PayloadEnabled: lang.Ptr(true),
-		KeyEnabled:     lang.Ptr(true),
-	}
-
-	have := &DestinationWithSchemaExtraction{}
-	wantCfg.Apply(have)
-
-	is.Equal(have.Config, wantCfg)
-}
-
-func TestDestinationWithSchemaExtraction_Parameters(t *testing.T) {
-	is := is.New(t)
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
-
-	s := (&DestinationWithSchemaExtraction{}).Wrap(dst)
-
-	want := config.Parameters{
-		"foo": {
-			Default:     "bar",
-			Description: "baz",
-		},
-	}
-
-	dst.EXPECT().Parameters().Return(want)
-	got := s.Parameters()
-
-	is.Equal(got["foo"], want["foo"])
-	is.Equal(len(got), 3) // expected middleware to inject 2 parameters
-}
-
-func TestDestinationWithSchemaExtraction_Configure(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	dst := NewMockDestination(ctrl)
-	ctx := context.Background()
-
-	connectorID := uuid.NewString()
-	ctx = internal.Enrich(ctx, pconnector.PluginConfig{ConnectorID: connectorID})
-
+func TestDestinationWithSchemaExtraction_Open(t *testing.T) {
 	testCases := []struct {
 		name       string
 		middleware DestinationWithSchemaExtraction
@@ -388,54 +248,40 @@ func TestDestinationWithSchemaExtraction_Configure(t *testing.T) {
 		wantErr            error
 		wantPayloadEnabled bool
 		wantKeyEnabled     bool
-	}{{
-		name:       "empty config",
-		middleware: DestinationWithSchemaExtraction{},
-		have:       config.Config{},
-
-		wantPayloadEnabled: true,
-		wantKeyEnabled:     true,
-	}, {
-		name: "disabled by default",
-		middleware: DestinationWithSchemaExtraction{
-			Config: DestinationWithSchemaExtractionConfig{
+	}{
+		{
+			name: "both disabled",
+			middleware: DestinationWithSchemaExtraction{
 				PayloadEnabled: lang.Ptr(false),
 				KeyEnabled:     lang.Ptr(false),
 			},
+			wantPayloadEnabled: false,
+			wantKeyEnabled:     false,
 		},
-		have: config.Config{},
-
-		wantPayloadEnabled: false,
-		wantKeyEnabled:     false,
-	}, {
-		name:       "disabled by config",
-		middleware: DestinationWithSchemaExtraction{},
-		have: config.Config{
-			configDestinationWithSchemaExtractionPayloadEnabled: "false",
-			configDestinationWithSchemaExtractionKeyEnabled:     "false",
+		{
+			name: "payload enabled, key disabled",
+			middleware: DestinationWithSchemaExtraction{
+				PayloadEnabled: lang.Ptr(true),
+				KeyEnabled:     lang.Ptr(false),
+			},
+			wantPayloadEnabled: true,
+			wantKeyEnabled:     false,
 		},
-
-		wantPayloadEnabled: false,
-		wantKeyEnabled:     false,
-	}}
+	}
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			is := is.New(t)
+
+			dst := NewMockDestination(gomock.NewController(t))
+			dst.EXPECT().Open(gomock.Any()).Return(nil)
+
 			s := tt.middleware.Wrap(dst).(*destinationWithSchemaExtraction)
-
-			dst.EXPECT().Configure(ctx, tt.have).Return(nil)
-
-			err := s.Configure(ctx, tt.have)
-			if tt.wantErr != nil {
-				is.True(errors.Is(err, tt.wantErr))
-				return
-			}
-
+			err := s.Open(context.Background())
 			is.NoErr(err)
 
-			is.Equal(s.payloadEnabled, tt.wantPayloadEnabled)
-			is.Equal(s.keyEnabled, tt.wantKeyEnabled)
+			is.Equal(*s.config.PayloadEnabled, tt.wantPayloadEnabled)
+			is.Equal(*s.config.KeyEnabled, tt.wantKeyEnabled)
 		})
 	}
 }
@@ -446,11 +292,10 @@ func TestDestinationWithSchemaExtraction_Write(t *testing.T) {
 	dst := NewMockDestination(ctrl)
 	ctx := context.Background()
 
-	d := (&DestinationWithSchemaExtraction{}).Wrap(dst)
-
-	dst.EXPECT().Configure(ctx, gomock.Any()).Return(nil)
-	err := d.Configure(ctx, config.Config{})
-	is.NoErr(err)
+	d := (&DestinationWithSchemaExtraction{
+		PayloadEnabled: lang.Ptr(true),
+		KeyEnabled:     lang.Ptr(true),
+	}).Wrap(dst)
 
 	testStructuredData := opencdc.StructuredData{
 		"foo":   "bar",
@@ -660,5 +505,3 @@ func TestDestinationWithSchemaExtraction_Write(t *testing.T) {
 		})
 	}
 }
-
-*/

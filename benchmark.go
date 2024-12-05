@@ -14,8 +14,6 @@
 
 package sdk
 
-/*
-
 import (
 	"context"
 	"fmt"
@@ -61,7 +59,6 @@ type benchmarkSource struct {
 	config map[string]string
 
 	// measures
-	configure time.Duration
 	open      time.Duration
 	firstRead time.Duration
 	allReads  time.Duration
@@ -74,13 +71,6 @@ type benchmarkSource struct {
 func (bm *benchmarkSource) Run(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	bm.configure = bm.measure(func() {
-		err := bm.source.Configure(ctx, bm.config)
-		if err != nil {
-			b.Fatal(err)
-		}
-	})
 
 	bm.open = bm.measure(func() {
 		err := bm.source.Open(ctx, nil)
@@ -174,7 +164,6 @@ func (*benchmarkSource) measure(f func()) time.Duration {
 func (bm *benchmarkSource) reportMetrics(b *testing.B) {
 	b.ReportMetric(0, "ns/op") // suppress ns/op metric, it is misleading in this benchmarkSource
 
-	b.ReportMetric(bm.configure.Seconds(), "configure")
 	b.ReportMetric(bm.open.Seconds(), "open")
 	b.ReportMetric(bm.stop.Seconds(), "stop")
 	b.ReportMetric(bm.teardown.Seconds(), "teardown")
@@ -185,6 +174,3 @@ func (bm *benchmarkSource) reportMetrics(b *testing.B) {
 	b.ReportMetric(bm.firstAck.Seconds(), "firstAck")
 	b.ReportMetric(float64(b.N-1)/bm.allAcks.Seconds(), "acks/s")
 }
-
-
-*/

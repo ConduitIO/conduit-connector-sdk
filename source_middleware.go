@@ -139,6 +139,10 @@ type SourceWithSchemaExtraction struct {
 // todo: use https://github.com/ConduitIO/conduit-commons/issues/142 to parse
 // the string value into schema.Type directly.
 func (c *SourceWithSchemaExtraction) SchemaType() schema.Type {
+	if c.SchemaTypeStr == "" {
+		return schema.TypeAvro
+	}
+
 	t := lang.Ptr(schema.Type(0))
 	err := t.UnmarshalText([]byte(c.SchemaTypeStr))
 	if err != nil {
@@ -370,10 +374,8 @@ type sourceWithSchemaContext struct {
 
 func (s *sourceWithSchemaContext) Open(ctx context.Context, pos opencdc.Position) error {
 	if *s.config.Enabled {
-		// The order of precedence is (from highest to lowest):
-		// 1. user config
-		// 2. default middleware config
-		// 3. connector ID (if no context name is configured anywhere)
+		// The connector ID will serve as the schema context
+		// if no schema context was provided in the configuration.
 		s.contextName = internal.ConnectorIDFromContext(ctx)
 		if s.config.Name != nil {
 			s.contextName = *s.config.Name
@@ -412,9 +414,6 @@ func (s *sourceWithSchemaContext) LifecycleOnDeleted(ctx context.Context, config
 // with the provided schema. The schema is registered with the schema service
 // and the schema subject is attached to the record metadata.
 type SourceWithEncoding struct{}
-
-func (s SourceWithEncoding) Apply(SourceMiddleware) {
-}
 
 func (s SourceWithEncoding) Wrap(impl Source) Source {
 	return &sourceWithEncoding{Source: impl}
@@ -616,9 +615,6 @@ type sourceWithBatch struct {
 	stop    chan struct{}
 
 	collectFn func(context.Context, int) ([]opencdc.Record, error)
-
-	batchSize  int
-	batchDelay time.Duration
 }
 
 type readNResponse struct {
@@ -641,7 +637,7 @@ func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error 
 	s.readCh = make(chan readResponse, *s.config.BatchSize)
 	s.readNCh = make(chan readNResponse, 1)
 
-	if s.batchSize > 0 || s.batchDelay > 0 {
+	if *s.config.BatchSize > 0 || *s.config.BatchDelay > 0 {
 		s.collectFn = s.collectWithReadN
 		go s.runReadN(ctx)
 	} else {
@@ -662,7 +658,7 @@ func (s *sourceWithBatch) runReadN(ctx context.Context) {
 	}
 
 	for {
-		recs, err := s.Source.ReadN(ctx, s.batchSize)
+		recs, err := s.Source.ReadN(ctx, *s.config.BatchSize)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrBackoffRetry):
@@ -752,7 +748,7 @@ func (s *sourceWithBatch) ReadN(ctx context.Context, n int) ([]opencdc.Record, e
 }
 
 func (s *sourceWithBatch) collectWithRead(ctx context.Context, _ int) ([]opencdc.Record, error) {
-	batch := make([]opencdc.Record, 0, s.batchSize)
+	batch := make([]opencdc.Record, 0, *s.config.BatchSize)
 	var delay <-chan time.Time
 
 	for {
@@ -766,14 +762,14 @@ func (s *sourceWithBatch) collectWithRead(ctx context.Context, _ int) ([]opencdc
 			}
 
 			batch = append(batch, resp.Record)
-			if s.batchSize > 0 && len(batch) >= s.batchSize {
+			if *s.config.BatchSize > 0 && len(batch) >= *s.config.BatchSize {
 				// batch is full, flush it
 				return batch, nil
 			}
 
-			if s.batchDelay > 0 && delay == nil {
+			if *s.config.BatchDelay > 0 && delay == nil {
 				// start the delay timer after we have received the first batch
-				delay = time.After(s.batchDelay)
+				delay = time.After(*s.config.BatchDelay)
 			}
 
 			// continue reading until the batch is full or the delay timer has expired
@@ -787,7 +783,7 @@ func (s *sourceWithBatch) collectWithRead(ctx context.Context, _ int) ([]opencdc
 }
 
 func (s *sourceWithBatch) collectWithReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
-	batch := make([]opencdc.Record, 0, s.batchSize)
+	batch := make([]opencdc.Record, 0, *s.config.BatchSize)
 	var delay <-chan time.Time
 
 	for {
@@ -805,20 +801,20 @@ func (s *sourceWithBatch) collectWithReadN(ctx context.Context, n int) ([]opencd
 				return nil, resp.Err
 			}
 
-			if len(batch) == 0 && len(resp.Records) >= s.batchSize {
+			if len(batch) == 0 && len(resp.Records) >= *s.config.BatchSize {
 				// source returned a batch that is already full, flush it
 				return resp.Records, nil
 			}
 
 			batch = append(batch, resp.Records...)
-			if s.batchSize > 0 && len(batch) >= s.batchSize {
+			if *s.config.BatchSize > 0 && len(batch) >= *s.config.BatchSize {
 				// batch is full, flush it
 				return batch, nil
 			}
 
-			if s.batchDelay > 0 && delay == nil {
+			if *s.config.BatchDelay > 0 && delay == nil {
 				// start the delay timer after we have received the first batch
-				delay = time.After(s.batchDelay)
+				delay = time.After(*s.config.BatchDelay)
 			}
 
 			// continue reading until the batch is full or the delay timer has expired

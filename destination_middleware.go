@@ -126,7 +126,7 @@ type DestinationWithBatch struct {
 	// Maximum size of batch before it gets written to the destination.
 	BatchSize int `json:"sdk.batch.size" default:"0" validate:"gt=-1"`
 	// Maximum delay before an incomplete batch is written to the destination.
-	BatchDelay time.Duration `json:"sdk.batch.delay" default:"0" validate:"gt=-1"`
+	BatchDelay time.Duration `json:"sdk.batch.delay" default:"0"`
 }
 
 // Wrap a Destination into the middleware.
@@ -164,8 +164,8 @@ func (d *destinationWithBatch) Open(ctx context.Context) error {
 	return nil
 }
 
-// setBatchEnabled stores the boolean in the context. If the context already
-// contains the key it will update the boolean under that key and return the
+// setBatchConfig stores a DestinationWithBatch instance in the context. If the context already
+// contains the key it will update the DestinationWithBatch under that key and return the
 // same context, otherwise it will return a new context with the stored value.
 // This is used to signal to destinationPluginAdapter if the Destination is
 // wrapped into DestinationWithBatchConfig middleware.
@@ -174,7 +174,7 @@ func (*destinationWithBatch) setBatchConfig(ctx context.Context, cfg Destination
 	if ok {
 		*ctxCfg = cfg
 	} else {
-		ctx = context.WithValue(ctx, ctxKeyBatchConfig{}, cfg)
+		ctx = context.WithValue(ctx, ctxKeyBatchConfig{}, &cfg)
 	}
 	return ctx
 }
@@ -425,16 +425,13 @@ type destinationWithSchemaExtraction struct {
 	Destination
 	config *DestinationWithSchemaExtraction
 
-	payloadEnabled bool
-	keyEnabled     bool
-
 	payloadWarnOnce sync.Once
 	keyWarnOnce     sync.Once
 }
 
 func (d *destinationWithSchemaExtraction) Write(ctx context.Context, records []opencdc.Record) (int, error) {
-	if d.keyEnabled {
-		for i := range records {
+	for i := range records {
+		if *d.config.KeyEnabled {
 			if err := d.decodeKey(ctx, &records[i]); err != nil {
 				if len(records) > 0 {
 					err = fmt.Errorf("record %d: %w", i, err)
@@ -442,9 +439,8 @@ func (d *destinationWithSchemaExtraction) Write(ctx context.Context, records []o
 				return 0, err
 			}
 		}
-	}
-	if d.payloadEnabled {
-		for i := range records {
+
+		if *d.config.PayloadEnabled {
 			if err := d.decodePayload(ctx, &records[i]); err != nil {
 				if len(records) > 0 {
 					err = fmt.Errorf("record %d: %w", i, err)
