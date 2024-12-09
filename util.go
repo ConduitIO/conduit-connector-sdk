@@ -17,8 +17,16 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/conduitio/conduit-commons/config"
+	v1 "github.com/conduitio/conduit-connector-sdk/specgen/specgen/model/v1"
+	"github.com/conduitio/evolviconf"
+	"github.com/conduitio/evolviconf/evolviyaml"
+	"github.com/conduitio/yaml/v3"
+	slogzerolog "github.com/samber/slog-zerolog/v2"
 )
 
 // Util provides utilities for implementing connectors.
@@ -47,24 +55,20 @@ var Util = struct {
 	//     validations, and value validations.
 	//   - Copies configuration values into the target object. The target object must
 	//     be a pointer to a struct.
-	ParseConfig func(ctx context.Context, cfg config.Config, target any, params config.Parameters) error
+	ParseConfig func(ctx context.Context, cfg config.Config, target any, parameters config.Parameters) error
 }{
 	ParseConfig: parseConfig,
 }
 
-func mergeParameters(p1 config.Parameters, p2 config.Parameters) config.Parameters {
-	params := make(config.Parameters, len(p1)+len(p2))
-	for k, v := range p1 {
-		params[k] = v
-	}
-	for k, v := range p2 {
-		_, ok := params[k]
-		if ok {
-			panic(fmt.Errorf("parameter %q declared twice", k))
-		}
-		params[k] = v
-	}
-	return params
+// Validatable can be implemented by a SourceConfig or DestinationConfig or any
+// embedded struct, to provide custom validation logic. Validate will be
+// triggered automatically by the SDK after parsing the config. If it returns an
+// error, the configuration is considered invalid and the connector won't be
+// opened.
+type Validatable interface {
+	// Validate executes any custom validations on the configuration and returns
+	// an error if it is invalid.
+	Validate(context.Context) error
 }
 
 func parseConfig(
@@ -87,4 +91,54 @@ func parseConfig(
 	logger.Debug().Type("target", target).Msg("decoding configuration into the target object")
 	//nolint:wrapcheck // error is already wrapped by DecodeInto
 	return c.DecodeInto(target)
+}
+
+func YAMLSpecification(rawYaml string) func() Specification {
+	specs, err := ParseYAMLSpecification(context.Background(), rawYaml)
+	if err != nil {
+		panic("failed to parse YAML specification: " + err.Error())
+	}
+	return func() Specification { return specs }
+}
+
+func ParseYAMLSpecification(ctx context.Context, rawYaml string) (Specification, error) {
+	logger := Logger(ctx)
+
+	logger.Debug().Str("yaml", rawYaml).Msg("parsing YAML specification")
+
+	parser := evolviconf.NewParser[Specification, *yaml.Decoder](
+		evolviyaml.NewParser[Specification, v1.Specification](
+			must[*semver.Constraints](semver.NewConstraint("^1")),
+			v1.Changelog,
+		),
+	)
+	reader := strings.NewReader(rawYaml)
+
+	spec, warnings, err := parser.Parse(ctx, reader)
+	if err != nil {
+		return Specification{}, fmt.Errorf("failed to parse YAML specification: %w", err)
+	}
+	if len(warnings) > 0 {
+		slogLogger := slog.New(slogzerolog.Option{Logger: logger}.NewZerologHandler())
+		warnings.Log(ctx, slogLogger)
+	}
+
+	switch len(spec) {
+	case 0:
+		logger.Debug().Msg("no specification found in YAML")
+		return Specification{}, fmt.Errorf("no specification found in YAML")
+	case 1:
+		logger.Debug().Any("specification", spec[0]).Msg("specification successfully parsed")
+		return spec[0], nil
+	default:
+		logger.Warn().Any("specification", spec[0]).Msg("multiple specifications found in YAML, returning the first one")
+		return spec[0], nil
+	}
+}
+
+func must[T any](out T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return out
 }

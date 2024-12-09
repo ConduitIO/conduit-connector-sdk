@@ -1,0 +1,29 @@
+version: "1.0"
+specification:
+  name: ""
+  summary: ""
+  description: ""
+  version: ""
+  author: ""
+  source:
+    parameters:
+      - name: noDefaultTagValueNotOverwritten
+        description: NoDefaultTagValueNotOverwritten has no default tag, and the default value won't be assigned in NewSource().
+        type: float
+        default: ""
+        validations: []
+      - name: noDefaultTagValueOverwritten
+        description: NoDefaultTagValueOverwritten has no default tag, and a default value will be assigned in NewSource().
+        type: float
+        default: "789"
+        validations: []
+      - name: withDefaultTagValueNotOverwritten
+        description: WithDefaultTagValueNotOverwritten has a default tag that won't be overwritten.
+        type: string
+        default: bar
+        validations: []
+      - name: withDefaultTagValueOverwritten
+        description: WithDefaultTagValueOverwritten has a default tag that will be overwritten in NewSource().
+        type: int
+        default: "456"
+        validations: []

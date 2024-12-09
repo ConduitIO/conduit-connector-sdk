@@ -1,0 +1,21 @@
+version: "1.0"
+specification:
+  name: name taken from code
+  summary: summary taken from code
+  description: description taken from yaml
+  version: v12.34.56
+  author: Acme
+  source:
+    parameters:
+      - name: myInt
+        description: |-
+          MyInt has a block comment.
+          And it spans multiple lines.
+        type: int
+        default: ""
+        validations: []
+      - name: myString
+        description: MyString has a line comment.
+        type: string
+        default: ""
+        validations: []

@@ -41,40 +41,40 @@ func (m *MockDestination) EXPECT() *MockDestinationMockRecorder {
 	return m.recorder
 }
 
-// Configure mocks base method.
-func (m *MockDestination) Configure(arg0 context.Context, arg1 config.Config) error {
+// Config mocks base method.
+func (m *MockDestination) Config() DestinationConfig {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Configure", arg0, arg1)
-	ret0, _ := ret[0].(error)
+	ret := m.ctrl.Call(m, "Config")
+	ret0, _ := ret[0].(DestinationConfig)
 	return ret0
 }
 
-// Configure indicates an expected call of Configure.
-func (mr *MockDestinationMockRecorder) Configure(arg0, arg1 any) *MockDestinationConfigureCall {
+// Config indicates an expected call of Config.
+func (mr *MockDestinationMockRecorder) Config() *MockDestinationConfigCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Configure", reflect.TypeOf((*MockDestination)(nil).Configure), arg0, arg1)
-	return &MockDestinationConfigureCall{Call: call}
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Config", reflect.TypeOf((*MockDestination)(nil).Config))
+	return &MockDestinationConfigCall{Call: call}
 }
 
-// MockDestinationConfigureCall wrap *gomock.Call
-type MockDestinationConfigureCall struct {
+// MockDestinationConfigCall wrap *gomock.Call
+type MockDestinationConfigCall struct {
 	*gomock.Call
 }
 
 // Return rewrite *gomock.Call.Return
-func (c *MockDestinationConfigureCall) Return(arg0 error) *MockDestinationConfigureCall {
+func (c *MockDestinationConfigCall) Return(arg0 DestinationConfig) *MockDestinationConfigCall {
 	c.Call = c.Call.Return(arg0)
 	return c
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockDestinationConfigureCall) Do(f func(context.Context, config.Config) error) *MockDestinationConfigureCall {
+func (c *MockDestinationConfigCall) Do(f func() DestinationConfig) *MockDestinationConfigCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockDestinationConfigureCall) DoAndReturn(f func(context.Context, config.Config) error) *MockDestinationConfigureCall {
+func (c *MockDestinationConfigCall) DoAndReturn(f func() DestinationConfig) *MockDestinationConfigCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -227,44 +227,6 @@ func (c *MockDestinationOpenCall) Do(f func(context.Context) error) *MockDestina
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockDestinationOpenCall) DoAndReturn(f func(context.Context) error) *MockDestinationOpenCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// Parameters mocks base method.
-func (m *MockDestination) Parameters() config.Parameters {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Parameters")
-	ret0, _ := ret[0].(config.Parameters)
-	return ret0
-}
-
-// Parameters indicates an expected call of Parameters.
-func (mr *MockDestinationMockRecorder) Parameters() *MockDestinationParametersCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Parameters", reflect.TypeOf((*MockDestination)(nil).Parameters))
-	return &MockDestinationParametersCall{Call: call}
-}
-
-// MockDestinationParametersCall wrap *gomock.Call
-type MockDestinationParametersCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *MockDestinationParametersCall) Return(arg0 config.Parameters) *MockDestinationParametersCall {
-	c.Call = c.Call.Return(arg0)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *MockDestinationParametersCall) Do(f func() config.Parameters) *MockDestinationParametersCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockDestinationParametersCall) DoAndReturn(f func() config.Parameters) *MockDestinationParametersCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
