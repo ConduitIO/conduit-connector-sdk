@@ -237,7 +237,7 @@ func (c ConnectorSpecification) FromConfig(spec pconnector.Specification) Connec
 }
 
 func (Parameters) FromConfig(params config.Parameters) Parameters {
-	var p Parameters
+	p := make(Parameters, 0, len(params))
 
 	for name, param := range params {
 		paramOut := Parameter{}.FromConfig(param)
