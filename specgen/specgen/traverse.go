@@ -37,8 +37,7 @@ func traverseFieldsInternal(v reflect.Value, parentPath string, hook fieldHook) 
 	v = reflect.Indirect(v)
 
 	// Handle different kinds of values
-	//nolint:exhaustive // we only need to traverse fields structs and map key-value pairs
-	switch v.Kind() {
+	switch v.Kind() { //nolint:exhaustive // we only need to traverse fields structs and map key-value pairs
 	case reflect.Map:
 		traverseMapWithStructFields(v, parentPath, hook)
 	case reflect.Struct:

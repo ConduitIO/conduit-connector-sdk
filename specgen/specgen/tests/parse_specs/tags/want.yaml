@@ -25,15 +25,6 @@ specification:
             value: "0"
           - type: less-than
             value: "100"
-      - name: param2
-        description: ""
-        type: bool
-        default: t
-        validations:
-          - type: inclusion
-            value: true,t
-          - type: exclusion
-            value: false,f
       - name: param3
         description: ""
         type: string
@@ -43,3 +34,12 @@ specification:
             value: ""
           - type: regex
             value: .*
+      - name: param2
+        description: ""
+        type: bool
+        default: t
+        validations:
+          - type: inclusion
+            value: true,t
+          - type: exclusion
+            value: false,f
