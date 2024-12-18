@@ -19,7 +19,7 @@ require (
 	golang.org/x/sync v0.10.0
 	golang.org/x/time v0.8.0
 	golang.org/x/tools v0.28.0
-	google.golang.org/grpc v1.69.0
+	google.golang.org/grpc v1.69.2
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
 	mvdan.cc/gofumpt v0.7.0
 )
