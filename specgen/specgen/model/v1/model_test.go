@@ -113,13 +113,13 @@ func TestParametersFromConfig_Sorted(t *testing.T) {
 		{
 			name: "required and optional",
 			input: config.Parameters{
-				"paramB": config.Parameter{
-					Type:        config.ParameterTypeInt,
-					Validations: []config.Validation{config.ValidationRequired{}},
-				},
 				"paramA": config.Parameter{
 					Type:        config.ParameterTypeInt,
 					Validations: []config.Validation{},
+				},
+				"paramB": config.Parameter{
+					Type:        config.ParameterTypeInt,
+					Validations: []config.Validation{config.ValidationRequired{}},
 				},
 			},
 			want: Parameters([]Parameter{
