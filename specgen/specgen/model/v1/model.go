@@ -16,9 +16,8 @@ package v1
 
 import (
 	"fmt"
-	"maps"
 	"regexp"
-	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -238,20 +237,38 @@ func (c ConnectorSpecification) FromConfig(spec pconnector.Specification) Connec
 }
 
 func (Parameters) FromConfig(params config.Parameters) Parameters {
-	p := make(Parameters, len(params))
+	p := make(Parameters, 0, len(params))
 
-	names := make([]string, 0, len(params))
-	for k := range maps.Keys(params) {
-		names = append(names, k)
-	}
-	slices.Sort(names)
-
-	for i, name := range names {
-		paramOut := Parameter{}.FromConfig(params[name])
+	for name, param := range params {
+		paramOut := Parameter{}.FromConfig(param)
 		paramOut.Name = name
-		p[i] = paramOut
+		p = append(p, paramOut)
 	}
+
+	// Parameters are sorted so that required params come first.
+	// If two parameters are both required or both optional,
+	// the one that's lexicographically smaller comes first.
+	sort.Slice(p, func(i, j int) bool {
+		pi := params[p[i].Name]
+		pj := params[p[j].Name]
+
+		if isRequired(pi) != isRequired(pj) {
+			return isRequired(pi)
+		}
+
+		return p[i].Name < p[j].Name
+	})
 	return p
+}
+
+func isRequired(p config.Parameter) bool {
+	for _, val := range p.Validations {
+		if val.Type() == config.ValidationTypeRequired {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (p Parameter) FromConfig(param config.Parameter) Parameter {
