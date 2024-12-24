@@ -115,9 +115,10 @@ type Source interface {
 	// update anything that was initialized in LifecycleOnCreated, in case the
 	// configuration change affects it.
 	LifecycleOnUpdated(ctx context.Context, configBefore, configAfter config.Config) error
-	// LifecycleOnDeleted is called when the connector was deleted. It will be
-	// the only method that is called in that case. This method can be used to
-	// clean up anything that was initialized in LifecycleOnCreated.
+	// LifecycleOnDeleted is called when the connector was deleted.
+	// This method can be used to clean up anything that was initialized in LifecycleOnCreated.
+	// It will be the only method that is called in that case, i.e. Configure() and Open()
+	// won't be called. The implementation needs to manually parse the configuration if needed.
 	LifecycleOnDeleted(ctx context.Context, config config.Config) error
 
 	mustEmbedUnimplementedSource()
