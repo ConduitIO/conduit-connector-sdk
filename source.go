@@ -181,11 +181,6 @@ func (a *sourcePluginAdapter) Configure(ctx context.Context, req pconnector.Sour
 			return fmt.Errorf("failed to parse configuration: %w", err)
 		}
 
-		err = cfg.Validate(ctx)
-		if err != nil {
-			return fmt.Errorf("configuration invalid: %w", err)
-		}
-
 		return nil
 	})
 

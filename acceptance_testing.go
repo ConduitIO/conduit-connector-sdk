@@ -1153,11 +1153,6 @@ func configureSource(ctx context.Context, src Source, cfgMap config.Config, para
 		return fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
-	err = cfg.Validate(ctx)
-	if err != nil {
-		return fmt.Errorf("configuration invalid: %w", err)
-	}
-
 	return nil
 }
 
@@ -1171,11 +1166,6 @@ func configureDestination(ctx context.Context, dest Destination, cfgMap config.C
 	err := Util.ParseConfig(ctx, cfgMap, cfg, params)
 	if err != nil {
 		return fmt.Errorf("failed to parse configuration: %w", err)
-	}
-
-	err = cfg.Validate(ctx)
-	if err != nil {
-		return fmt.Errorf("configuration invalid: %w", err)
 	}
 
 	return nil
