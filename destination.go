@@ -141,11 +141,6 @@ func (a *destinationPluginAdapter) Configure(ctx context.Context, req pconnector
 		return pconnector.DestinationConfigureResponse{}, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
-	err = cfg.Validate(ctx)
-	if err != nil {
-		return pconnector.DestinationConfigureResponse{}, fmt.Errorf("configuration invalid: %w", err)
-	}
-
 	return pconnector.DestinationConfigureResponse{}, nil
 }
 
