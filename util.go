@@ -101,7 +101,7 @@ func parseConfig(
 			return fmt.Errorf("config invalid: %w", err)
 		}
 	}
-	
+
 	return err
 }
 
