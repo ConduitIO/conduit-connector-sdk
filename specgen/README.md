@@ -1,8 +1,10 @@
 # specgen
 
+## Overview
+
 `specgen` is a tool that generates connector specifications and writes them to
-`connector.yaml`. The input to `specgen` are source and destination configurtion
-structs.
+`connector.yaml`. The input to `specgen` are source and destination
+configuration structs.
 
 `specgen` is run as part of `go generate`. It also needs access to the
 `sdk.Connector` variable that holds references to constructor functions for the
@@ -34,6 +36,7 @@ var Connector = sdk.Connector{
 
 `specgen` generates the specification in the following phases:
 
-1. Extract the specification from the source and destination configuration
+1. Extract the specifications from the source and destination configuration
    struct.
-2. Combine the extracted specification with the existing one in `connecor.yaml`.
+2. Combine the extracted specification with the existing one in `connector.yaml`.
+
