@@ -4,7 +4,7 @@
 
 `specgen` is a tool that generates connector specifications and writes them to
 `connector.yaml`. The input to `specgen` are source and destination
-configuration structs.
+configuration structs returned by the `Config()` methods in the connectors.
 
 `specgen` is run as part of `go generate`. It also needs access to the
 `sdk.Connector` variable that holds references to constructor functions for the
@@ -40,3 +40,5 @@ var Connector = sdk.Connector{
    struct.
 2. Combine the extracted specification with the existing one in `connector.yaml`.
 
+More detailed information about `specgen` and `connector.yaml` can be found in
+the [Conduit documentation](https://conduit.io/docs/developing/connectors/connector-specification).
