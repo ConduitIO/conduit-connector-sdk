@@ -2,7 +2,7 @@
 
 ## Overview
 
-`specgen` is a tool that generates connector specifications and writes them to
+`specgen` is a tool that generates connector specifications and writes them to a
 `connector.yaml`. The input to `specgen` are source and destination
 configuration structs returned by the `Config()` methods in the connectors.
 
