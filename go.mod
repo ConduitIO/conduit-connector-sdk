@@ -21,7 +21,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.5.0
 	golang.org/x/sync v0.10.0
-	golang.org/x/time v0.8.0
+	golang.org/x/time v0.9.0
 	golang.org/x/tools v0.29.0
 	google.golang.org/grpc v1.69.2
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
