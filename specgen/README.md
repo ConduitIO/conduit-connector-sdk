@@ -38,7 +38,7 @@ var Connector = sdk.Connector{
 
 1. Extracts the specifications from the source and destination configuration
    struct.
-2. Combine the extracted specification with the existing one in `connector.yaml`.
+2. Combines the extracted specification with the existing one in `connector.yaml`.
 
 More detailed information about `specgen` and `connector.yaml` can be found in
 the [Conduit documentation](https://conduit.io/docs/developing/connectors/connector-specification).
