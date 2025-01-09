@@ -36,7 +36,7 @@ var Connector = sdk.Connector{
 
 `specgen` generates the specification in the following phases:
 
-1. Extract the specifications from the source and destination configuration
+1. Extracts the specifications from the source and destination configuration
    struct.
 2. Combine the extracted specification with the existing one in `connector.yaml`.
 
