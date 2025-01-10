@@ -89,8 +89,18 @@ func parseConfig(
 	}
 
 	logger.Debug().Type("target", target).Msg("decoding configuration into the target object")
-	//nolint:wrapcheck // error is already wrapped by DecodeInto
-	return c.DecodeInto(target)
+	if err := c.DecodeInto(target); err != nil {
+		return err
+	}
+
+	if v, ok := target.(Validatable); ok {
+		err := v.Validate(ctx)
+		if err != nil {
+			return fmt.Errorf("config invalid: %w", err)
+		}
+	}
+
+	return err
 }
 
 func YAMLSpecification(rawYaml string) func() Specification {

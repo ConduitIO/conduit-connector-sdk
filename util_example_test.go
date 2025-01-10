@@ -16,42 +16,43 @@ package sdk
 
 import (
 	"context"
-	"errors"
-	"testing"
+	"fmt"
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
-	"github.com/matryer/is"
 )
 
-type testConfig struct {
-	Foo    string `json:"foo"`
-	Bar    int    `json:"bar"`
-	Nested struct {
-		Baz time.Duration `json:"baz"`
-	} `json:"nested"`
-	err error
-}
-
-func (c *testConfig) Validate(context.Context) error {
-	return c.err
-}
-
-func TestParseConfig_ValidateCalled(t *testing.T) {
-	is := is.New(t)
-
-	wantErr := errors.New("validation error")
+// ExampleUtil_ParseConfig shows the usage of Util.ParseConfig.
+func ExampleUtil_ParseConfig() {
 	cfg := config.Config{
-		"foo": "bar",
+		"foo": "bar   ", // will be sanitized
+		// "bar" is missing, will be set to the default value
+		"nested.baz": "1m",
 	}
 
 	params := config.Parameters{
 		"foo": config.Parameter{Type: config.ParameterTypeString},
+		"bar": config.Parameter{
+			Type:    config.ParameterTypeInt,
+			Default: "42",
+		},
+		"nested.baz": config.Parameter{Type: config.ParameterTypeDuration},
 	}
 
-	target := testConfig{
-		err: wantErr,
+	var target struct {
+		Foo    string `json:"foo"`
+		Bar    int    `json:"bar"`
+		Nested struct {
+			Baz time.Duration `json:"baz"`
+		} `json:"nested"`
 	}
+
 	err := Util.ParseConfig(context.Background(), cfg, &target, params)
-	is.True(errors.Is(err, wantErr))
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%+v", target)
+
+	// Output: {Foo:bar Bar:42 Nested:{Baz:1m0s}}
 }
