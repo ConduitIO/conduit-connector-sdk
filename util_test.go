@@ -130,7 +130,6 @@ specification:
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-
 			got := YAMLSpecification(yaml, tc.version)()
 			want := spec
 			if tc.version != "" {

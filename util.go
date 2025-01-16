@@ -104,7 +104,7 @@ func parseConfig(
 }
 
 // YAMLSpecification parses a Specification from the given YAML file.
-// The connector version found in the YAML file can be overriden with
+// The connector version found in the YAML file can be overridden with
 // the `version` parameter.
 func YAMLSpecification(rawYaml, version string) func() Specification {
 	specs, err := ParseYAMLSpecification(context.Background(), rawYaml, version)
