@@ -55,3 +55,87 @@ func TestParseConfig_ValidateCalled(t *testing.T) {
 	err := Util.ParseConfig(context.Background(), cfg, &target, params)
 	is.True(errors.Is(err, wantErr))
 }
+
+func TestYAMLSpecification(t *testing.T) {
+	is := is.New(t)
+
+	yaml := `
+version: "1.0"
+specification:
+  name: foo
+  summary: describe your connector
+  description: describe your connector in detail
+  version: v0.6.0
+  author: your name
+  source:
+    parameters:
+      - name: sunny
+        description: sunny describes how sunny is it outside
+        type: string
+        default: ""
+        validations:
+          - type: required
+            value: ""
+  destination:
+    parameters:
+    - name: rainy
+      description: rainy describes how rainy is it outside
+      type: string
+      default: ""
+      validations:
+        - type: required
+          value: ""`
+
+	spec := Specification{
+		Name:        "foo",
+		Summary:     "describe your connector",
+		Description: "describe your connector in detail",
+		Version:     "v0.6.0",
+		Author:      "your name",
+		SourceParams: config.Parameters{
+			"sunny": {
+				Default:     "",
+				Description: "sunny describes how sunny is it outside",
+				Type:        config.ParameterTypeString,
+				Validations: []config.Validation{
+					config.ValidationRequired{},
+				},
+			},
+		},
+		DestinationParams: config.Parameters{
+			"rainy": {
+				Default:     "",
+				Description: "rainy describes how rainy is it outside",
+				Type:        config.ParameterTypeString,
+				Validations: []config.Validation{
+					config.ValidationRequired{},
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name    string
+		version string
+	}{
+		{
+			name:    "no version override",
+			version: "",
+		},
+		{
+			name:    "with version override",
+			version: "v1.3.5-abcdef",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := YAMLSpecification(yaml, tc.version)()
+			want := spec
+			if tc.version != "" {
+				want.Version = tc.version
+			}
+			is.Equal(want, got)
+		})
+	}
+}
