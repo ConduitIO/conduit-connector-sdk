@@ -103,15 +103,18 @@ func parseConfig(
 	return err
 }
 
-func YAMLSpecification(rawYaml string) func() Specification {
-	specs, err := ParseYAMLSpecification(context.Background(), rawYaml)
+// YAMLSpecification parses a Specification from the given YAML file.
+// The connector version found in the YAML file can be overridden with
+// the `version` parameter.
+func YAMLSpecification(rawYaml, version string) func() Specification {
+	specs, err := ParseYAMLSpecification(context.Background(), rawYaml, version)
 	if err != nil {
 		panic("failed to parse YAML specification: " + err.Error())
 	}
 	return func() Specification { return specs }
 }
 
-func ParseYAMLSpecification(ctx context.Context, rawYaml string) (Specification, error) {
+func ParseYAMLSpecification(ctx context.Context, rawYaml, version string) (Specification, error) {
 	logger := Logger(ctx)
 
 	logger.Debug().Str("yaml", rawYaml).Msg("parsing YAML specification")
@@ -124,7 +127,7 @@ func ParseYAMLSpecification(ctx context.Context, rawYaml string) (Specification,
 	)
 	reader := strings.NewReader(rawYaml)
 
-	spec, warnings, err := parser.Parse(ctx, reader)
+	specs, warnings, err := parser.Parse(ctx, reader)
 	if err != nil {
 		return Specification{}, fmt.Errorf("failed to parse YAML specification: %w", err)
 	}
@@ -133,17 +136,25 @@ func ParseYAMLSpecification(ctx context.Context, rawYaml string) (Specification,
 		warnings.Log(ctx, slogLogger)
 	}
 
-	switch len(spec) {
+	var spec Specification
+	switch len(specs) {
 	case 0:
 		logger.Debug().Msg("no specification found in YAML")
 		return Specification{}, fmt.Errorf("no specification found in YAML")
 	case 1:
-		logger.Debug().Any("specification", spec[0]).Msg("specification successfully parsed")
-		return spec[0], nil
+		logger.Debug().Any("specification", specs[0]).Msg("specification successfully parsed")
+		spec = specs[0]
 	default:
-		logger.Warn().Any("specification", spec[0]).Msg("multiple specifications found in YAML, returning the first one")
-		return spec[0], nil
+		logger.Warn().Any("specification", specs[0]).Msg("multiple specifications found in YAML, returning the first one")
+		spec = specs[0]
 	}
+
+	versionTrimmed := strings.TrimSpace(version)
+	if versionTrimmed != "" {
+		spec.Version = versionTrimmed
+	}
+
+	return spec, nil
 }
 
 func must[T any](out T, err error) T {
