@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"text/template"
@@ -32,25 +33,63 @@ var (
 	templates embed.FS
 )
 
-func Generate(data any, readmePath string, out io.Writer) error {
-	readme, err := os.ReadFile(readmePath)
+type GenerateOptions struct {
+	// Required fields
+	Data       any       // The data to use in template generation
+	ReadmePath string    // Path to the readme template file
+	Out        io.Writer // Where to write the generated output
+
+	// Optional fields
+	FuncMap     template.FuncMap // Custom function map to merge with default functions
+	TemplatesFS fs.FS            // Custom templates directory to merge with default templates
+}
+
+func (opts GenerateOptions) validate() error {
+	// Validate required fields
+	if opts.Data == nil {
+		return fmt.Errorf("Data is required")
+	}
+	if opts.ReadmePath == "" {
+		return fmt.Errorf("ReadmePath is required")
+	}
+	if opts.Out == nil {
+		return fmt.Errorf("Out is required")
+	}
+	return nil
+}
+
+func Generate(opts GenerateOptions) error {
+	if err := opts.validate(); err != nil {
+		return fmt.Errorf("invalid options: %w", err)
+	}
+
+	readme, err := os.ReadFile(opts.ReadmePath)
 	if err != nil {
-		return fmt.Errorf("could not read readme file %v: %w", readmePath, err)
+		return fmt.Errorf("could not read readme file %v: %w", opts.ReadmePath, err)
 	}
 	readmeTmpl, err := Preprocess(string(readme))
 	if err != nil {
-		return fmt.Errorf("could not preprocess readme file %v: %w", readmePath, err)
+		return fmt.Errorf("could not preprocess readme file %v: %w", opts.ReadmePath, err)
 	}
 
 	t := template.New("readme").Funcs(funcMap).Funcs(sprig.FuncMap())
+	if opts.FuncMap != nil {
+		t = t.Funcs(opts.FuncMap)
+	}
+
 	t = template.Must(t.ParseFS(templates, "templates/*.tmpl"))
+	if opts.TemplatesFS != nil {
+		t = template.Must(t.ParseFS(opts.TemplatesFS, "*.tmpl"))
+	}
+
 	t = template.Must(t.Parse(readmeTmpl))
 
-	return t.Execute(out, data)
+	return t.Execute(opts.Out, opts.Data)
 }
 
 var funcMap = template.FuncMap{
 	"formatCommentYAML": formatCommentYAML,
+	"formatValueYAML":   formatValueYAML,
 	"args":              args,
 }
 
@@ -88,6 +127,19 @@ func formatCommentYAML(text string, indent int) string {
 	// remove first indent and last new line
 	comment = comment[indent : len(comment)-1]
 	return comment
+}
+
+func formatValueYAML(value string, indent int) string {
+	switch {
+	case value == "":
+		return `""`
+	case strings.Contains(value, "\n"):
+		// specifically used in the javascript processor
+		formattedValue := formatMultiline(value, strings.Repeat(" ", indent), 10000)
+		return fmt.Sprintf("|\n%s", formattedValue)
+	default:
+		return fmt.Sprintf(`"%s"`, value)
+	}
 }
 
 func formatMultiline(

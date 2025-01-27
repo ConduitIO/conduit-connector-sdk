@@ -53,7 +53,13 @@ func mainE() error {
 		out = buf
 	}
 
-	err = util.Generate(specs, *readmePath, out)
+	opts := util.GenerateOptions{
+		Data:       specs,
+		ReadmePath: *readmePath,
+		Out:        out,
+	}
+
+	err = util.Generate(opts)
 	if err != nil {
 		return fmt.Errorf("failed to generate readme: %w", err)
 	}
