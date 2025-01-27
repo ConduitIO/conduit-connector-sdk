@@ -34,16 +34,16 @@ const (
 
 var (
 	preprocessTags = map[string]string{
-		"name":        `{{ title .specification.Name }}`,
-		"summary":     `{{ .specification.Summary }}`,
-		"description": `{{ .specification.Description }}`,
-		"version":     `{{ .specification.Version }}`,
-		"author":      `{{ .specification.Author }}`,
+		"name":        `{{ title .specification.name }}`,
+		"summary":     `{{ .specification.summary }}`,
+		"description": `{{ .specification.description }}`,
+		"version":     `{{ .specification.version }}`,
+		"author":      `{{ .specification.author }}`,
 
-		"source.parameters.yaml":       `{{ template "parameters.yaml" args "specification" .specification "parameters" .sourceParams }}`,
-		"source.parameters.table":      `{{ template "parameters.table" args "specification" .specification "parameters" .sourceParams }}`,
-		"destination.parameters.yaml":  `{{ template "parameters.yaml" args "specification" .specification "parameters" .destinationParams }}`,
-		"destination.parameters.table": `{{ template "parameters.table" args "specification" .specification "parameters" .destinationParams }}`,
+		"source.parameters.yaml":       `{{ template "parameters.yaml" args "specification" .specification "parameters" .specification.source.parameters }}`,
+		"source.parameters.table":      `{{ template "parameters.table" args "specification" .specification "parameters" .specification.source.parameters }}`,
+		"destination.parameters.yaml":  `{{ template "parameters.yaml" args "specification" .specification "parameters" .specification.destination.parameters }}`,
+		"destination.parameters.table": `{{ template "parameters.table" args "specification" .specification "parameters" .specification.destination.parameters }}`,
 	}
 	errReadmegenCommentNotFound = errors.New("readmegen open tag not found")
 )

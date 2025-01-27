@@ -6,12 +6,12 @@ pipelines:
     status: running
     connectors:
       - id: example
-        plugin: "{{ .specification.Name }}"
+        plugin: "{{ .specification.name }}"
         settings:
-        {{- range $name, $param := .parameters }}
-          {{ formatCommentYAML $param.Description 10 }}
-          # Type: {{ $param.Type }}
-          {{ $name }}: "{{ $param.Default }}"
+        {{- range $param := .parameters }}
+          {{ formatCommentYAML $param.description 10 }}
+          # Type: {{ $param.type }}
+          {{ $param.name }}: "{{ $param.default }}"
         {{- end }}
 ```
 {{ end }}

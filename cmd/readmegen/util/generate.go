@@ -25,7 +25,6 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
-	sdk "github.com/conduitio/conduit-connector-sdk"
 )
 
 var (
@@ -33,37 +32,21 @@ var (
 	templates embed.FS
 )
 
-type GenerateOptions struct {
-	ReadmePath string
-	Output     io.Writer
-}
-
-func Generate(conn sdk.Connector, opts GenerateOptions) error {
-	readme, err := os.ReadFile(opts.ReadmePath)
+func Generate(data any, readmePath string, out io.Writer) error {
+	readme, err := os.ReadFile(readmePath)
 	if err != nil {
-		return fmt.Errorf("could not read readme file %v: %w", opts.ReadmePath, err)
+		return fmt.Errorf("could not read readme file %v: %w", readmePath, err)
 	}
 	readmeTmpl, err := Preprocess(string(readme))
 	if err != nil {
-		return fmt.Errorf("could not preprocess readme file %v: %w", opts.ReadmePath, err)
+		return fmt.Errorf("could not preprocess readme file %v: %w", readmePath, err)
 	}
 
 	t := template.New("readme").Funcs(funcMap).Funcs(sprig.FuncMap())
 	t = template.Must(t.ParseFS(templates, "templates/*.tmpl"))
 	t = template.Must(t.Parse(readmeTmpl))
 
-	data := map[string]any{}
-	if conn.NewSpecification != nil {
-		data["specification"] = conn.NewSpecification()
-	}
-	if conn.NewSource != nil {
-		data["sourceParams"] = conn.NewSource().Parameters()
-	}
-	if conn.NewDestination != nil {
-		data["destinationParams"] = conn.NewDestination().Parameters()
-	}
-
-	return t.Execute(opts.Output, data)
+	return t.Execute(out, data)
 }
 
 var funcMap = template.FuncMap{

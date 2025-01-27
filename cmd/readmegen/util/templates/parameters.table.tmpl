@@ -6,26 +6,26 @@
     <th>Default</th>
     <th>Description</th>
   </tr>
-  {{- range $name, $param := .parameters }}
+  {{- range $param := .parameters }}
   <tr>
 <td>
 
-`{{ $name }}`
+`{{ $param.name }}`
 
 </td>
 <td>
 
-{{ $param.Type.String }}
+{{ $param.type }}
 
 </td>
 <td>
 
-`{{ $param.Default }}`
+`{{ $param.default }}`
 
 </td>
 <td>
 
-{{ $param.Description }}
+{{ $param.description }}
 
 </td>
   </tr>

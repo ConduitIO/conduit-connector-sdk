@@ -16,170 +16,67 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"text/template"
 
-	"golang.org/x/mod/modfile"
+	"github.com/conduitio/conduit-connector-sdk/cmd/readmegen/util"
+	"github.com/conduitio/yaml/v3"
 )
 
 var (
-	pkg        = flag.String("pkg", "", "The full package import path for the connector. By default, readmegen will try to detect the package import path based on the go.mod file it finds in the directory or any parent directory.")
-	readmePath = flag.String("f", "README.md", "The path to the readme file")
+	specsPath  = flag.String("specs", "connector.yaml", "The path to the connector.yaml file")
+	readmePath = flag.String("readme", "README.md", "The path to the readme file")
 	write      = flag.Bool("w", false, "Overwrite readme file instead of printing to stdout")
-
-	debugIntermediary = flag.Bool("debug-intermediary", false, "Print the intermediary generated program to stdout instead of writing it to a file")
 )
 
 func main() {
+	if err := mainE(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func mainE() error {
 	flag.Parse()
 
-	detectedPkg, err := detectPackage()
-	if err != nil && *pkg == "" {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	if *pkg == "" {
-		*pkg = detectedPkg
-	}
-	if *pkg != detectedPkg {
-		// detected package is different from provided package, we need to
-		// create a separate go module for the intermediary program
-		// TODO
-	}
-
-	err = generate()
+	specs, err := readSpecs(*specsPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
-}
 
-func detectPackage() (string, error) {
-	currentDir, err := filepath.Abs(".")
+	buf := new(bytes.Buffer)
+	var out io.Writer = os.Stdout
+	if *write {
+		// Write to buffer and then flush to file
+		out = buf
+	}
+
+	err = util.Generate(specs, *readmePath, out)
 	if err != nil {
-		return "", fmt.Errorf("could not detect absolute path to current directory: %w", err)
+		return fmt.Errorf("failed to generate readme: %w", err)
 	}
-	for {
-		dat, err := os.ReadFile(filepath.Join(currentDir, "go.mod"))
-		if os.IsNotExist(err) {
-			if currentDir == filepath.Dir(currentDir) {
-				// at the root
-				break
-			}
-			currentDir = filepath.Dir(currentDir)
-			continue
-		} else if err != nil {
-			return "", err
-		}
-		modulePath := modfile.ModulePath(dat)
-		if modulePath == "" {
-			break // no module path found
-		}
-		return modulePath, nil
-	}
-	return "", errors.New("could not detect package, make sure you are in the connector directory or provide the package manually using the -pkg flag")
-}
-
-func generate() (err error) {
-	if *debugIntermediary {
-		return executeTemplate(os.Stdout)
-	}
-
-	tmpDir, err := os.MkdirTemp(".", "readmegen_tmp")
-	if err != nil {
-		return fmt.Errorf("could not create temporary directory: %w", err)
-	}
-	defer func() {
-		removeErr := os.RemoveAll(tmpDir)
-		if removeErr != nil {
-			removeErr = fmt.Errorf("could not remove temporary directory: %w", removeErr)
-			err = errors.Join(err, removeErr)
-		}
-	}()
-
-	f, err := os.Create(filepath.Join(tmpDir, "main.go"))
-	if err != nil {
-		return fmt.Errorf("could not create temporary file: %w", err)
-	}
-	defer f.Close()
-
-	err = executeTemplate(f)
-	if err != nil {
-		return fmt.Errorf("could not execute template: %w", err)
-	}
-	f.Close()
-
-	cmd := exec.Command("go", "run", "main.go")
-	cmd.Dir = tmpDir
-	cmd.Stdout = os.Stdout // pipe directly to stdout
-	cmd.Stderr = os.Stderr // pipe directly to stderr
 
 	if *write {
-		buf := new(bytes.Buffer)
-		cmd.Stdout = buf
-		defer func() {
-			if err != nil {
-				os.Stdout.Write(buf.Bytes())
-				return
-			}
-			err = os.WriteFile(*readmePath, buf.Bytes(), 0644)
-		}()
+		err = os.WriteFile(*readmePath, buf.Bytes(), 0644)
+		if err != nil {
+			return fmt.Errorf("failed to write %s: %w", *readmePath, err)
+		}
 	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("intermediary program failed: %w", err)
-	}
-
 	return nil
 }
 
-func executeTemplate(out io.Writer) error {
-	t, err := template.New("").Parse(tmpl)
+func readSpecs(path string) (map[string]any, error) {
+	specsRaw, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("could not parse template: %w", err)
+		return nil, fmt.Errorf("failed to read specifications from %v: %w", path, err)
 	}
-	p, err := filepath.Abs(*readmePath)
+
+	var data map[string]any
+	err = yaml.Unmarshal(specsRaw, &data)
 	if err != nil {
-		return fmt.Errorf("could not get absolute path to readme: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal specifications: %w", err)
 	}
-	return t.Execute(out, data{
-		ImportPath: *pkg,
-		ReadmePath: p,
-	})
+	return data, nil
 }
-
-type data struct {
-	ImportPath string
-	ReadmePath string
-}
-
-const tmpl = `
-package main
-
-import (
-	"fmt"
-	"os"
-
-	conn "{{ .ImportPath }}"
-	"github.com/conduitio/conduit-connector-sdk/cmd/readmegen/util"
-)
-
-func main() {
-	err := util.Generate(
-		conn.Connector,
-		util.GenerateOptions{
-			ReadmePath: "{{ .ReadmePath }}",
-			Output:     os.Stdout,
-		},
-	)
-	if err != nil {
-		fmt.Fprint(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-`
