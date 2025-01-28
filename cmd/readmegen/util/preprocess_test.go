@@ -45,7 +45,7 @@ func TestPreprocess(t *testing.T) {
 	}, {
 		name: "single tag",
 		data: "<!-- readmegen:name --> some text <!-- /readmegen:name -->",
-		want: `<!-- readmegen:name -->{{ title .specification.Name }}<!-- /readmegen:name -->`,
+		want: `<!-- readmegen:name -->{{ title .specification.name }}<!-- /readmegen:name -->`,
 	}, {
 		name: "multiple tags",
 		data: `
@@ -61,11 +61,11 @@ regardless of what it holds...
 
 <!-- readmegen:version -->Another overwritten text<!-- /readmegen:version -->`,
 		want: `
-<!-- readmegen:name -->{{ title .specification.Name }}<!-- /readmegen:name -->
+<!-- readmegen:name -->{{ title .specification.name }}<!-- /readmegen:name -->
 
 # This will stay!
 
-<!-- readmegen:version -->{{ .specification.Version }}<!-- /readmegen:version -->`,
+<!-- readmegen:version -->{{ .specification.version }}<!-- /readmegen:version -->`,
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
