@@ -16,7 +16,6 @@ package util
 
 import (
 	"embed"
-	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -28,10 +27,8 @@ import (
 	"github.com/Masterminds/sprig/v3"
 )
 
-var (
-	//go:embed templates/*
-	templates embed.FS
-)
+//go:embed templates/*
+var templates embed.FS
 
 type GenerateOptions struct {
 	// Required fields
@@ -47,13 +44,13 @@ type GenerateOptions struct {
 func (opts GenerateOptions) validate() error {
 	// Validate required fields
 	if opts.Data == nil {
-		return fmt.Errorf("Data is required")
+		return fmt.Errorf("field Data is required")
 	}
 	if opts.ReadmePath == "" {
-		return fmt.Errorf("ReadmePath is required")
+		return fmt.Errorf("field ReadmePath is required")
 	}
 	if opts.Out == nil {
-		return fmt.Errorf("Out is required")
+		return fmt.Errorf("field Out is required")
 	}
 	return nil
 }

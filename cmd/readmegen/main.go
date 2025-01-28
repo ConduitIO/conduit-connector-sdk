@@ -65,7 +65,7 @@ func mainE() error {
 	}
 
 	if *write {
-		err = os.WriteFile(*readmePath, buf.Bytes(), 0644)
+		err = os.WriteFile(*readmePath, buf.Bytes(), 0o644)
 		if err != nil {
 			return fmt.Errorf("failed to write %s: %w", *readmePath, err)
 		}
