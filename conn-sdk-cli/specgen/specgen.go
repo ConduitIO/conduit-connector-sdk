@@ -27,7 +27,7 @@ import (
 	"github.com/conduitio/conduit-commons/paramgen/paramgen"
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	sdk "github.com/conduitio/conduit-connector-sdk"
-	v1 "github.com/conduitio/conduit-connector-sdk/specgen/specgen/model/v1"
+	v1 "github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen/model/v1"
 	"gopkg.in/yaml.v3"
 )
 
