@@ -27,6 +27,7 @@ install-tools:
 
 .PHONY: tidy-all
 tidy-all:
+	go mod tidy
 	@echo "Tidying up module in parse_specs directory"
 	@(cd conn-sdk-cli/specgen/tests/parse_specs && go mod tidy)
 	@echo "Tidying up subdirectories..."
