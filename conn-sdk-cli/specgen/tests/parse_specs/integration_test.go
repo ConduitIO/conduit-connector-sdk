@@ -29,7 +29,7 @@ import (
 	"example.com/tags"
 	"example.com/type_aliases"
 	sdk "github.com/conduitio/conduit-connector-sdk"
-	"github.com/conduitio/conduit-connector-sdk/specgen/specgen"
+	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen"
 	"github.com/google/go-cmp/cmp"
 	"github.com/matryer/is"
 )

@@ -1,4 +1,4 @@
-// Copyright © 2024 Meroxa, Inc.
+// Copyright © 2025 Meroxa, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,68 +12,66 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package readmegen
 
 import (
 	"bytes"
-	"flag"
+	"context"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/readmegen"
 	"github.com/conduitio/yaml/v3"
 )
 
-var (
-	specsPath  = flag.String("specs", "connector.yaml", "The path to the connector.yaml file")
-	readmePath = flag.String("readme", "README.md", "The path to the readme file")
-	write      = flag.Bool("w", false, "Overwrite readme file instead of printing to stdout")
-)
+type Command struct {
+	specificationsFile string
+	readmeFile         string
+	write              bool
+}
 
-func main() {
-	if err := mainE(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+func NewCommand(specificationsFile, readmeFile string, write bool) *Command {
+	return &Command{
+		specificationsFile: specificationsFile,
+		readmeFile:         readmeFile,
+		write:              write,
 	}
 }
 
-func mainE() error {
-	flag.Parse()
-
-	specs, err := readSpecs(*specsPath)
+func (cmd *Command) Execute(_ context.Context) error {
+	specs, err := cmd.readSpecs(cmd.specificationsFile)
 	if err != nil {
 		return err
 	}
 
 	buf := new(bytes.Buffer)
 	var out io.Writer = os.Stdout
-	if *write {
+	if cmd.write {
 		// Write to buffer and then flush to file
 		out = buf
 	}
 
-	opts := readmegen.GenerateOptions{
+	opts := GenerateOptions{
 		Data:       specs,
-		ReadmePath: *readmePath,
+		ReadmePath: cmd.readmeFile,
 		Out:        out,
 	}
 
-	err = readmegen.Generate(opts)
+	err = Generate(opts)
 	if err != nil {
 		return fmt.Errorf("failed to generate readme: %w", err)
 	}
 
-	if *write {
-		err = os.WriteFile(*readmePath, buf.Bytes(), 0o644)
+	if cmd.write {
+		err = os.WriteFile(cmd.readmeFile, buf.Bytes(), 0o644)
 		if err != nil {
-			return fmt.Errorf("failed to write %s: %w", *readmePath, err)
+			return fmt.Errorf("failed to write %s: %w", cmd.readmeFile, err)
 		}
 	}
 	return nil
 }
 
-func readSpecs(path string) (map[string]any, error) {
+func (*Command) readSpecs(path string) (map[string]any, error) {
 	specsRaw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read specifications from %v: %w", path, err)
