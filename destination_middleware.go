@@ -414,12 +414,14 @@ func (c DestinationWithRecordFormatConfig) parameters() config.Parameters {
 	return config.Parameters{
 		configDestinationRecordFormat: {
 			Default:     c.DefaultRecordFormat,
+			Type:        config.ParameterTypeString,
 			Description: "The format of the output record.",
 			Validations: []config.Validation{
 				config.ValidationInclusion{List: c.formats()},
 			},
 		},
 		configDestinationRecordFormatOptions: {
+			Type:        config.ParameterTypeString,
 			Description: "Options to configure the chosen output record format. Options are key=value pairs separated with comma (e.g. opt1=val2,opt2=val2).",
 		},
 	}
