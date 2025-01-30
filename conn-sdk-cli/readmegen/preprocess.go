@@ -49,10 +49,10 @@ var (
 )
 
 // Preprocess takes the contents of a readme file and preprocesses it by replacing
-// readmegen tags with the corresponding values. A readmegen tag is a HTML comment
-// with the following format: <!-- readmegen:tag --> which has a corresponding
+// readmegen tags with the corresponding Go templates. A readmegen tag is a HTML
+// comment with the following format: <!-- readmegen:tag --> which has a corresponding
 // end tag <!-- /readmegen:tag -->. Everything between the tags is replaced with
-// the corresponding value. If the tag is not found, or a comment is not closed,
+// the corresponding template. If the tag is not found, or a comment is not closed,
 // an error is returned.
 func Preprocess(data string) (string, error) {
 	var out strings.Builder
