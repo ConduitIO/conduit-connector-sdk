@@ -664,19 +664,23 @@ func TestSourceWithEncoding_ReadN(t *testing.T) {
 		name: "no records returned",
 	}, {
 		name: "single record returned",
-		inputRecs: []opencdc.Record{{
-			Key: testDataStruct.Clone(),
-			Payload: opencdc.Change{
-				Before: testDataStruct.Clone(),
-				After:  testDataStruct.Clone(),
-			}},
+		inputRecs: []opencdc.Record{
+			{
+				Key: testDataStruct.Clone(),
+				Payload: opencdc.Change{
+					Before: testDataStruct.Clone(),
+					After:  testDataStruct.Clone(),
+				},
+			},
 		},
-		wantRecs: []opencdc.Record{{
-			Key: testDataRaw,
-			Payload: opencdc.Change{
-				Before: testDataRaw,
-				After:  testDataRaw,
-			}},
+		wantRecs: []opencdc.Record{
+			{
+				Key: testDataRaw,
+				Payload: opencdc.Change{
+					Before: testDataRaw,
+					After:  testDataRaw,
+				},
+			},
 		},
 	}, {
 		name: "multiple records returned",
