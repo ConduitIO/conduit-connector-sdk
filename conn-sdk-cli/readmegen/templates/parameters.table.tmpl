@@ -20,7 +20,7 @@
 </td>
 <td>
 
-`{{ $param.default }}`
+`{{ if $param.default }}{{ $param.default }}{{ else }}{{ zeroValueForType $param.type }}{{ end }}`
 
 </td>
 <td>

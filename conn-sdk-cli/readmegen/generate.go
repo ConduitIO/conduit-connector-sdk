@@ -25,6 +25,7 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/conduitio/conduit-commons/config"
 )
 
 //go:embed templates/*
@@ -87,6 +88,7 @@ func Generate(opts GenerateOptions) error {
 var funcMap = template.FuncMap{
 	"formatCommentYAML": formatCommentYAML,
 	"formatValueYAML":   formatValueYAML,
+	"zeroValueForType":  zeroValueForType,
 	"args":              args,
 }
 
@@ -177,4 +179,23 @@ func formatMultiline(
 	}
 
 	return formatted
+}
+
+func zeroValueForType(t string) string {
+	switch t {
+	case config.ParameterTypeString.String():
+		return ""
+	case config.ParameterTypeInt.String():
+		return "0"
+	case config.ParameterTypeFloat.String():
+		return "0.0"
+	case config.ParameterTypeBool.String():
+		return "false"
+	case config.ParameterTypeFile.String():
+		return ""
+	case config.ParameterTypeDuration.String():
+		return "0s"
+	default:
+		return ""
+	}
 }
