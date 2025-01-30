@@ -72,7 +72,7 @@ require (
 	github.com/ckaznocha/intrange v0.3.0 // indirect
 	github.com/conduitio/conduit-commons v0.5.0 // indirect
 	github.com/conduitio/conduit-connector-protocol v0.9.0 // indirect
-	github.com/conduitio/evolviconf v0.0.0-20241105144321-27c16bddeb38 // indirect
+	github.com/conduitio/evolviconf v0.1.0 // indirect
 	github.com/conduitio/evolviconf/evolviyaml v0.0.0-20241105144803-b3ba81765197 // indirect
 	github.com/conduitio/yaml/v3 v3.3.0 // indirect
 	github.com/curioswitch/go-reassign v0.3.0 // indirect
@@ -97,7 +97,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/go-xmlfmt/xmlfmt v1.1.3 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/goccy/go-json v0.10.4 // indirect
+	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golangci/dupl v0.0.0-20180902072040-3e9179ac440a // indirect
