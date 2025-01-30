@@ -1,0 +1,27 @@
+version: 1.0
+specification:
+  name: test-connector
+  summary: test summary
+  description: |
+    Test description
+    should be able to handle new lines as well!
+  version: v0.1.0
+  author: test author
+  source:
+    parameters:
+      - name: param1
+        type: string
+        description: string param1 description
+        default: "foo"
+      - name: param2
+        type: int
+        description: int param2 description
+  destination:
+    parameters:
+      - name: param1
+        type: boolean
+        description: boolean param1 description
+        default: "true"
+      - name: param2
+        type: float
+        description: float param2 description

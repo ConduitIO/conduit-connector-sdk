@@ -22,7 +22,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/conduitio/conduit-commons/config"
-	v1 "github.com/conduitio/conduit-connector-sdk/specgen/specgen/model/v1"
+	v1 "github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen/model/v1"
 	"github.com/conduitio/evolviconf"
 	"github.com/conduitio/evolviconf/evolviyaml"
 	"github.com/conduitio/yaml/v3"

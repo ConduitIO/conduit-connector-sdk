@@ -1,4 +1,4 @@
-// Copyright © 2024 Meroxa, Inc.
+// Copyright © 2025 Meroxa, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package specgen
 
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"os"
@@ -26,84 +26,57 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"text/template"
-
-	"github.com/conduitio/conduit-commons/lang"
-	"github.com/conduitio/conduit-connector-sdk/specgen/specgen"
 )
 
-func main() {
-	ctx := context.Background()
+type Command struct {
+	outputPath  string
+	packagePath string
+}
 
-	log.SetFlags(0)
-	log.SetPrefix("specgen: ")
-
-	// parse the command arguments
-	args := parseFlags()
-
-	specBytes, err := extractYAMLSpecification(ctx, args.path)
-	if err != nil {
-		log.Fatalf("error: failed to extract specification: %v", err)
-	}
-
-	err = specgen.WriteAndCombine(specBytes, args.output)
-	if err != nil {
-		log.Fatalf("error: failed to output file: %v", err)
+func NewCommand(outputPath, packagePath string) *Command {
+	return &Command{
+		outputPath:  outputPath,
+		packagePath: packagePath,
 	}
 }
 
-type Args struct {
-	output string
-	path   string
-}
-
-func parseFlags() Args {
-	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	var (
-		output = flags.String("output", "connector.yaml", "name of the output file")
-		path   = flags.String("path", ".", "directory path to the package that contains the Connector variable")
-	)
-
-	// flags is set up to exit on error, we can safely ignore the error
-	_ = flags.Parse(os.Args[1:])
-
-	if len(flags.Args()) > 0 {
-		log.Println("error: unrecognized argument")
-		fmt.Println()
-		flags.Usage()
-		os.Exit(1)
+func (cmd *Command) Execute(ctx context.Context) error {
+	specBytes, err := cmd.extractYAMLSpecification(ctx, cmd.packagePath)
+	if err != nil {
+		return fmt.Errorf("error: failed to extract specification: %w", err)
 	}
 
-	var args Args
-	args.output = lang.ValOrZero(output)
-	args.path = lang.ValOrZero(path)
+	err = WriteAndCombine(specBytes, cmd.outputPath)
+	if err != nil {
+		return fmt.Errorf("error: failed to output file: %w", err)
+	}
 
-	return args
+	return nil
 }
 
 // extractYAMLSpecification extracts the YAML specification from the connector
 // found in `path`.
 // `path` is the directory path to the package that contains the `Connector` variable.
-func extractYAMLSpecification(ctx context.Context, path string) ([]byte, error) {
+func (cmd *Command) extractYAMLSpecification(ctx context.Context, path string) ([]byte, error) {
 	// Get the import path of the package (that contains the connector code).
 	// It's needed in extractYAMLProgram to get the `Connector` variable.
-	out, err := specgen.Run(ctx, path, "go", "list", "-m")
+	out, err := Run(ctx, path, "go", "list", "-m")
 	if err != nil {
 		return nil, err
 	}
 	importPath := strings.TrimSpace(string(out))
 
-	program, err := writeProgram(importPath)
+	program, err := cmd.writeProgram(importPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return runInDir(ctx, program, path)
+	return cmd.runInDir(ctx, program, path)
 }
 
 // writeProgram writes the program that extracts the YAML specs
 // from the connector that can be found at the connectorImportPath.
-func writeProgram(connectorImportPath string) ([]byte, error) {
+func (cmd *Command) writeProgram(connectorImportPath string) ([]byte, error) {
 	var program bytes.Buffer
 	data := reflectData{
 		ImportPath: connectorImportPath,
@@ -116,7 +89,7 @@ func writeProgram(connectorImportPath string) ([]byte, error) {
 
 // runInDir writes the given program into the given dir, runs it there, and
 // returns the stdout output.
-func runInDir(ctx context.Context, program []byte, dir string) ([]byte, error) {
+func (cmd *Command) runInDir(ctx context.Context, program []byte, dir string) ([]byte, error) {
 	// We use MkdirTemp instead of CreateTemp so we can control the filename.
 	tmpDir, err := os.MkdirTemp(dir, "specgen_")
 	if err != nil {
@@ -140,11 +113,11 @@ func runInDir(ctx context.Context, program []byte, dir string) ([]byte, error) {
 
 	// Build the program.
 	buf := bytes.NewBuffer(nil)
-	cmd := exec.Command("go", "build", "-o", progBinary, progSource)
-	cmd.Dir = tmpDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = io.MultiWriter(os.Stderr, buf)
-	if err := cmd.Run(); err != nil {
+	command := exec.Command("go", "build", "-o", progBinary, progSource)
+	command.Dir = tmpDir
+	command.Stdout = os.Stdout
+	command.Stderr = io.MultiWriter(os.Stderr, buf)
+	if err := command.Run(); err != nil {
 		sErr := buf.String()
 		if strings.Contains(sErr, `cannot find package "."`) &&
 			strings.Contains(sErr, "github.com/conduitio/conduit-connector-sdk") {
@@ -154,7 +127,7 @@ func runInDir(ctx context.Context, program []byte, dir string) ([]byte, error) {
 		return nil, err
 	}
 
-	return specgen.Run(ctx, dir, filepath.Join(tmpDir, progBinary))
+	return Run(ctx, dir, filepath.Join(tmpDir, progBinary))
 }
 
 type reflectData struct {
@@ -172,7 +145,7 @@ import (
 	"os"
 
 	pkg_ {{ printf "%q" .ImportPath }}
-	"github.com/conduitio/conduit-connector-sdk/specgen/specgen"
+	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen"
 )
 
 func main() {

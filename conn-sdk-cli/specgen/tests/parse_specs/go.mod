@@ -1,20 +1,32 @@
-module github.com/conduitio/conduit-connector-sdk/specgen/specgen/testdata
+module github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen/testdata
 
 go 1.23.2
 
 // todo try refactoring
 replace (
-	example.com/overwrite_source_destination => ./overwrite_source_destination
-	example.com/partial_specification => ./partial_specification
-	example.com/simple => ./simple
+	example.com/comments => ./comments
+	example.com/custom_embedded_struct => ./custom_embedded_struct
+	example.com/custom_middleware_config => ./custom_middleware_config
+	example.com/defaults => ./defaults
+	example.com/field_names => ./field_names
+	example.com/nesting => ./nesting
+	example.com/primitive_field_types => ./primitive_field_types
+	example.com/tags => ./tags
+	example.com/type_aliases => ./type_aliases
 
 	github.com/conduitio/conduit-connector-sdk => ../../../../
 )
 
 require (
-	example.com/overwrite_source_destination v0.0.0-00010101000000-000000000000
-	example.com/partial_specification v0.0.0-00010101000000-000000000000
-	example.com/simple v0.0.0-00010101000000-000000000000
+	example.com/comments v0.0.0-00010101000000-000000000000
+	example.com/custom_embedded_struct v0.0.0-00010101000000-000000000000
+	example.com/custom_middleware_config v0.0.0-00010101000000-000000000000
+	example.com/defaults v0.0.0-00010101000000-000000000000
+	example.com/field_names v0.0.0-00010101000000-000000000000
+	example.com/nesting v0.0.0-00010101000000-000000000000
+	example.com/primitive_field_types v0.0.0-00010101000000-000000000000
+	example.com/tags v0.0.0-00010101000000-000000000000
+	example.com/type_aliases v0.0.0-00010101000000-000000000000
 	github.com/conduitio/conduit-connector-sdk v0.0.0
 	github.com/google/go-cmp v0.6.0
 	github.com/matryer/is v1.4.1
