@@ -23,7 +23,7 @@ import (
 	"example.com/partial_specification"
 	"example.com/simple"
 	sdk "github.com/conduitio/conduit-connector-sdk"
-	"github.com/conduitio/conduit-connector-sdk/specgen/specgen"
+	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen"
 	"github.com/google/go-cmp/cmp"
 	"github.com/matryer/is"
 )
