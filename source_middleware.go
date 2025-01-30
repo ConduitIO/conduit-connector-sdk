@@ -433,14 +433,37 @@ func (s *sourceWithEncoding) Read(ctx context.Context) (opencdc.Record, error) {
 		return rec, err
 	}
 
-	if err := s.encodeKey(ctx, &rec); err != nil {
-		return rec, err
-	}
-	if err := s.encodePayload(ctx, &rec); err != nil {
+	if err := s.encode(ctx, &rec); err != nil {
 		return rec, err
 	}
 
 	return rec, nil
+}
+
+func (s *sourceWithEncoding) ReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
+	recs, err := s.Source.ReadN(ctx, n)
+	if err != nil {
+		return recs, err
+	}
+
+	for i := range recs {
+		if err := s.encode(ctx, &recs[i]); err != nil {
+			return recs, fmt.Errorf("unable to encode record %d: %w", i, err)
+		}
+	}
+
+	return recs, nil
+}
+
+func (s *sourceWithEncoding) encode(ctx context.Context, rec *opencdc.Record) error {
+	if err := s.encodeKey(ctx, rec); err != nil {
+		return err
+	}
+	if err := s.encodePayload(ctx, rec); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *sourceWithEncoding) encodeKey(ctx context.Context, rec *opencdc.Record) error {

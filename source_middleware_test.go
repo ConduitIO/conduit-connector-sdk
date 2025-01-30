@@ -637,6 +637,126 @@ func TestSourceWithEncoding_Read(t *testing.T) {
 	}
 }
 
+func TestSourceWithEncoding_ReadN(t *testing.T) {
+	is := is.New(t)
+	ctx := context.Background()
+
+	testDataStruct := opencdc.StructuredData{
+		"foo":   "bar",
+		"long":  int64(1),
+		"float": 2.34,
+		"time":  time.Now().UTC().Truncate(time.Microsecond), // avro precision is microseconds
+	}
+	wantSchema := `{"name":"record","type":"record","fields":[{"name":"float","type":"double"},{"name":"foo","type":"string"},{"name":"long","type":"long"},{"name":"time","type":{"type":"long","logicalType":"timestamp-micros"}}]}`
+
+	customTestSchema, err := schema.Create(ctx, schema.TypeAvro, "custom-test-schema", []byte(wantSchema))
+	is.NoErr(err)
+
+	bytes, err := customTestSchema.Marshal(testDataStruct)
+	is.NoErr(err)
+	testDataRaw := opencdc.RawData(bytes)
+
+	testCases := []struct {
+		name      string
+		inputRecs []opencdc.Record
+		wantRecs  []opencdc.Record
+	}{{
+		name: "no records returned",
+	}, {
+		name: "single record returned",
+		inputRecs: []opencdc.Record{{
+			Key: testDataStruct.Clone(),
+			Payload: opencdc.Change{
+				Before: testDataStruct.Clone(),
+				After:  testDataStruct.Clone(),
+			}},
+		},
+		wantRecs: []opencdc.Record{{
+			Key: testDataRaw,
+			Payload: opencdc.Change{
+				Before: testDataRaw,
+				After:  testDataRaw,
+			}},
+		},
+	}, {
+		name: "multiple records returned",
+		inputRecs: []opencdc.Record{{
+			Key: testDataStruct.Clone(),
+			Payload: opencdc.Change{
+				Before: testDataStruct.Clone(),
+				After:  testDataStruct.Clone(),
+			},
+		}, {
+			Key: testDataStruct.Clone(),
+			Payload: opencdc.Change{
+				Before: testDataStruct.Clone(),
+				After:  testDataStruct.Clone(),
+			},
+		}, {
+			Key: testDataStruct.Clone(),
+			Payload: opencdc.Change{
+				Before: testDataStruct.Clone(),
+				After:  testDataStruct.Clone(),
+			},
+		}},
+		wantRecs: []opencdc.Record{{
+			Key: testDataRaw,
+			Payload: opencdc.Change{
+				Before: testDataRaw,
+				After:  testDataRaw,
+			},
+		}, {
+			Key: testDataRaw,
+			Payload: opencdc.Change{
+				Before: testDataRaw,
+				After:  testDataRaw,
+			},
+		}, {
+			Key: testDataRaw,
+			Payload: opencdc.Change{
+				Before: testDataRaw,
+				After:  testDataRaw,
+			},
+		}},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			src := NewMockSource(gomock.NewController(t))
+
+			underTest := (&SourceWithEncoding{}).Wrap(src)
+
+			for i := range tc.inputRecs {
+				tc.inputRecs[i].Metadata = map[string]string{
+					opencdc.MetadataCollection:           "foo",
+					opencdc.MetadataKeySchemaSubject:     customTestSchema.Subject,
+					opencdc.MetadataKeySchemaVersion:     strconv.Itoa(customTestSchema.Version),
+					opencdc.MetadataPayloadSchemaSubject: customTestSchema.Subject,
+					opencdc.MetadataPayloadSchemaVersion: strconv.Itoa(customTestSchema.Version),
+				}
+			}
+
+			src.EXPECT().ReadN(ctx, 100).Return(tc.inputRecs, nil)
+
+			got, err := underTest.ReadN(ctx, 100)
+			is.NoErr(err)
+
+			is.Equal(len(got), len(tc.wantRecs))
+
+			for i := range got {
+				gotKey := got[i].Key
+				gotPayloadBefore := got[i].Payload.Before
+				gotPayloadAfter := got[i].Payload.After
+
+				is.Equal("", cmp.Diff(tc.wantRecs[i].Key, gotKey))
+				is.Equal("", cmp.Diff(tc.wantRecs[i].Payload.Before, gotPayloadBefore))
+				is.Equal("", cmp.Diff(tc.wantRecs[i].Payload.After, gotPayloadAfter))
+			}
+		})
+	}
+}
+
 // -- SourceWithBatch --------------------------------------------------
 
 func TestSourceWithBatch_ReadN(t *testing.T) {
