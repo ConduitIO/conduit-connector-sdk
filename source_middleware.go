@@ -169,6 +169,22 @@ type sourceWithSchemaExtraction struct {
 	keyWarnOnce     sync.Once
 }
 
+func (s *sourceWithSchemaExtraction) Read(ctx context.Context) (opencdc.Record, error) {
+	rec, err := s.Source.Read(ctx)
+	if err != nil || (!*s.config.KeyEnabled && !*s.config.PayloadEnabled) {
+		return rec, err
+	}
+
+	if err := s.extractAttachKeySchema(ctx, &rec); err != nil {
+		return rec, err
+	}
+	if err := s.extractAttachPayloadSchema(ctx, &rec); err != nil {
+		return rec, err
+	}
+
+	return rec, nil
+}
+
 func (s *sourceWithSchemaExtraction) ReadN(ctx context.Context, n int) ([]opencdc.Record, error) {
 	recs, err := s.Source.ReadN(ctx, n)
 	if err != nil || (!*s.config.KeyEnabled && !*s.config.PayloadEnabled) {
