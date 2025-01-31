@@ -31,8 +31,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-var destinationMiddlewareType = reflect.TypeFor[DestinationMiddleware]()
-
 // DestinationMiddleware wraps a Destination and adds functionality to it.
 type DestinationMiddleware interface {
 	Wrap(Destination) Destination
@@ -116,7 +114,6 @@ func destinationMiddlewareFromConfigRecursive(cfgVal reflect.Value) []Destinatio
 		}
 
 		switch {
-
 		case field.Type().Implements(destinationMiddlewareType):
 			// This is a middleware config, store it.
 			//nolint:forcetypeassert // type checked above with field.Type().Implements()
@@ -126,7 +123,6 @@ func destinationMiddlewareFromConfigRecursive(cfgVal reflect.Value) []Destinatio
 			cfgType.Field(i).Type.Kind() == reflect.Struct:
 			// This is an embedded struct, dive deeper.
 			mw = append(mw, destinationMiddlewareFromConfigRecursive(field.Elem())...)
-
 		}
 	}
 

@@ -110,7 +110,6 @@ func sourceMiddlewareFromConfigRecursive(cfgVal reflect.Value) []SourceMiddlewar
 		}
 
 		switch {
-
 		case field.Type().Implements(sourceMiddlewareType):
 			// This is a middleware config, store it.
 			//nolint:forcetypeassert // type checked above with field.Type().Implements()
@@ -120,7 +119,6 @@ func sourceMiddlewareFromConfigRecursive(cfgVal reflect.Value) []SourceMiddlewar
 			cfgType.Field(i).Type.Kind() == reflect.Struct:
 			// This is an embedded struct, dive deeper.
 			mw = append(mw, sourceMiddlewareFromConfigRecursive(field.Elem())...)
-
 		}
 	}
 
