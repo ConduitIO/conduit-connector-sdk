@@ -23,6 +23,7 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/pconnector/server"
 	"github.com/conduitio/conduit-connector-protocol/pconnutils"
 	"github.com/conduitio/conduit-connector-sdk/internal"
+	"github.com/conduitio/yaml/v3"
 	"github.com/rs/zerolog"
 )
 
@@ -37,10 +38,28 @@ import (
 //
 // Plugins should call Serve in their main() functions.
 func Serve(c Connector) {
+	handleCommand(c, os.Args[1:])
+
 	err := serve(c)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error running plugin: %+v", err)
 		os.Exit(1)
+	}
+}
+
+func handleCommand(c Connector, args []string) {
+	if len(args) == 0 {
+		return
+	}
+
+	switch args[0] {
+	case "spec", "specs", "specification", "specifications":
+		out, err := yaml.Marshal(c.NewSpecification())
+		if err != nil {
+			panic(fmt.Errorf("failed to marshal specification: %w", err))
+		}
+		fmt.Println(string(out))
+		os.Exit(0)
 	}
 }
 
