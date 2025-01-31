@@ -31,6 +31,28 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func TestSourceWithMiddleware(t *testing.T) {
+	is := is.New(t)
+
+	ctrl := gomock.NewController(t)
+	src := NewMockSource(ctrl)
+
+	cfg := struct {
+		DefaultSourceMiddleware
+	}{}
+	src.EXPECT().Config().Return(&cfg)
+
+	got := SourceWithMiddleware(src)
+
+	var want Source = src
+	want = (&SourceWithSchemaExtraction{}).Wrap(want)
+	want = (&SourceWithSchemaContext{}).Wrap(want)
+	want = (&SourceWithEncoding{}).Wrap(want)
+	want = (&SourceWithBatch{}).Wrap(want)
+
+	is.Equal(want, got)
+}
+
 // -- SourceWithSchemaExtraction -----------------------------------------------
 
 func TestSourceWithSchemaExtraction_SchemaType(t *testing.T) {

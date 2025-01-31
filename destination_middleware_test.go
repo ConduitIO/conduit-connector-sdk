@@ -32,6 +32,28 @@ import (
 	"golang.org/x/time/rate"
 )
 
+func TestDestinationWithMiddleware(t *testing.T) {
+	is := is.New(t)
+
+	ctrl := gomock.NewController(t)
+	src := NewMockDestination(ctrl)
+
+	cfg := struct {
+		DefaultDestinationMiddleware
+	}{}
+	src.EXPECT().Config().Return(&cfg)
+
+	got := DestinationWithMiddleware(src)
+
+	var want Destination = src
+	want = (&DestinationWithSchemaExtraction{}).Wrap(want)
+	want = (&DestinationWithBatch{}).Wrap(want)
+	want = (&DestinationWithRecordFormat{}).Wrap(want)
+	want = (&DestinationWithRateLimit{}).Wrap(want)
+
+	is.Equal(want, got)
+}
+
 // -- DestinationWithBatch -----------------------------------------------------
 
 func TestDestinationWithBatch_Open(t *testing.T) {
