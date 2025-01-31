@@ -66,7 +66,7 @@ func handleCommand(c Connector, args []string) {
 		fmt.Println(c.NewSpecification().Version)
 		os.Exit(0)
 	default:
-		fmt.Println("unknown command")
+		fmt.Println("unknown command:", args[0])
 		os.Exit(1)
 	}
 }
