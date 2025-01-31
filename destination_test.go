@@ -168,8 +168,6 @@ func TestDestinationPluginAdapter_Run_Write(t *testing.T) {
 }
 
 func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
-	t.Skip("TODO fix this test")
-
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)
@@ -249,8 +247,6 @@ func TestDestinationPluginAdapter_Run_WriteBatch_Success(t *testing.T) {
 }
 
 func TestDestinationPluginAdapter_Run_WriteBatch_Partial(t *testing.T) {
-	t.Skip("TODO fix this test")
-
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
 	dst := NewMockDestination(ctrl)

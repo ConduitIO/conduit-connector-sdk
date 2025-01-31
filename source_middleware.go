@@ -31,8 +31,6 @@ import (
 	"github.com/jpillora/backoff"
 )
 
-var sourceMiddlewareType = reflect.TypeFor[SourceMiddleware]()
-
 // SourceMiddleware wraps a Source and adds functionality to it.
 type SourceMiddleware interface {
 	Wrap(Source) Source
@@ -84,7 +82,21 @@ func SourceWithMiddleware(s Source) Source {
 	if cfgVal.Kind() != reflect.Ptr {
 		panic("The struct returned in Config() must be a pointer")
 	}
-	cfgVal = cfgVal.Elem()
+
+	// Collect all middlewares from the config and wrap the source with them
+	mw := sourceMiddlewareFromConfigRecursive(cfgVal.Elem())
+
+	// Wrap the middleware in reverse order to preserve the order as specified.
+	for i := len(mw) - 1; i >= 0; i-- {
+		s = mw[i].Wrap(s)
+	}
+
+	return s
+}
+
+func sourceMiddlewareFromConfigRecursive(cfgVal reflect.Value) []SourceMiddleware {
+	sourceMiddlewareType := reflect.TypeFor[SourceMiddleware]()
+	cfgType := cfgVal.Type()
 
 	// Collect all middlewares from the config and wrap the source with them
 	var mw []SourceMiddleware
@@ -96,19 +108,21 @@ func SourceWithMiddleware(s Source) Source {
 		if field.Kind() != reflect.Ptr {
 			field = field.Addr()
 		}
-		if field.Type().Implements(sourceMiddlewareType) {
+
+		switch {
+		case field.Type().Implements(sourceMiddlewareType):
 			// This is a middleware config, store it.
 			//nolint:forcetypeassert // type checked above with field.Type().Implements()
 			mw = append(mw, field.Interface().(SourceMiddleware))
+
+		case cfgType.Field(i).Anonymous &&
+			cfgType.Field(i).Type.Kind() == reflect.Struct:
+			// This is an embedded struct, dive deeper.
+			mw = append(mw, sourceMiddlewareFromConfigRecursive(field.Elem())...)
 		}
 	}
 
-	// Wrap the middleware in reverse order to preserve the order as specified.
-	for i := len(mw) - 1; i >= 0; i-- {
-		s = mw[i].Wrap(s)
-	}
-
-	return s
+	return mw
 }
 
 // -- SourceWithSchemaExtraction -----------------------------------------------
