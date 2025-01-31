@@ -22,6 +22,7 @@ import (
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-protocol/pconnector/server"
 	"github.com/conduitio/conduit-connector-protocol/pconnutils"
+	v1 "github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen/model/v1"
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/yaml/v3"
 	"github.com/rs/zerolog"
@@ -54,7 +55,8 @@ func handleCommand(c Connector, args []string) {
 
 	switch args[0] {
 	case "spec", "specs", "specification", "specifications":
-		out, err := yaml.Marshal(c.NewSpecification())
+		spec := v1.Specification{}.FromConfig(c.NewSpecification())
+		out, err := yaml.Marshal(spec)
 		if err != nil {
 			panic(fmt.Errorf("failed to marshal specification: %w", err))
 		}
