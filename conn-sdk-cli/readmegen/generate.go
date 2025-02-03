@@ -106,7 +106,7 @@ func describeParameterRequirement(param any) (string, error) {
 
 	validationsSlice, ok := validations.([]interface{})
 	if !ok {
-		return "", fmt.Errorf("validations not a slice, got: %T", validations.([]interface{}))
+		return "", fmt.Errorf("validations not a slice, got: %T", validations)
 	}
 
 	for _, validation := range validationsSlice {
