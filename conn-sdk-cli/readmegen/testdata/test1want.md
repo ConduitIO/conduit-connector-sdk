@@ -23,9 +23,11 @@ pipelines:
         settings:
           # string param1 description
           # Type: string
+          # Required
           param1: "foo"
           # int param2 description
           # Type: int
+          # Optional
           param2: "0"
 ```
 <!-- /readmegen:source.parameters.yaml -->
@@ -35,6 +37,7 @@ pipelines:
   <tr>
     <th>Name</th>
     <th>Type</th>
+    <th>Required/Optional</th>
     <th>Default</th>
     <th>Description</th>
   </tr>
@@ -47,6 +50,11 @@ pipelines:
 <td>
 
 string
+
+</td>
+<td>
+
+Required
 
 </td>
 <td>
@@ -69,6 +77,11 @@ string param1 description
 <td>
 
 int
+
+</td>
+<td>
+
+Optional
 
 </td>
 <td>
@@ -99,9 +112,11 @@ pipelines:
         settings:
           # boolean param1 description
           # Type: boolean
+          # Optional
           param1: "true"
           # float param2 description
           # Type: float
+          # Optional
           param2: "0.0"
 ```
 <!-- /readmegen:destination.parameters.yaml -->
@@ -111,6 +126,7 @@ pipelines:
   <tr>
     <th>Name</th>
     <th>Type</th>
+    <th>Required/Optional</th>
     <th>Default</th>
     <th>Description</th>
   </tr>
@@ -123,6 +139,11 @@ pipelines:
 <td>
 
 boolean
+
+</td>
+<td>
+
+Optional
 
 </td>
 <td>
@@ -145,6 +166,11 @@ boolean param1 description
 <td>
 
 float
+
+</td>
+<td>
+
+Optional
 
 </td>
 <td>

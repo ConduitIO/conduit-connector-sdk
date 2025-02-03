@@ -86,10 +86,45 @@ func Generate(opts GenerateOptions) error {
 }
 
 var funcMap = template.FuncMap{
-	"formatCommentYAML": formatCommentYAML,
-	"formatValueYAML":   formatValueYAML,
-	"zeroValueForType":  zeroValueForType,
-	"args":              args,
+	"formatCommentYAML":            formatCommentYAML,
+	"formatValueYAML":              formatValueYAML,
+	"zeroValueForType":             zeroValueForType,
+	"args":                         args,
+	"describeParameterRequirement": describeParameterRequirement,
+}
+
+func describeParameterRequirement(param any) (string, error) {
+	paramMap, ok := param.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("invalid parameter type: %T", param)
+	}
+
+	validations, ok := paramMap["validations"]
+	if !ok {
+		return "Optional", nil
+	}
+
+	validationsSlice, ok := validations.([]interface{})
+	if !ok {
+		return "", fmt.Errorf("validations not a slice, got: %T", validations.([]interface{}))
+	}
+
+	for _, validation := range validationsSlice {
+		// Check if the current item is a map
+		validationMap, ok := validation.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Check if the map has a "type" key with "required" value
+		if typeVal, exists := validationMap["type"]; exists {
+			if strTypeVal, ok := typeVal.(string); ok && strTypeVal == "required" {
+				return "Required", nil
+			}
+		}
+	}
+
+	return "Optional", nil
 }
 
 func args(kvs ...any) (map[string]any, error) {
