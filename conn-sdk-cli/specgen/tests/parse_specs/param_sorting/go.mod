@@ -1,37 +1,10 @@
-module github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen/testdata
+module example.com/param_sorting
 
 go 1.23.2
 
-// todo try refactoring
-replace (
-	example.com/comments => ./comments
-	example.com/custom_embedded_struct => ./custom_embedded_struct
-	example.com/custom_middleware_config => ./custom_middleware_config
-	example.com/defaults => ./defaults
-	example.com/field_names => ./field_names
-	example.com/nesting => ./nesting
-	example.com/param_sorting => ./param_sorting
-	example.com/primitive_field_types => ./primitive_field_types
-	example.com/tags => ./tags
-	example.com/type_aliases => ./type_aliases
-
-	github.com/conduitio/conduit-connector-sdk => ../../../../
-)
-
 require (
-	example.com/comments v0.0.0-00010101000000-000000000000
-	example.com/custom_embedded_struct v0.0.0-00010101000000-000000000000
-	example.com/custom_middleware_config v0.0.0-00010101000000-000000000000
-	example.com/defaults v0.0.0-00010101000000-000000000000
-	example.com/field_names v0.0.0-00010101000000-000000000000
-	example.com/nesting v0.0.0-00010101000000-000000000000
-	example.com/param_sorting v0.0.0-00010101000000-000000000000
-	example.com/primitive_field_types v0.0.0-00010101000000-000000000000
-	example.com/tags v0.0.0-00010101000000-000000000000
-	example.com/type_aliases v0.0.0-00010101000000-000000000000
+	github.com/conduitio/conduit-commons v0.5.0
 	github.com/conduitio/conduit-connector-sdk v0.0.0
-	github.com/google/go-cmp v0.6.0
-	github.com/matryer/is v1.4.1
 )
 
 require (
@@ -72,7 +45,6 @@ require (
 	github.com/charithe/durationcheck v0.0.10 // indirect
 	github.com/chavacava/garif v0.1.0 // indirect
 	github.com/ckaznocha/intrange v0.3.0 // indirect
-	github.com/conduitio/conduit-commons v0.5.0 // indirect
 	github.com/conduitio/conduit-connector-protocol v0.9.0 // indirect
 	github.com/conduitio/evolviconf v0.1.0 // indirect
 	github.com/conduitio/evolviconf/evolviyaml v0.1.0 // indirect
@@ -110,6 +82,7 @@ require (
 	github.com/golangci/plugin-module-register v0.1.1 // indirect
 	github.com/golangci/revgrep v0.5.3 // indirect
 	github.com/golangci/unconvert v0.0.0-20240309020433-c5143eacb3ed // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gordonklaus/ineffassign v0.1.0 // indirect
 	github.com/gostaticanalysis/analysisutil v0.7.1 // indirect
@@ -151,6 +124,7 @@ require (
 	github.com/maratori/testableexamples v1.0.0 // indirect
 	github.com/maratori/testpackage v1.1.1 // indirect
 	github.com/matoous/godox v0.0.0-20240105082147-c5b5e0e7c0c0 // indirect
+	github.com/matryer/is v1.4.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
@@ -259,3 +233,5 @@ require (
 	mvdan.cc/gofumpt v0.7.0 // indirect
 	mvdan.cc/unparam v0.0.0-20240528143540-8a5130ca722f // indirect
 )
+
+replace github.com/conduitio/conduit-connector-sdk => ../../../../../
