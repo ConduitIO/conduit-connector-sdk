@@ -113,7 +113,7 @@ func describeParameterRequirement(param any) (string, error) {
 		// Check if the current item is a map
 		validationMap, ok := validation.(map[string]interface{})
 		if !ok {
-			continue
+			return "", fmt.Errorf("validation not a map, got: %T", validation)
 		}
 
 		// Check if the map has a "type" key with "required" value
