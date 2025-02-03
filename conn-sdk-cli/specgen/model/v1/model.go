@@ -252,6 +252,10 @@ func (Parameters) FromConfig(params config.Parameters) Parameters {
 		pi := params[p[i].Name]
 		pj := params[p[j].Name]
 
+		if isConnectorParam(p[i].Name) != isConnectorParam(p[j].Name) {
+			return isConnectorParam(p[i].Name)
+		}
+
 		if isRequired(pi) != isRequired(pj) {
 			return isRequired(pi)
 		}
@@ -259,6 +263,10 @@ func (Parameters) FromConfig(params config.Parameters) Parameters {
 		return p[i].Name < p[j].Name
 	})
 	return p
+}
+
+func isConnectorParam(name string) bool {
+	return !strings.HasPrefix(name, "sdk.")
 }
 
 func isRequired(p config.Parameter) bool {
