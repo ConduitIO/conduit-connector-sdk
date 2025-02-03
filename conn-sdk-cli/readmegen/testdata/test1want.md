@@ -27,6 +27,9 @@ pipelines:
           # int param2 description
           # Type: int
           param2: "0"
+          # values has a double quote
+          # Type: string
+          param3: 'there is a " here'
 ```
 <!-- /readmegen:source.parameters.yaml -->
 

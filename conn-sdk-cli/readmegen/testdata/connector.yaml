@@ -16,6 +16,10 @@ specification:
       - name: param2
         type: int
         description: int param2 description
+      - name: param3
+        type: string
+        description: 'value has a double quote'
+        default: 'there is a " here'
   destination:
     parameters:
       - name: param1
