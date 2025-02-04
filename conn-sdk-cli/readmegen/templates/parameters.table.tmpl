@@ -3,6 +3,7 @@
   <tr>
     <th>Name</th>
     <th>Type</th>
+    <th>Required</th>
     <th>Default</th>
     <th>Description</th>
   </tr>
@@ -16,6 +17,11 @@
 <td>
 
 {{ $param.type }}
+
+</td>
+<td>
+
+{{ if isParameterRequired $param }}✅{{ end }}
 
 </td>
 <td>
