@@ -3,7 +3,7 @@
   <tr>
     <th>Name</th>
     <th>Type</th>
-    <th>Required/Optional</th>
+    <th>Required</th>
     <th>Default</th>
     <th>Description</th>
   </tr>
@@ -21,7 +21,7 @@
 </td>
 <td>
 
-{{ describeParameterRequirement $param }}
+{{- if isRequired $param }}✔{{ end }}
 
 </td>
 <td>

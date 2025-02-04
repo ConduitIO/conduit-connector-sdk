@@ -86,45 +86,45 @@ func Generate(opts GenerateOptions) error {
 }
 
 var funcMap = template.FuncMap{
-	"formatCommentYAML":            formatCommentYAML,
-	"formatValueYAML":              formatValueYAML,
-	"zeroValueForType":             zeroValueForType,
-	"args":                         args,
-	"describeParameterRequirement": describeParameterRequirement,
+	"formatCommentYAML": formatCommentYAML,
+	"formatValueYAML":   formatValueYAML,
+	"zeroValueForType":  zeroValueForType,
+	"args":              args,
+	"isRequired":        isRequired,
 }
 
-func describeParameterRequirement(param any) (string, error) {
+func isRequired(param any) (bool, error) {
 	paramMap, ok := param.(map[string]any)
 	if !ok {
-		return "", fmt.Errorf("invalid parameter type: %T", param)
+		return false, fmt.Errorf("invalid parameter type: %T", param)
 	}
 
 	validations, ok := paramMap["validations"]
 	if !ok {
-		return "Optional", nil
+		return false, nil
 	}
 
 	validationsSlice, ok := validations.([]interface{})
 	if !ok {
-		return "", fmt.Errorf("validations not a slice, got: %T", validations)
+		return false, fmt.Errorf("validations not a slice, got: %T", validations)
 	}
 
 	for _, validation := range validationsSlice {
 		// Check if the current item is a map
 		validationMap, ok := validation.(map[string]interface{})
 		if !ok {
-			return "", fmt.Errorf("validation not a map, got: %T", validation)
+			return false, fmt.Errorf("validation not a map, got: %T", validation)
 		}
 
 		// Check if the map has a "type" key with "required" value
 		if typeVal, exists := validationMap["type"]; exists {
 			if strTypeVal, ok := typeVal.(string); ok && strTypeVal == "required" {
-				return "Required", nil
+				return true, nil
 			}
 		}
 	}
 
-	return "Optional", nil
+	return false, nil
 }
 
 func args(kvs ...any) (map[string]any, error) {
