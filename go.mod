@@ -21,7 +21,7 @@ require (
 	github.com/twmb/go-cache v1.2.1
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.5.0
-	golang.org/x/sync v0.10.0
+	golang.org/x/sync v0.11.0
 	golang.org/x/time v0.10.0
 	golang.org/x/tools v0.29.0
 	google.golang.org/grpc v1.70.0
