@@ -54,7 +54,7 @@ string
 </td>
 <td>
 
-✔
+✅
 
 </td>
 <td>
