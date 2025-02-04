@@ -11,7 +11,7 @@ pipelines:
         {{- range $param := .parameters }}
           {{ formatCommentYAML $param.description 10 }}
           # Type: {{ $param.type }}
-          # Required: {{- if isRequired $param }} yes{{ else }} no{{ end }}
+          # Required: {{- if isParameterRequired $param }} yes{{ else }} no{{ end }}
           {{ $param.name }}: {{ if $param.default }}"{{ $param.default }}"{{ else }}"{{ zeroValueForType $param.type }}"{{ end }}
         {{- end }}
 ```

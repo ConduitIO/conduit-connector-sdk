@@ -86,14 +86,14 @@ func Generate(opts GenerateOptions) error {
 }
 
 var funcMap = template.FuncMap{
-	"formatCommentYAML": formatCommentYAML,
-	"formatValueYAML":   formatValueYAML,
-	"zeroValueForType":  zeroValueForType,
-	"args":              args,
-	"isRequired":        isRequired,
+	"formatCommentYAML":   formatCommentYAML,
+	"formatValueYAML":     formatValueYAML,
+	"zeroValueForType":    zeroValueForType,
+	"args":                args,
+	"isParameterRequired": isParameterRequired,
 }
 
-func isRequired(param any) (bool, error) {
+func isParameterRequired(param any) (bool, error) {
 	paramMap, ok := param.(map[string]any)
 	if !ok {
 		return false, fmt.Errorf("invalid parameter type: %T", param)
