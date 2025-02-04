@@ -53,7 +53,9 @@ string
 
 </td>
 <td>
+
 ✔
+
 </td>
 <td>
 
@@ -140,6 +142,8 @@ boolean
 
 </td>
 <td>
+
+
 
 </td>
 <td>
