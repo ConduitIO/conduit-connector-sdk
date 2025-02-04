@@ -13,6 +13,9 @@ specification:
         type: string
         description: string param1 description
         default: "foo"
+        validations:
+          - type: required
+            value: ""
       - name: param2
         type: int
         description: int param2 description
