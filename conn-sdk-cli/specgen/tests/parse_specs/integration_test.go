@@ -25,6 +25,7 @@ import (
 	"example.com/defaults"
 	"example.com/field_names"
 	"example.com/nesting"
+	"example.com/param_sorting"
 	"example.com/primitive_field_types"
 	"example.com/tags"
 	"example.com/type_aliases"
@@ -74,6 +75,10 @@ func TestParseSpecification(t *testing.T) {
 		{
 			haveConnector: defaults.Connector,
 			wantPath:      "./defaults/want.yaml",
+		},
+		{
+			haveConnector: param_sorting.Connector,
+			wantPath:      "./param_sorting/want.yaml",
 		},
 	}
 

@@ -135,6 +135,29 @@ func TestParametersFromConfig_Sorted(t *testing.T) {
 				},
 			}),
 		},
+		{
+			name: "with SDK param (",
+			input: config.Parameters{
+				"sdk.abc": config.Parameter{
+					Type: config.ParameterTypeInt,
+				},
+				"xyz": config.Parameter{
+					Type: config.ParameterTypeInt,
+				},
+			},
+			want: Parameters([]Parameter{
+				{
+					Name:        "xyz",
+					Type:        "int",
+					Validations: []Validation{},
+				},
+				{
+					Name:        "sdk.abc",
+					Type:        "int",
+					Validations: []Validation{},
+				},
+			}),
+		},
 	}
 
 	for _, tc := range testCases {
