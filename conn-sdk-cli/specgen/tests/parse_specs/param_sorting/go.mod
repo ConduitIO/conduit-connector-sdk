@@ -1,8 +1,11 @@
-module example.com/defaults
+module example.com/param_sorting
 
 go 1.23.2
 
-require github.com/conduitio/conduit-connector-sdk v0.0.0
+require (
+	github.com/conduitio/conduit-commons v0.5.0
+	github.com/conduitio/conduit-connector-sdk v0.0.0
+)
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.2.1 // indirect
@@ -42,7 +45,6 @@ require (
 	github.com/charithe/durationcheck v0.0.10 // indirect
 	github.com/chavacava/garif v0.1.0 // indirect
 	github.com/ckaznocha/intrange v0.3.0 // indirect
-	github.com/conduitio/conduit-commons v0.5.0 // indirect
 	github.com/conduitio/conduit-connector-protocol v0.9.0 // indirect
 	github.com/conduitio/evolviconf v0.1.0 // indirect
 	github.com/conduitio/evolviconf/evolviyaml v0.1.0 // indirect

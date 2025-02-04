@@ -48,7 +48,8 @@ func TestGenerate(t *testing.T) {
 
 Name: <!-- readmegen:name -->Test-Connector<!-- /readmegen:name -->
 Summary: <!-- readmegen:summary -->test summary<!-- /readmegen:summary -->
-Description: <!-- readmegen:description -->Test description
+Description: <!-- readmegen:description -->
+Test description
 should be able to handle new lines as well!
 <!-- /readmegen:description -->
 Version: <!-- readmegen:version -->v0.1.0<!-- /readmegen:version -->

@@ -57,7 +57,7 @@ func main() {
 		},
 	}
 	cmdSpecgen.Flags().StringP("output", "o", "connector.yaml", "name of the output file")
-	cmdSpecgen.Flags().StringP("package", "p", ".", "path to the package that contains the Connector variable")
+	cmdSpecgen.Flags().StringP("path", "p", ".", "path to the package that contains the Connector variable")
 
 	cmdRoot.AddCommand(
 		cmdReadmegen,

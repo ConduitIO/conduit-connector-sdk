@@ -36,7 +36,7 @@ var (
 	preprocessTags = map[string]string{
 		"name":        `{{ title .specification.name }}`,
 		"summary":     `{{ .specification.summary }}`,
-		"description": `{{ .specification.description }}`,
+		"description": "\n" + `{{ .specification.description }}`,
 		"version":     `{{ .specification.version }}`,
 		"author":      `{{ .specification.author }}`,
 

@@ -8,7 +8,7 @@ require (
 	github.com/conduitio/conduit-commons v0.5.0
 	github.com/conduitio/conduit-connector-protocol v0.9.0
 	github.com/conduitio/evolviconf v0.1.0
-	github.com/conduitio/evolviconf/evolviyaml v0.0.0-20241105144803-b3ba81765197
+	github.com/conduitio/evolviconf/evolviyaml v0.1.0
 	github.com/conduitio/yaml/v3 v3.3.0
 	github.com/goccy/go-json v0.10.5
 	github.com/golangci/golangci-lint v1.63.4
