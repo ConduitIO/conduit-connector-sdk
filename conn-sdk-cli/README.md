@@ -27,7 +27,8 @@ The `readmegen` command is used to generate sections in a README file that
 document the connector. `readmegen` searches for certain tags in the README file
 and replaces them with appropriate values. For example, if
 `<!-- readmegen:name -->` is found in a README, then `readmegen` will replace it
-with the connector name.
+with the connector name. All tags must have a corresponding <!-- /readmegen:(tagname) -->
+closing tag.
 
 Here's the list of supported tags.
 
