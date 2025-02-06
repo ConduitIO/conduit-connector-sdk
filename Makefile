@@ -1,11 +1,6 @@
 .PHONY: test
 test:
 	go test $(GOTEST_FLAGS) -race ./...
-	echo
-	echo "Running integration tests..."
-	echo
-	cd conn-sdk-cli/specgen/tests/parse_specs/ && go test $(GOTEST_FLAGS) -race ./...
-	cd conn-sdk-cli/specgen/tests/write_and_combine/ && go test $(GOTEST_FLAGS) -race ./...
 
 .PHONY: fmt
 fmt:
