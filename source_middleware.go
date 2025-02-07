@@ -648,7 +648,7 @@ type SourceWithBatch struct {
 	// Maximum size of batch before it gets read from the source.
 	BatchSize *int `json:"sdk.batch.size" default:"0" validate:"gt=-1"`
 	// Maximum delay before an incomplete batch is read from the source.
-	BatchDelay *time.Duration `json:"sdk.batch.delay" default:"0" validate:"gt=-1"`
+	BatchDelay *time.Duration `json:"sdk.batch.delay" default:"0"`
 }
 
 // Wrap a Source into the middleware.
