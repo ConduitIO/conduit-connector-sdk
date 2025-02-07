@@ -15,7 +15,7 @@
 package type_aliases
 
 import (
-	"example.com/type_aliases/internal"
+	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen/testdata/type_aliases/internal"
 )
 
 // GlobalConfig is defined in another file. It is defined with an underlying
