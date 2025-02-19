@@ -17,6 +17,7 @@ package sdk
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -132,10 +133,25 @@ func (rf GenericRecordSerializer) Serialize(r opencdc.Record) ([]byte, error) {
 
 // OpenCDCConverter outputs an OpenCDC record (it does not change the structure
 // of the record).
-type OpenCDCConverter struct{}
+type OpenCDCConverter struct {
+	PositionExcluded bool
+}
 
-func (c OpenCDCConverter) Name() string                                   { return "opencdc" }
-func (c OpenCDCConverter) Configure(map[string]string) (Converter, error) { return c, nil }
+func (c OpenCDCConverter) Name() string { return "opencdc" }
+func (c OpenCDCConverter) Configure(opt map[string]string) (Converter, error) {
+	positionExcludedStr, ok := opt["position.excluded"]
+	if !ok {
+		positionExcludedStr = "false"
+	}
+
+	positionExcluded, err := strconv.ParseBool(positionExcludedStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse position.excluded: %w", err)
+	}
+
+	c.PositionExcluded = positionExcluded
+	return c, nil
+}
 func (c OpenCDCConverter) Convert(r opencdc.Record) (any, error) {
 	return r, nil
 }
