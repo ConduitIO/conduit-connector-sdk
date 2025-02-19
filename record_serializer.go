@@ -153,6 +153,9 @@ func (c OpenCDCConverter) Configure(opt map[string]string) (Converter, error) {
 	return c, nil
 }
 func (c OpenCDCConverter) Convert(r opencdc.Record) (any, error) {
+	if c.PositionExcluded {
+		r.Position = nil
+	}
 	return r, nil
 }
 
