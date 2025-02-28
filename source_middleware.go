@@ -724,10 +724,6 @@ func (s *sourceWithBatch) runReadN(ctx context.Context) {
 				}
 				continue
 
-			case errors.Is(err, context.Canceled):
-				s.readNCh <- readNResponse{Err: err}
-				return
-
 			case errors.Is(err, ErrUnimplemented):
 				Logger(ctx).Info().Msg("source does not support batch reads, falling back to single reads")
 
@@ -772,10 +768,6 @@ func (s *sourceWithBatch) runRead(ctx context.Context) {
 					return
 				}
 				continue
-			}
-			if errors.Is(err, context.Canceled) {
-				s.readNCh <- readNResponse{Err: err}
-				return
 			}
 
 			s.readCh <- readResponse{Err: err}
