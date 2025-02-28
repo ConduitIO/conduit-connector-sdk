@@ -691,6 +691,7 @@ func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error 
 	s.readNCh = make(chan readNResponse, 1)
 
 	if *s.config.BatchSize > 0 || *s.config.BatchDelay > 0 {
+		Logger(ctx).Info().Msg("sourceWithBatch.Open: batching configured, going to use ReadN")
 		s.collectFn = s.collectWithReadN
 		go s.runReadN(ctx)
 	} else {
@@ -702,8 +703,12 @@ func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error 
 }
 
 func (s *sourceWithBatch) runReadN(ctx context.Context) {
-	defer close(s.readNCh)
+	defer func() {
+		Logger(ctx).Info().Msg("sourceWithBatch.runReadN.defer")
+		close(s.readNCh)
+	}()
 
+	Logger(ctx).Info().Msg("sourceWithBatch.runReadN started")
 	b := &backoff.Backoff{
 		Factor: 2,
 		Min:    time.Millisecond * 100,
@@ -725,6 +730,8 @@ func (s *sourceWithBatch) runReadN(ctx context.Context) {
 				continue
 
 			case errors.Is(err, context.Canceled):
+				Logger(ctx).Info().Msg("sourceWithBatch.runReadN got context.Canceled")
+
 				s.readNCh <- readNResponse{Err: err}
 				return
 
@@ -752,7 +759,10 @@ func (s *sourceWithBatch) runReadN(ctx context.Context) {
 }
 
 func (s *sourceWithBatch) runRead(ctx context.Context) {
-	defer close(s.readCh)
+	defer func() {
+		Logger(ctx).Info().Msg("sourceWithBatch.runRead(single).defer")
+		close(s.readCh)
+	}()
 
 	b := &backoff.Backoff{
 		Factor: 2,
@@ -774,6 +784,8 @@ func (s *sourceWithBatch) runRead(ctx context.Context) {
 				continue
 			}
 			if errors.Is(err, context.Canceled) {
+				Logger(ctx).Info().Msg("sourceWithBatch.runRead(single) got context.Canceled")
+
 				s.readNCh <- readNResponse{Err: err}
 				return
 			}
