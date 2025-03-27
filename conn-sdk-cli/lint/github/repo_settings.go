@@ -32,9 +32,7 @@ func (l *RepoSettingsLinter) Name() string {
 }
 
 func (l *RepoSettingsLinter) Lint(ctx context.Context, cfg common.Config) []error {
-	client := githubClient()
-
-	owner, repo, err := ownerAndRepoFromModule(cfg.Module)
+	client, owner, repo, err := githubClient(cfg.Module)
 	if err != nil {
 		return []error{err}
 	}
@@ -104,31 +102,22 @@ func (l *RepoSettingsLinter) lintRepoSettings(ghRepo *github.Repository) error {
 	return nil
 }
 
-func (l *RepoSettingsLinter) Fix(ctx context.Context, cfg common.Config, toFixErr error) (bool, error) {
+func (l *RepoSettingsLinter) Fix(ctx context.Context, cfg common.Config, toFixErr error) error {
 	var linterError *repoSettingsError
 	if errors.As(toFixErr, &linterError) {
-		err := l.fixRepoSettings(ctx, cfg)
-		if err != nil {
-			return false, err
-		}
-		return true, nil
+		return l.fixRepoSettings(ctx, cfg)
 	}
 
 	var errDefaultBranch *defaultBranchError
 	if errors.As(toFixErr, &errDefaultBranch) {
-		err := l.fixDefaultBranch(ctx, cfg, errDefaultBranch)
-		if err != nil {
-			return false, err
-		}
-		return true, nil
+		return l.fixDefaultBranch(ctx, cfg, errDefaultBranch)
 	}
 
-	return false, nil
+	return common.ErrNoFix
 }
 
 func (l *RepoSettingsLinter) fixRepoSettings(ctx context.Context, cfg common.Config) error {
-	client := githubClient()
-	owner, repo, err := ownerAndRepoFromModule(cfg.Module)
+	client, owner, repo, err := githubClient(cfg.Module)
 	if err != nil {
 		return err
 	}
@@ -154,8 +143,7 @@ func (l *RepoSettingsLinter) fixRepoSettings(ctx context.Context, cfg common.Con
 }
 
 func (l *RepoSettingsLinter) fixDefaultBranch(ctx context.Context, cfg common.Config, toFixErr *defaultBranchError) error {
-	client := githubClient()
-	owner, repo, err := ownerAndRepoFromModule(cfg.Module)
+	client, owner, repo, err := githubClient(cfg.Module)
 	if err != nil {
 		return err
 	}

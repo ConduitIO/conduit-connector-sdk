@@ -17,6 +17,7 @@ package lint
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -38,6 +39,7 @@ func NewCommand(fix bool) *Command {
 		linters: []common.Linter{
 			&github.RepoSettingsLinter{},
 			&github.RulesetsLinter{},
+			&github.WorkflowPermissionsLinter{},
 		},
 	}
 }
@@ -63,14 +65,14 @@ func (cmd *Command) Execute(ctx context.Context) error {
 			if !ok {
 				continue
 			}
-			fixed, err := fixer.Fix(ctx, cfg, linterErr.err)
+			err := fixer.Fix(ctx, cfg, linterErr.err)
 			if err != nil {
-				slog.Error("Failed to fix lint error", "linter", fixer.Name(), "error", err)
+				if !errors.Is(err, common.ErrNoFix) {
+					slog.Error("Failed to fix lint error", "linter", fixer.Name(), "error", err)
+				}
 				continue
 			}
-			if fixed {
-				fixedIndices = append(fixedIndices, i)
-			}
+			fixedIndices = append(fixedIndices, i)
 		}
 		slices.Reverse(fixedIndices)
 		for _, i := range fixedIndices {

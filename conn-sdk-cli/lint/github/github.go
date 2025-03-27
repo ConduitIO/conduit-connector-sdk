@@ -31,9 +31,11 @@ var (
 
 const githubTokenEnvVar = "GITHUB_TOKEN"
 
-func githubClient() *github.Client {
+func githubClient(module string) (client *github.Client, owner, repo string, err error) {
 	initGlobalGithubClient()
-	return globalGithubClient
+	client = globalGithubClient
+	owner, repo, err = ownerAndRepoFromModule(module)
+	return
 }
 
 func initGlobalGithubClient() {

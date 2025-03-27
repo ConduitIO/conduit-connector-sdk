@@ -14,7 +14,10 @@
 
 package common
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 type Linter interface {
 	Name() string
@@ -23,9 +26,11 @@ type Linter interface {
 
 type Fixer interface {
 	Linter
-	Fix(context.Context, Config, error) (bool, error)
+	Fix(context.Context, Config, error) error
 }
 
 type Config struct {
 	Module string
 }
+
+var ErrNoFix = errors.New("no fix implemented for this error")

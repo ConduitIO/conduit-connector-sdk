@@ -35,9 +35,7 @@ func (b *RulesetsLinter) Name() string {
 }
 
 func (b *RulesetsLinter) Lint(ctx context.Context, cfg common.Config) []error {
-	client := githubClient()
-
-	owner, repo, err := ownerAndRepoFromModule(cfg.Module)
+	client, owner, repo, err := githubClient(cfg.Module)
 	if err != nil {
 		return []error{err}
 	}
@@ -125,6 +123,9 @@ func (b *RulesetsLinter) lintBranchProtection(ctx context.Context, client *githu
 	}
 	if protection.AllowForcePushes != nil && protection.AllowForcePushes.Enabled {
 		errs = append(errs, fmt.Errorf("branch protection for %q should not allow force pushes", defaultBranch))
+	}
+	if protection.EnforceAdmins == nil || !protection.EnforceAdmins.Enabled {
+		errs = append(errs, fmt.Errorf("branch protection for %q should not allow bypassing the branch protection settings", defaultBranch))
 	}
 
 	if len(errs) > 0 {
