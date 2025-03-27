@@ -66,6 +66,7 @@ func main() {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fix, _ := cmd.Flags().GetBool("fix")
 			cmd.SilenceUsage = true
+			cmd.SetErrPrefix("Linter errors:\n")
 
 			return lint.NewCommand(fix).Execute(cmd.Context())
 		},

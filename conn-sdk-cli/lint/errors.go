@@ -15,6 +15,7 @@
 package lint
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/lint/common"
@@ -33,19 +34,29 @@ func newLinterError(linter common.Linter, err error) *linterError {
 }
 
 func (e *linterError) Error() string {
-	return e.linter.Name() + ": " + e.err.Error()
+	return e.err.Error()
 }
 
 type linterErrors []*linterError
 
 func (errs linterErrors) Error() string {
-	const divider = "\n\n ---------------- \n\n"
+	const divider = "\n\n----------------\n\n"
 
 	var s strings.Builder
 	for _, err := range errs {
-		s.WriteString(err.Error())
+		indent := strings.Repeat(" ", len(err.linter.Name())+2)
+
+		errStr := err.Error()
+		errStr = strings.ReplaceAll(
+			errStr,
+			"\n",
+			fmt.Sprintf("\n%s", indent),
+		)
+
+		s.WriteString(fmt.Sprintf("%s: %s", err.linter.Name(), errStr))
 		s.WriteString(divider)
 	}
 
-	return strings.TrimSuffix(s.String(), divider)
+	// Note: add new line because Cobra adds a space in front of the error message.
+	return "\n" + strings.TrimSuffix(s.String(), divider)
 }

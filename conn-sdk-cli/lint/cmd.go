@@ -37,6 +37,7 @@ func NewCommand(fix bool) *Command {
 		fix: fix,
 		linters: []common.Linter{
 			&github.RepoSettingsLinter{},
+			&github.RulesetsLinter{},
 		},
 	}
 }

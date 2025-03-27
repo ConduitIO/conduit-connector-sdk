@@ -45,58 +45,92 @@ func (l *RepoSettingsLinter) Lint(ctx context.Context, cfg common.Config) []erro
 	}
 
 	var errs []error
+	if err := l.lintRepoSettings(ghRepo); err != nil {
+		errs = append(errs, err)
+	}
+	if ghRepo.GetDefaultBranch() != defaultBranch {
+		errs = append(errs, &defaultBranchError{
+			have: ghRepo.GetDefaultBranch(),
+			want: defaultBranch,
+		})
+	}
+
+	return errs
+}
+
+func (l *RepoSettingsLinter) lintRepoSettings(ghRepo *github.Repository) error {
+	var errs []error
 
 	// General Features
 	if ghRepo.GetHasWiki() {
-		errs = append(errs, fmt.Errorf("wikis should be disabled"))
+		errs = append(errs, errors.New("wikis should be disabled"))
 	}
 	if !ghRepo.GetHasIssues() {
-		errs = append(errs, fmt.Errorf("issues should be enabled"))
+		errs = append(errs, errors.New("issues should be enabled"))
 	}
 	if ghRepo.GetHasDiscussions() {
-		errs = append(errs, fmt.Errorf("discussions should be disabled"))
+		errs = append(errs, errors.New("discussions should be disabled"))
 	}
 	if ghRepo.GetHasProjects() {
-		errs = append(errs, fmt.Errorf("projects should be disabled"))
+		errs = append(errs, errors.New("projects should be disabled"))
 	}
 
 	// Pull Requests
 	if ghRepo.GetAllowMergeCommit() {
-		errs = append(errs, fmt.Errorf("merge commits should be disabled"))
+		errs = append(errs, errors.New("merge commits should be disabled"))
 	}
 	if !ghRepo.GetAllowSquashMerge() {
-		errs = append(errs, fmt.Errorf("squash merging should be enabled"))
+		errs = append(errs, errors.New("squash merging should be enabled"))
 	}
 	if ghRepo.GetAllowRebaseMerge() {
-		errs = append(errs, fmt.Errorf("rebase merging should be disabled"))
+		errs = append(errs, errors.New("rebase merging should be disabled"))
 	}
 	if !ghRepo.GetAllowAutoMerge() {
-		errs = append(errs, fmt.Errorf("auto-merge should be enabled"))
+		errs = append(errs, errors.New("auto-merge should be enabled"))
 	}
 	if !ghRepo.GetDeleteBranchOnMerge() {
-		errs = append(errs, fmt.Errorf("head branches should be automatically deleted"))
+		errs = append(errs, errors.New("head branches should be automatically deleted"))
 	}
 	if !ghRepo.GetAllowUpdateBranch() {
-		errs = append(errs, fmt.Errorf("branches should always be suggested to update"))
+		errs = append(errs, errors.New("branches should always be suggested to update"))
 	}
 
 	if len(errs) > 0 {
-		return []error{&repoSettingsLinterError{err: errors.Join(errs...)}}
+		// Collect errors into a single error, these are all repo settings errors
+		// and can be fixed in a single operation.
+		return &repoSettingsError{errs: errs}
 	}
 
 	return nil
 }
 
 func (l *RepoSettingsLinter) Fix(ctx context.Context, cfg common.Config, toFixErr error) (bool, error) {
-	var linterError *repoSettingsLinterError
-	if !errors.As(toFixErr, &linterError) {
-		return false, nil
+	var linterError *repoSettingsError
+	if errors.As(toFixErr, &linterError) {
+		err := l.fixRepoSettings(ctx, cfg)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 
+	var errDefaultBranch *defaultBranchError
+	if errors.As(toFixErr, &errDefaultBranch) {
+		err := l.fixDefaultBranch(ctx, cfg, errDefaultBranch)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (l *RepoSettingsLinter) fixRepoSettings(ctx context.Context, cfg common.Config) error {
 	client := githubClient()
 	owner, repo, err := ownerAndRepoFromModule(cfg.Module)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	_, _, err = client.Repositories.Edit(ctx, owner, repo, &github.Repository{
@@ -113,12 +147,36 @@ func (l *RepoSettingsLinter) Fix(ctx context.Context, cfg common.Config, toFixEr
 		AllowUpdateBranch:   github.Ptr(true),
 	})
 	if err != nil {
-		return false, fmt.Errorf("could not update repository settings for %s: %w", cfg.Module, err)
+		return fmt.Errorf("could not update repository settings for %s: %w", cfg.Module, err)
 	}
 
-	return true, nil
+	return nil
 }
 
-type repoSettingsLinterError struct{ err error }
+func (l *RepoSettingsLinter) fixDefaultBranch(ctx context.Context, cfg common.Config, toFixErr *defaultBranchError) error {
+	client := githubClient()
+	owner, repo, err := ownerAndRepoFromModule(cfg.Module)
+	if err != nil {
+		return err
+	}
 
-func (e *repoSettingsLinterError) Error() string { return e.err.Error() }
+	_, _, err = client.Repositories.RenameBranch(ctx, owner, repo, toFixErr.have, toFixErr.want)
+	if err != nil {
+		return fmt.Errorf("could not rename default branch to %s: %w", toFixErr.want, err)
+	}
+
+	return nil
+}
+
+type repoSettingsError struct{ errs []error }
+
+func (e *repoSettingsError) Error() string { return errors.Join(e.errs...).Error() }
+
+type defaultBranchError struct {
+	have string
+	want string
+}
+
+func (e *defaultBranchError) Error() string {
+	return fmt.Sprintf("default branch should be %q, but is %q", e.want, e.have)
+}
