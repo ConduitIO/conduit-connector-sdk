@@ -26,6 +26,8 @@ import (
 
 const defaultBranch = "main"
 
+// RulesetsLinter checks if the repository has rulesets set up (or alternatively
+// branch protection).
 type RulesetsLinter struct{}
 
 var _ common.Linter = (*RulesetsLinter)(nil)

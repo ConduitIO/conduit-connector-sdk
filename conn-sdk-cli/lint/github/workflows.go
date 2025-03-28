@@ -15,70 +15,196 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/lint/common"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-github/v70/github"
 )
 
-type WorkflowPermissionsLinter struct{}
+// WorkflowsLinter checks if the repository contains the necessary GitHub
+// Actions workflows.
+type WorkflowsLinter struct{}
 
-var _ common.Linter = &WorkflowPermissionsLinter{}
+var _ common.Linter = (*WorkflowsLinter)(nil)
 
-func (l *WorkflowPermissionsLinter) Name() string {
-	return "github-workflow-permissions"
+func (l *WorkflowsLinter) Name() string {
+	return "github-workflows"
 }
 
-func (l *WorkflowPermissionsLinter) Lint(ctx context.Context, cfg common.Config) []error {
-	client, owner, repo, err := githubClient(cfg.Module)
-	if err != nil {
-		return []error{err}
+const (
+	connectorTemplateOwner = "conduitio"
+	connectorTemplateRepo  = "conduit-connector-template"
+	githubWorkflowsPath    = "./.github/workflows"
+)
+
+func (l *WorkflowsLinter) Lint(ctx context.Context, cfg common.Config) []error {
+	// Check if the template workflows are already downloaded.
+	templatePath := filepath.Join(os.TempDir(), "conn-sdk-cli", connectorTemplateOwner, connectorTemplateRepo, githubWorkflowsPath)
+
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		client, _, _, err := githubClient(cfg.Module)
+		if err != nil {
+			return []error{err}
+		}
+
+		// Download the template workflows and store them in a temporary directory.
+		err = l.downloadGithubDirectory(
+			ctx,
+			connectorTemplateOwner,
+			connectorTemplateRepo,
+			githubWorkflowsPath,
+			templatePath,
+			client)
+		if err != nil {
+			return []error{fmt.Errorf("failed to download template workflows: %w", err)}
+		}
 	}
 
-	perm, _, err := client.Repositories.GetDefaultWorkflowPermissions(ctx, owner, repo)
+	files, err := os.ReadDir(templatePath)
 	if err != nil {
-		return []error{err}
+		return []error{fmt.Errorf("failed to read local directory: %w", err)}
 	}
 
 	var errs []error
-	if !perm.GetCanApprovePullRequestReviews() {
-		errs = append(errs, errors.New("GitHub Actions should be able to create and approve pull requests"))
-	}
-	if perm.GetDefaultWorkflowPermissions() != "write" {
-		errs = append(errs, fmt.Errorf("GitHub Actions should have default workflow permissions set to \"write\", got %q", perm.GetDefaultWorkflowPermissions()))
+	for _, file := range files {
+		templateFilePath := filepath.Join(templatePath, file.Name())
+		localFilePath := filepath.Join(githubWorkflowsPath, file.Name())
+
+		if _, err := os.Stat(localFilePath); os.IsNotExist(err) {
+			errs = append(errs, &workflowError{
+				filename: file.Name(),
+				err:      fmt.Errorf("workflow file %s is missing", file.Name()),
+			})
+			continue
+		}
+
+		templateContent, err := os.ReadFile(templateFilePath)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to read template workflow file %s: %w", file.Name(), err))
+			continue
+		}
+
+		localContent, err := os.ReadFile(localFilePath)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to read local workflow file %s: %w", file.Name(), err))
+			continue
+		}
+
+		templateContent = bytes.TrimSpace(templateContent)
+		localContent = bytes.TrimSpace(localContent)
+		diff := cmp.Diff(string(templateContent), string(localContent))
+		if diff != "" {
+			errs = append(errs, &workflowError{
+				filename: file.Name(),
+				err:      fmt.Errorf("workflow file %s contains unexpected content:\n%s", file.Name(), diff),
+			})
+		}
 	}
 
-	if len(errs) > 0 {
-		return []error{&workflowPermissionsError{errs}}
+	return errs
+}
+
+func (l *WorkflowsLinter) downloadGithubDirectory(
+	ctx context.Context,
+	owner, repo, dirPath, localPath string,
+	client *github.Client,
+) error {
+	_, directoryContent, _, err := client.Repositories.GetContents(
+		ctx,
+		owner,
+		repo,
+		dirPath,
+		&github.RepositoryContentGetOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get folder contents: %w", err)
+	}
+
+	// Create local path
+	if err := os.MkdirAll(localPath, 0755); err != nil {
+		return fmt.Errorf("failed to create local directory: %w", err)
+	}
+
+	// Download each file
+	downloadFile := func(file *github.RepositoryContent) error {
+		localFilePath := filepath.Join(localPath, file.GetName())
+
+		reader, _, err := client.Repositories.DownloadContents(
+			ctx,
+			owner,
+			repo,
+			file.GetPath(),
+			&github.RepositoryContentGetOptions{},
+		)
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+
+		// Create local file
+		out, err := os.Create(localFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to create local file %s: %w", localFilePath, err)
+		}
+		defer out.Close()
+
+		// Copy downloaded content to local file
+		_, err = io.Copy(out, reader)
+		if err != nil {
+			return fmt.Errorf("failed to write %s: %w", localFilePath, err)
+		}
+		return nil
+	}
+
+	for _, file := range directoryContent {
+		if file.GetType() == "file" {
+			if err := downloadFile(file); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
 }
 
-func (l *WorkflowPermissionsLinter) Fix(ctx context.Context, cfg common.Config, toFixErr error) error {
-	var linterError *workflowPermissionsError
-	if !errors.As(toFixErr, &linterError) {
+func (l *WorkflowsLinter) Fix(_ context.Context, _ common.Config, toFixErr error) error {
+	var workflowErr *workflowError
+	if !errors.As(toFixErr, &workflowErr) {
 		return common.ErrNoFix
 	}
 
-	client, owner, repo, err := githubClient(cfg.Module)
-	if err != nil {
-		return err
+	templateFilePath := filepath.Join(os.TempDir(), "conn-sdk-cli", connectorTemplateOwner, connectorTemplateRepo, githubWorkflowsPath, workflowErr.filename)
+	localFilePath := filepath.Join(githubWorkflowsPath, workflowErr.filename)
+
+	// Ensure the .github/workflows directory exists.
+	if err := os.MkdirAll(filepath.Dir(localFilePath), 0755); err != nil {
+		return fmt.Errorf("failed to create workflows directory: %w", err)
 	}
 
-	_, _, err = client.Repositories.EditDefaultWorkflowPermissions(ctx, owner, repo, github.DefaultWorkflowPermissionRepository{
-		DefaultWorkflowPermissions:   github.Ptr("write"),
-		CanApprovePullRequestReviews: github.Ptr(true),
-	})
+	templateContent, err := os.ReadFile(templateFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to fix GitHub Actions permissions: %w", err)
+		return fmt.Errorf("failed to read template workflow file %s: %w", workflowErr.filename, err)
+	}
+
+	// Overwrite the file contents with the template.
+	err = os.WriteFile(localFilePath, templateContent, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write workflow file %s: %w", workflowErr.filename, err)
 	}
 
 	return nil
 }
 
-type workflowPermissionsError struct{ errs []error }
+type workflowError struct {
+	filename string
+	err      error
+}
 
-func (e *workflowPermissionsError) Error() string { return errors.Join(e.errs...).Error() }
+func (e *workflowError) Error() string { return e.err.Error() }

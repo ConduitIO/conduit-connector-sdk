@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-github/v70/github"
 )
 
+// RepoSettingsLinter checks if the repository has the correct settings.
 type RepoSettingsLinter struct{}
 
 var _ common.Linter = &RepoSettingsLinter{}

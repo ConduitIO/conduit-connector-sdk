@@ -40,6 +40,7 @@ func NewCommand(fix bool) *Command {
 			&github.RepoSettingsLinter{},
 			&github.RulesetsLinter{},
 			&github.WorkflowPermissionsLinter{},
+			&github.WorkflowsLinter{},
 		},
 	}
 }
