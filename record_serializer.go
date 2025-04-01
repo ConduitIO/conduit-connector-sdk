@@ -117,12 +117,12 @@ func (rf GenericRecordSerializer) parseFormatOptions(options string) map[string]
 
 // Serialize converts and encodes record into a byte array.
 func (rf GenericRecordSerializer) Serialize(r opencdc.Record) ([]byte, error) {
-	converted, err := rf.Converter.Convert(r)
+	converted, err := rf.Convert(r)
 	if err != nil {
 		return nil, fmt.Errorf("converter %s failed: %w", rf.Converter.Name(), err)
 	}
 
-	out, err := rf.Encoder.Encode(converted)
+	out, err := rf.Encode(converted)
 	if err != nil {
 		return nil, fmt.Errorf("encoder %s failed: %w", rf.Encoder.Name(), err)
 	}

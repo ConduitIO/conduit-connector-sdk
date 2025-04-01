@@ -1,59 +1,6 @@
-run:
-  timeout: 5m
-
-linters-settings:
-  nolintlint:
-    allow-unused: false # report any unused nolint directives
-    require-explanation: true # require an explanation for nolint directives
-    require-specific: true # require nolint directives to mention the specific linter being suppressed
-  goconst:
-    ignore-tests: true
-  goheader:
-    template-path: '.golangci.goheader.template'
-    values:
-      regexp:
-        copyright-year: 20[2-9]\d
-  gosec:
-    config:
-      # Maximum allowed permissions mode for os.WriteFile and ioutil.WriteFile
-      # Default is 0600, we use 0644 since it's macOS default, and we are not
-      # dealing with critical data.
-      G306: "0644"
-  wrapcheck:
-    ignoreSigs:
-      - .Errorf(
-      - errors.New(
-      - errors.Unwrap(
-      - errors.Join(
-      - .Wrap(
-      - .Wrapf(
-      - .WithMessage(
-      - .WithMessagef(
-      - .WithStack(
-      - (context.Context).Err()
-
-issues:
-  exclude-rules:
-    # Exclude linters from acceptance_testing.go, it's essentially a test file.
-    - path: ^acceptance_testing\.go$
-      linters:
-        - revive
-        - stylecheck
-        - gosec
-    - path: _test\.go
-      linters:
-        - revive
-        - stylecheck
-        - gosec
-        - errname
-        - forcetypeassert
-        - dupl
-        - maintidx
-
+version: "2"
 linters:
-  # please, do not use `enable-all`: it's deprecated and will be removed soon.
-  # inverted configuration with `enable-all` and `disable` is not scalable during updates of golangci-lint
-  disable-all: true
+  default: none
   enable:
     - asasalint
     - asciicheck
@@ -63,7 +10,6 @@ linters:
     - contextcheck
     - copyloopvar
     - decorder
-    # - depguard
     - dogsled
     - dupl
     - dupword
@@ -73,33 +19,23 @@ linters:
     - errname
     - errorlint
     - exhaustive
-    # - forbidigo
     - forcetypeassert
-    # - funlen
-    - gci
     - ginkgolinter
     - gocheckcompilerdirectives
-    # - gochecknoinits
     - gocognit
     - goconst
     - gocritic
     - godot
-    # - err113
-    - gofmt
-    - gofumpt
     - goheader
-    - goimports
     - gomoddirectives
     - goprintffuncname
     - gosec
-    - gosimple
     - gosmopolitan
     - govet
     - grouper
     - importas
     - ineffassign
     - interfacebloat
-    # - ireturn # Doesn't have correct support for generic types https://github.com/butuzov/ireturn/issues/37
     - loggercheck
     - maintidx
     - makezero
@@ -121,15 +57,81 @@ linters:
     - rowserrcheck
     - sqlclosecheck
     - staticcheck
-    - stylecheck
-    - tenv
     - testableexamples
-    # - thelper
     - unconvert
     - unparam
     - unused
     - usestdlibvars
     - wastedassign
     - whitespace
-    # - wrapcheck
     - zerologlint
+  settings:
+    goheader:
+      values:
+        regexp:
+          copyright-year: 20[2-9]\d
+      template-path: .golangci.goheader.template
+    gosec:
+      config:
+        # Maximum allowed permissions mode for os.WriteFile and ioutil.WriteFile
+        # Default is 0600, we use 0644 since it's macOS default, and we are not
+        # dealing with critical data.
+        G306: "0644"
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+        - .WithMessage(
+        - .WithMessagef(
+        - .WithStack(
+        - (context.Context).Err()
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - gosec
+          - revive
+          - staticcheck
+        # Exclude linters from acceptance_testing.go, it's essentially a test file.
+        path: ^acceptance_testing\.go$
+      - linters:
+          - dupl
+          - errname
+          - forcetypeassert
+          - gosec
+          - maintidx
+          - revive
+          - staticcheck
+        path: _test\.go
+      - linters:
+          - goconst
+        path: (.+)_test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
