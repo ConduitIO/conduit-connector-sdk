@@ -2,6 +2,8 @@ module github.com/conduitio/conduit-connector-sdk
 
 go 1.23.2
 
+toolchain go1.24.1
+
 require (
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/Masterminds/sprig/v3 v3.3.0
@@ -24,7 +26,7 @@ require (
 	golang.org/x/sync v0.12.0
 	golang.org/x/time v0.11.0
 	golang.org/x/tools v0.31.0
-	google.golang.org/grpc v1.71.0
+	google.golang.org/grpc v1.71.1
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/gofumpt v0.7.0
