@@ -15,6 +15,7 @@
 package sdk
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/conduitio/conduit-commons/opencdc"
@@ -355,6 +356,66 @@ func TestTemplateRecordSerializer(t *testing.T) {
 			got, err := serializer.Serialize(tc.have)
 			is.NoErr(err)
 			is.Equal(string(got), tc.want)
+		})
+	}
+}
+
+func TestTemplateSerializer_MissingKey(t *testing.T) {
+	tests := []struct {
+		name        string
+		template    string
+		record      Record
+		expectError bool
+	}{
+		{
+			name:     "valid template with existing key",
+			template: "{{.Key}}",
+			record: Record{
+				Key: "test-key",
+			},
+			expectError: false,
+		},
+		{
+			name:     "template with missing key",
+			template: "{{.NonExistentKey}}",
+			record: Record{
+				Key: "test-key",
+			},
+			expectError: true,
+		},
+		{
+			name:     "nested template with missing key",
+			template: "{{.Metadata.nonexistent}}",
+			record: Record{
+				Metadata: map[string]string{
+					"existing": "value",
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serializer := TemplateRecordSerializer{}
+			configured, err := serializer.Configure(tt.template)
+			if err != nil {
+				t.Fatalf("failed to configure serializer: %v", err)
+			}
+
+			_, err = configured.Serialize(tt.record)
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error but got none")
+				}
+				if !strings.Contains(err.Error(), "template execution failed") {
+					t.Errorf("unexpected error message: %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
 		})
 	}
 }
