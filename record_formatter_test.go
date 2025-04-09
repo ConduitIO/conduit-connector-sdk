@@ -300,6 +300,7 @@ func TestTemplateRecordFormatter(t *testing.T) {
 		have     Record
 		template string
 		want     string
+		wantErr  bool
 	}{
 		"go record": {
 			// output prints the Go record (not very useful, this test case is here to explain the behavior)
@@ -341,6 +342,27 @@ func TestTemplateRecordFormatter(t *testing.T) {
 			template: `{{ .Metadata }}`,
 			want:     `map[conduit.source.plugin.name:example]`,
 		},
+		// New test cases for missing key behavior
+		"missing key in template": {
+			have:     r,
+			template: `{{ .Payload.NonExistent }}`,
+			wantErr:  true,
+		},
+		"missing nested key": {
+			have:     r,
+			template: `{{ .Payload.After.NonExistent }}`,
+			wantErr:  true,
+		},
+		"missing key with valid parts": {
+			have:     r,
+			template: `{{ .Payload.After.foo }} {{ .Payload.After.NonExistent }}`,
+			wantErr:  true,
+		},
+		"typo in function name": {
+			have:     r,
+			template: `{{ printif "%s" .Payload.After }}`,
+			wantErr:  true,
+		},
 	}
 
 	for testName, tc := range testCases {
@@ -352,6 +374,10 @@ func TestTemplateRecordFormatter(t *testing.T) {
 			is.NoErr(err)
 
 			got, err := formatter.Format(tc.have)
+			if tc.wantErr {
+				is.True(err != nil)
+				return
+			}
 			is.NoErr(err)
 			is.Equal(string(got), tc.want)
 		})
