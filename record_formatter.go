@@ -252,9 +252,10 @@ func (e TemplateRecordFormatter) Name() string { return "template" }
 func (e TemplateRecordFormatter) Configure(tmpl string) (RecordFormatter, error) {
 	t := template.New("")
 	t = t.Funcs(sprig.TxtFuncMap()) // inject sprig functions
+	t = t.Option("missingkey=error") // enable strict mode to error on missing keys
 	t, err := t.Parse(tmpl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse template: %w", err)
 	}
 
 	e.template = t
@@ -264,7 +265,7 @@ func (e TemplateRecordFormatter) Format(r Record) ([]byte, error) {
 	var b bytes.Buffer
 	err := e.template.Execute(&b, r)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("template execution failed: %w", err)
 	}
 	return b.Bytes(), nil
 }
