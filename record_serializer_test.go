@@ -358,3 +358,64 @@ func TestTemplateRecordSerializer(t *testing.T) {
 		})
 	}
 }
+
+func TestTemplateSerializer_MissingKey(t *testing.T) {
+	is := is.New(t)
+	tests := []struct {
+		name        string
+		template    string
+		record      opencdc.Record
+		expectError bool
+	}{
+		{
+			name:     "valid template with existing key",
+			template: "{{.Key}}",
+			record: opencdc.Record{
+				Key: opencdc.RawData("test-key"),
+			},
+			expectError: false,
+		},
+		{
+			name:     "template with missing key",
+			template: "{{.NonExistentKey}}",
+			record: opencdc.Record{
+				Key: opencdc.RawData("test-key"),
+			},
+			expectError: true,
+		},
+		{
+			name:     "nested template with missing key",
+			template: "{{.Metadata.nonexistent}}",
+			record: opencdc.Record{
+				Metadata: opencdc.Metadata{
+					"existing": "value",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name:     "multiple expressions with missing key",
+			template: "{{.Key}} {{.NonExistentKey}}",
+			record: opencdc.Record{
+				Key: opencdc.RawData("test-key"),
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			is := is.New(t)
+			serializer := TemplateRecordSerializer{}
+			configured, err := serializer.Configure(tt.template)
+			is.NoErr(err)
+
+			_, err = configured.Serialize(tt.record)
+			if tt.expectError {
+				is.True(err != nil)
+			} else {
+				is.NoErr(err)
+			}
+		})
+	}
+}

@@ -253,12 +253,14 @@ type TemplateRecordSerializer struct {
 }
 
 func (e TemplateRecordSerializer) Name() string { return "template" }
+
 func (e TemplateRecordSerializer) Configure(tmpl string) (RecordSerializer, error) {
 	t := template.New("")
-	t = t.Funcs(sprig.TxtFuncMap()) // inject sprig functions
+	t = t.Funcs(sprig.TxtFuncMap())  // inject sprig functions
+	t = t.Option("missingkey=error") // fail on missing keys
 	t, err := t.Parse(tmpl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse template: %w", err)
 	}
 
 	e.template = t
@@ -269,7 +271,7 @@ func (e TemplateRecordSerializer) Serialize(r opencdc.Record) ([]byte, error) {
 	var b bytes.Buffer
 	err := e.template.Execute(&b, r)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("template execution failed: %w", err)
 	}
 	return b.Bytes(), nil
 }
