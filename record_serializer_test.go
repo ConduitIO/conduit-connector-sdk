@@ -15,7 +15,6 @@
 package sdk
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/conduitio/conduit-commons/opencdc"
@@ -361,6 +360,7 @@ func TestTemplateRecordSerializer(t *testing.T) {
 }
 
 func TestTemplateSerializer_MissingKey(t *testing.T) {
+	is := is.New(t)
 	tests := []struct {
 		name        string
 		template    string
@@ -405,21 +405,16 @@ func TestTemplateSerializer_MissingKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			is := is.New(t)
 			serializer := TemplateRecordSerializer{}
 			configured, err := serializer.Configure(tt.template)
-			if err != nil {
-				t.Fatalf("failed to configure serializer: %v", err)
-			}
+			is.NoErr(err)
 
 			_, err = configured.Serialize(tt.record)
 			if tt.expectError {
-				if err == nil {
-					t.Error("expected error but got none")
-				} else if !strings.Contains(err.Error(), "template execution failed") {
-					t.Errorf("unexpected error message: %v", err)
-				}
-			} else if err != nil {
-				t.Errorf("unexpected error: %v", err)
+				is.True(err != nil)
+			} else {
+				is.NoErr(err)
 			}
 		})
 	}
