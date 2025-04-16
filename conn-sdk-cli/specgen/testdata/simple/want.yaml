@@ -2,7 +2,12 @@ version: "1.0"
 specification:
   name: test connector name
   summary: test connector summary
-  description: test connector description
+  description: |
+    This is a multiline
+    test connector description
+
+    We even have a trailing space here ->
+    which will be removed.
   version: v12.34.56
   author: Acme
   source:
