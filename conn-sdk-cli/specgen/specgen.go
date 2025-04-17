@@ -61,7 +61,12 @@ func ExtractSpecification(ctx context.Context, conn sdk.Connector) (pconnector.S
 }
 
 func SpecificationToYaml(spec pconnector.Specification) ([]byte, error) {
-	return yamlMarshal(v1.Specification{}.FromConfig(spec))
+	v1Specs := v1.Specification{}.FromConfig(spec)
+
+	// Clean the description, to make sure it will be marshalled in the flow style.
+	v1Specs.ConnectorSpecification.Description = removeTrailingSpaces(v1Specs.ConnectorSpecification.Description)
+
+	return yamlMarshal(v1Specs)
 }
 
 // WriteAndCombine combines the user-provided, custom information from an existing YAML file
@@ -129,6 +134,8 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 	if existingSpecs.Specification.Author == "" {
 		existingSpecs.Specification.Author = generatedYAML.Specification.Author
 	}
+	// Clean the description, to make sure it will be marshalled in the flow style.
+	existingSpecs.Specification.Description = removeTrailingSpaces(existingSpecs.Specification.Description)
 
 	// Marshal the merged map back to YAML bytes
 	mergedYAML, err := yamlMarshal(existingSpecs)
@@ -142,6 +149,20 @@ func WriteAndCombine(yamlBytes []byte, path string) error {
 	}
 
 	return nil
+}
+
+// removeTrailingSpaces removes trailing spaces in all lines.
+func removeTrailingSpaces(s string) string {
+	if !strings.Contains(s, " \n") {
+		// No trailing spaces, no need to process
+		return s
+	}
+
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func yamlMarshal(obj any) ([]byte, error) {
