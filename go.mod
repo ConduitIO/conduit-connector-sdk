@@ -19,7 +19,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/twmb/go-cache v1.2.1
 	go.uber.org/goleak v1.3.0
-	go.uber.org/mock v0.5.1
+	go.uber.org/mock v0.5.2
 	golang.org/x/sync v0.13.0
 	golang.org/x/time v0.11.0
 	google.golang.org/grpc v1.72.0
