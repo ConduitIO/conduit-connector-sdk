@@ -397,9 +397,9 @@ func newWriteStrategyBatch(writer *writeStrategySingle, batchSize int, batchDela
 }
 
 func (w *writeStrategyBatch) flushBatch(batch []writeBatchItem, batchSize int) error {
-	records := make([]opencdc.Record, 0, batchSize)
-	for i, item := range batch {
-		records[i] = item.records[i]
+	records := make([]opencdc.Record, batchSize)
+	for _, item := range batch {
+		records = append(records, item.records...)
 	}
 	// use the last record's context as the write context
 	ctx := batch[len(batch)-1].ctx
