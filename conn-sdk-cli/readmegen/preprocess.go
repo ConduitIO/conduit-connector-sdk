@@ -40,9 +40,9 @@ var (
 		"version":     `{{ .specification.version }}`,
 		"author":      `{{ .specification.author }}`,
 
-		"source.parameters.yaml":       `{{ template "parameters.yaml" args "specification" .specification "parameters" .specification.source.parameters }}`,
+		"source.parameters.yaml":       `{{ template "parameters.yaml" args "specification" .specification "parameters" .specification.source.parameters "type" "source"}}`,
 		"source.parameters.table":      `{{ template "parameters.table" args "specification" .specification "parameters" .specification.source.parameters }}`,
-		"destination.parameters.yaml":  `{{ template "parameters.yaml" args "specification" .specification "parameters" .specification.destination.parameters }}`,
+		"destination.parameters.yaml":  `{{ template "parameters.yaml" args "specification" .specification "parameters" .specification.destination.parameters "type" "destination"}}`,
 		"destination.parameters.table": `{{ template "parameters.table" args "specification" .specification "parameters" .specification.destination.parameters }}`,
 	}
 	errReadmegenCommentNotFound = errors.New("readmegen open tag not found")
