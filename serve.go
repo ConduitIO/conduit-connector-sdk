@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/conduitio/conduit-connector-protocol/pconnector"
 	"github.com/conduitio/conduit-connector-protocol/pconnector/server"
@@ -26,6 +27,7 @@ import (
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/conduitio/yaml/v3"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc"
 )
 
 // Serve starts the plugin and takes care of its whole lifecycle by blocking
@@ -79,12 +81,12 @@ func serve(c Connector) error {
 
 	initStandaloneModeLogger(connectorLogLevel(cfg))
 
-	target, err := connectorUtilitiesGRPCTarget()
+	grpcCfg, err := getGRPCConfig()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get gRPC configuration: %w", err)
 	}
 
-	if err := internal.InitStandaloneConnectorUtilities(target); err != nil {
+	if err := internal.InitStandaloneConnectorUtilities(grpcCfg.ConnectorUtilitiesTarget); err != nil {
 		return fmt.Errorf("failed to initialize standalone connector utilities: %w", err)
 	}
 
@@ -107,6 +109,9 @@ func serve(c Connector) error {
 		func() pconnector.DestinationPlugin {
 			return NewDestinationPlugin(c.NewDestination(), cfg, spec.DestinationParams)
 		},
+		server.WithGRPCServerOptions(
+			grpc.MaxRecvMsgSize(grpcCfg.MaxReceiveRecordSize),
+		),
 	)
 }
 
@@ -127,6 +132,20 @@ func getPluginConfig() (pconnector.PluginConfig, error) {
 		Token:       token,
 		ConnectorID: connectorID,
 		LogLevel:    logLevel,
+	}, nil
+}
+
+func getGRPCConfig() (pconnector.GRPCConfig, error) {
+	target, err := connectorUtilitiesGRPCTarget()
+	if err != nil {
+		return pconnector.GRPCConfig{}, err
+	}
+
+	maxReceiveRecordSize := connectorGRPCMaxReceiveRecordSize()
+
+	return pconnector.GRPCConfig{
+		ConnectorUtilitiesTarget: target,
+		MaxReceiveRecordSize:     maxReceiveRecordSize,
 	}, nil
 }
 
@@ -156,6 +175,19 @@ func connectorLogLevel(cfg pconnector.PluginConfig) zerolog.Level {
 	}
 
 	return l
+}
+
+// connectorGRPCMaxReceiveRecordSize returns the maximum size of a record that can be received
+// by the connector. The value is fetched from the environment variable provided by conduit-connector-protocol.
+func connectorGRPCMaxReceiveRecordSize() int {
+	maxReceiveRecordSize := os.Getenv(pconnector.EnvConduitConnectorMaxReceiveRecordSize)
+
+	size, err := strconv.Atoi(maxReceiveRecordSize)
+	if err != nil {
+		return server.DefaultMaxReceiveRecordSize
+	}
+
+	return size
 }
 
 func missingEnvError(envVar, conduitVersion string) error {

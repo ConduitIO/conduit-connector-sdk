@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/conduitio/conduit-commons v0.5.4
-	github.com/conduitio/conduit-connector-protocol v0.9.3
+	github.com/conduitio/conduit-connector-protocol v0.9.4-0.20250522154900-3708d4f3a481
 	github.com/conduitio/evolviconf v0.1.0
 	github.com/conduitio/evolviconf/evolviyaml v0.1.0
 	github.com/conduitio/yaml/v3 v3.3.0
