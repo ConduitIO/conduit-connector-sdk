@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/conduitio/conduit-commons v0.5.4
-	github.com/conduitio/conduit-connector-protocol v0.9.3
+	github.com/conduitio/conduit-connector-protocol v0.9.4-0.20250521200801-a3b160b618e4
 	github.com/conduitio/evolviconf v0.1.0
 	github.com/conduitio/evolviconf/evolviyaml v0.1.0
 	github.com/conduitio/yaml/v3 v3.3.0
@@ -230,5 +230,3 @@ require (
 	mvdan.cc/gofumpt v0.7.0 // indirect
 	mvdan.cc/unparam v0.0.0-20240528143540-8a5130ca722f // indirect
 )
-
-replace github.com/conduitio/conduit-connector-protocol => ../conduit-connector-protocol
