@@ -1047,7 +1047,8 @@ func TestSourceWithBatch_ReadN(t *testing.T) {
 
 	s := NewMockSource(gomock.NewController(t))
 	underTest := (&SourceWithBatch{
-		BatchSize: lang.Ptr(5),
+		BatchSize:  lang.Ptr(5),
+		BatchDelay: lang.Ptr(time.Millisecond * 10),
 	}).Wrap(s)
 
 	want := []opencdc.Record{
