@@ -690,6 +690,17 @@ func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error 
 	s.readCh = make(chan readResponse, *s.config.BatchSize)
 	s.readNCh = make(chan readNResponse, 1)
 
+	if *s.config.BatchSize > 0 && *s.config.BatchDelay == 0 {
+		Logger(ctx).Warn().
+			Msg("batch size is set but batch delay is not, this might result in the connector waiting indefinitely for the batch to be filled")
+	}
+	if *s.config.BatchSize == 0 && *s.config.BatchDelay > 0 {
+		Logger(ctx).Warn().
+			Msg("batch delay is set but batch size is not, this might result in extremely large batches for fast sources")
+	}
+
+	// Batching configured, which means that we need to collect records from the source
+	// until the batch is full or the batch delay is reached.
 	if *s.config.BatchSize > 0 || *s.config.BatchDelay > 0 {
 		s.collectFn = s.collectWithReadN
 		go s.runReadN(ctx)
