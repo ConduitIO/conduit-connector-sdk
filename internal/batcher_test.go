@@ -101,6 +101,37 @@ func TestBatcher_Enqueue_Flushed(t *testing.T) {
 	is.Equal(gotBatches[0], []int{1, 2})
 }
 
+func TestBatcher_Enqueue_Flushed_OverBatchSize(t *testing.T) {
+	is := is.New(t)
+	var gotBatches [][]int
+
+	b := NewBatcher(
+		2,
+		time.Second,
+		func(batch []int, size int) error {
+			gotBatches = append(gotBatches, batch)
+			return nil
+		},
+	)
+
+	status := b.Enqueue(1, 1) // first item gets scheduled
+	is.Equal(Scheduled, status)
+
+	status = b.Enqueue(2, 2) // second item triggers a flush
+	is.Equal(Flushed, status)
+
+	// the scheduled result should contain the same error, i.e. nil
+	select {
+	case result := <-b.Results():
+		is.NoErr(result.Err)
+	default:
+		t.Fatal("expected the channel to contain a value")
+	}
+
+	is.Equal(len(gotBatches), 1)
+	is.Equal(gotBatches[0], []int{1, 2})
+}
+
 func TestBatcher_Enqueue_Delay(t *testing.T) {
 	is := is.New(t)
 	var gotBatches [][]int
