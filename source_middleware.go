@@ -696,7 +696,7 @@ func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error 
 	}
 	if *s.config.BatchSize == 0 && *s.config.BatchDelay > 0 {
 		Logger(ctx).Warn().
-			Msg("batch delay is set but batch size is not, this might result in extremely large batches for fast sources")
+			Msg("sdk.batch.delay is set but sdk.batch.size is not, this might result in extremely large batches for fast sources")
 	}
 
 	// Batching configured, which means that we need to collect records from the source
