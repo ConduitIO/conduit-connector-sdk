@@ -692,7 +692,7 @@ func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error 
 
 	if *s.config.BatchSize > 0 && *s.config.BatchDelay == 0 {
 		Logger(ctx).Warn().
-			Msg("batch size is set but batch delay is not, this might result in the connector waiting indefinitely for the batch to be filled")
+			Msg("sdk.batch.size is set but sdk.batch.delay is not, this might result in the connector waiting indefinitely for the batch to be filled")
 	}
 	if *s.config.BatchSize == 0 && *s.config.BatchDelay > 0 {
 		Logger(ctx).Warn().
