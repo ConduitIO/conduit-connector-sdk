@@ -66,7 +66,7 @@ func (b *Batcher[T]) Enqueue(item T, size int) EnqueueStatus {
 	b.batch = append(b.batch, item)
 	b.batchSize += size
 
-	if b.batchSize == b.sizeThreshold {
+	if b.batchSize >= b.sizeThreshold {
 		// trigger flush synchronously
 		_ = b.flushNow()
 		return Flushed
