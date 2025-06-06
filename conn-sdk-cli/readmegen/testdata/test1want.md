@@ -16,7 +16,6 @@ Author: <!-- readmegen:author -->test author<!-- /readmegen:author -->
 version: 2.2
 pipelines:
   - id: example
-    type: source
     status: running
     connectors:
       - id: example
@@ -106,7 +105,6 @@ int param2 description
 version: 2.2
 pipelines:
   - id: example
-    type: destination
     status: running
     connectors:
       - id: example
