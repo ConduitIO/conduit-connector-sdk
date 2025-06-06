@@ -16,11 +16,11 @@ Author: <!-- readmegen:author -->test author<!-- /readmegen:author -->
 version: 2.2
 pipelines:
   - id: example
-    type: source
     status: running
     connectors:
       - id: example
         plugin: "test-connector"
+        type: source
         settings:
           # string param1 description
           # Type: string
@@ -106,11 +106,11 @@ int param2 description
 version: 2.2
 pipelines:
   - id: example
-    type: destination
     status: running
     connectors:
       - id: example
         plugin: "test-connector"
+        type: destination
         settings:
           # boolean param1 description
           # Type: boolean

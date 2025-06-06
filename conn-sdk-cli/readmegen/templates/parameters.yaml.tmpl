@@ -3,11 +3,11 @@
 version: 2.2
 pipelines:
   - id: example
-    type: {{ .connectorType }}
     status: running
     connectors:
       - id: example
         plugin: "{{ .specification.name }}"
+        type: {{ .connectorType }}
         settings:
         {{- range $param := .parameters }}
           {{ formatCommentYAML $param.description 10 }}
