@@ -17,7 +17,7 @@ require (
 	github.com/rs/zerolog v1.34.0
 	github.com/samber/slog-zerolog/v2 v2.9.1
 	github.com/spf13/cobra v1.10.2
-	github.com/twmb/go-cache v1.2.1
+	github.com/twmb/go-cache v1.3.0
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.6.0
 	golang.org/x/sync v0.19.0
