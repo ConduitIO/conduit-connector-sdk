@@ -10,7 +10,7 @@ require (
 	github.com/conduitio/evolviconf v0.1.0
 	github.com/conduitio/evolviconf/evolviyaml v0.1.0
 	github.com/conduitio/yaml/v3 v3.3.0
-	github.com/goccy/go-json v0.10.5
+	github.com/goccy/go-json v0.10.6
 	github.com/google/go-cmp v0.7.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/matryer/is v1.4.1
