@@ -48,6 +48,118 @@ func BenchmarkJSONEncoder(b *testing.B) {
 	}
 }
 
+// benchmarkRawRecord returns a record with raw key and payload, resembling a
+// record produced by a connector that doesn't attach structured data (e.g. a
+// file or generic byte-stream source). The payload is valid JSON so that
+// converters attempting to parse raw data as JSON (e.g. DebeziumConverter)
+// exercise their real parsing path instead of falling back to an error.
+func benchmarkRawRecord() opencdc.Record {
+	return opencdc.Record{
+		Position:  opencdc.Position("benchmark-position-00000001"),
+		Operation: opencdc.OperationCreate,
+		Metadata: opencdc.Metadata{
+			opencdc.MetadataConduitSourcePluginName: "benchmark-source",
+			opencdc.MetadataCollection:              "users",
+		},
+		Key: opencdc.RawData(`{"id":"a1b2c3d4"}`),
+		Payload: opencdc.Change{
+			Before: nil,
+			After:  opencdc.RawData(`{"id":"a1b2c3d4","name":"Jane Doe","email":"jane@example.com","active":true,"created_at":"2026-01-01T00:00:00Z","balance":1234.56}`),
+		},
+	}
+}
+
+// benchmarkStructuredRecord returns a record with structured key and payload,
+// resembling a record produced by a connector with native structured data
+// support (e.g. a database CDC source).
+func benchmarkStructuredRecord() opencdc.Record {
+	return opencdc.Record{
+		Position:  opencdc.Position("benchmark-position-00000001"),
+		Operation: opencdc.OperationUpdate,
+		Metadata: opencdc.Metadata{
+			opencdc.MetadataConduitSourcePluginName: "benchmark-source",
+			opencdc.MetadataCollection:              "users",
+		},
+		Key: opencdc.StructuredData{"id": "a1b2c3d4"},
+		Payload: opencdc.Change{
+			Before: opencdc.StructuredData{
+				"id":         "a1b2c3d4",
+				"name":       "Jane Doe",
+				"email":      "jane@old-example.com",
+				"active":     true,
+				"created_at": "2026-01-01T00:00:00Z",
+				"balance":    1200.00,
+			},
+			After: opencdc.StructuredData{
+				"id":         "a1b2c3d4",
+				"name":       "Jane Doe",
+				"email":      "jane@example.com",
+				"active":     true,
+				"created_at": "2026-01-01T00:00:00Z",
+				"balance":    1234.56,
+			},
+		},
+	}
+}
+
+// BenchmarkGenericRecordSerializer benchmarks the full destination
+// serialization hot path (Converter.Convert + Encoder.Encode combined through
+// GenericRecordSerializer.Serialize), for every combination of converter and
+// record shape shipped as a default record serializer.
+func BenchmarkGenericRecordSerializer(b *testing.B) {
+	records := map[string]opencdc.Record{
+		"raw":        benchmarkRawRecord(),
+		"structured": benchmarkStructuredRecord(),
+	}
+	serializers := map[string]RecordSerializer{
+		"opencdc/json":  GenericRecordSerializer{Converter: OpenCDCConverter{}, Encoder: JSONEncoder{}},
+		"debezium/json": GenericRecordSerializer{Converter: DebeziumConverter{}, Encoder: JSONEncoder{}},
+	}
+
+	for serName, ser := range serializers {
+		for recName, rec := range records {
+			b.Run(serName+"/"+recName, func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					encBytesSink, encErrSink = ser.Serialize(rec)
+				}
+				if encErrSink != nil {
+					b.Fatal(encErrSink)
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkTemplateRecordSerializer benchmarks TemplateRecordSerializer,
+// which destinations can select via sdk.record.format=template to fully
+// customize the output. The "toJson" template mirrors the opencdc/json output
+// and is the most common non-trivial template in use.
+func BenchmarkTemplateRecordSerializer(b *testing.B) {
+	var serializer RecordSerializer = TemplateRecordSerializer{}
+	serializer, err := serializer.Configure(`{{ toJson . }}`)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	records := map[string]opencdc.Record{
+		"raw":        benchmarkRawRecord(),
+		"structured": benchmarkStructuredRecord(),
+	}
+
+	for recName, rec := range records {
+		b.Run(recName, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				encBytesSink, encErrSink = serializer.Serialize(rec)
+			}
+			if encErrSink != nil {
+				b.Fatal(encErrSink)
+			}
+		})
+	}
+}
+
 func TestOpenCDCConverter(t *testing.T) {
 	is := is.New(t)
 	var converter OpenCDCConverter
