@@ -80,17 +80,17 @@ func (c *MockDestinationConfigCall) DoAndReturn(f func() DestinationConfig) *Moc
 }
 
 // LifecycleOnCreated mocks base method.
-func (m *MockDestination) LifecycleOnCreated(ctx context.Context, config config.Config) error {
+func (m *MockDestination) LifecycleOnCreated(ctx context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LifecycleOnCreated", ctx, config)
+	ret := m.ctrl.Call(m, "LifecycleOnCreated", ctx, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // LifecycleOnCreated indicates an expected call of LifecycleOnCreated.
-func (mr *MockDestinationMockRecorder) LifecycleOnCreated(ctx, config any) *MockDestinationLifecycleOnCreatedCall {
+func (mr *MockDestinationMockRecorder) LifecycleOnCreated(ctx, arg1 any) *MockDestinationLifecycleOnCreatedCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnCreated", reflect.TypeOf((*MockDestination)(nil).LifecycleOnCreated), ctx, config)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnCreated", reflect.TypeOf((*MockDestination)(nil).LifecycleOnCreated), ctx, arg1)
 	return &MockDestinationLifecycleOnCreatedCall{Call: call}
 }
 
@@ -118,17 +118,17 @@ func (c *MockDestinationLifecycleOnCreatedCall) DoAndReturn(f func(context.Conte
 }
 
 // LifecycleOnDeleted mocks base method.
-func (m *MockDestination) LifecycleOnDeleted(ctx context.Context, config config.Config) error {
+func (m *MockDestination) LifecycleOnDeleted(ctx context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LifecycleOnDeleted", ctx, config)
+	ret := m.ctrl.Call(m, "LifecycleOnDeleted", ctx, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // LifecycleOnDeleted indicates an expected call of LifecycleOnDeleted.
-func (mr *MockDestinationMockRecorder) LifecycleOnDeleted(ctx, config any) *MockDestinationLifecycleOnDeletedCall {
+func (mr *MockDestinationMockRecorder) LifecycleOnDeleted(ctx, arg1 any) *MockDestinationLifecycleOnDeletedCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnDeleted", reflect.TypeOf((*MockDestination)(nil).LifecycleOnDeleted), ctx, config)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnDeleted", reflect.TypeOf((*MockDestination)(nil).LifecycleOnDeleted), ctx, arg1)
 	return &MockDestinationLifecycleOnDeletedCall{Call: call}
 }
 

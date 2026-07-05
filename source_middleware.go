@@ -79,7 +79,7 @@ func SourceWithMiddleware(s Source) Source {
 	cfg := s.Config()
 
 	cfgVal := reflect.ValueOf(cfg)
-	if cfgVal.Kind() != reflect.Ptr {
+	if cfgVal.Kind() != reflect.Pointer {
 		panic("The struct returned in Config() must be a pointer")
 	}
 
@@ -105,7 +105,7 @@ func sourceMiddlewareFromConfigRecursive(cfgVal reflect.Value) []SourceMiddlewar
 
 		// If the field is not a pointer, we need to get the address of it so
 		// that the values parsed in Configure are reflected in the config.
-		if field.Kind() != reflect.Ptr {
+		if field.Kind() != reflect.Pointer {
 			field = field.Addr()
 		}
 

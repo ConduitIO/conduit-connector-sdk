@@ -118,17 +118,17 @@ func (c *MockSourceConfigCall) DoAndReturn(f func() SourceConfig) *MockSourceCon
 }
 
 // LifecycleOnCreated mocks base method.
-func (m *MockSource) LifecycleOnCreated(ctx context.Context, config config.Config) error {
+func (m *MockSource) LifecycleOnCreated(ctx context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LifecycleOnCreated", ctx, config)
+	ret := m.ctrl.Call(m, "LifecycleOnCreated", ctx, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // LifecycleOnCreated indicates an expected call of LifecycleOnCreated.
-func (mr *MockSourceMockRecorder) LifecycleOnCreated(ctx, config any) *MockSourceLifecycleOnCreatedCall {
+func (mr *MockSourceMockRecorder) LifecycleOnCreated(ctx, arg1 any) *MockSourceLifecycleOnCreatedCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnCreated", reflect.TypeOf((*MockSource)(nil).LifecycleOnCreated), ctx, config)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnCreated", reflect.TypeOf((*MockSource)(nil).LifecycleOnCreated), ctx, arg1)
 	return &MockSourceLifecycleOnCreatedCall{Call: call}
 }
 
@@ -156,17 +156,17 @@ func (c *MockSourceLifecycleOnCreatedCall) DoAndReturn(f func(context.Context, c
 }
 
 // LifecycleOnDeleted mocks base method.
-func (m *MockSource) LifecycleOnDeleted(ctx context.Context, config config.Config) error {
+func (m *MockSource) LifecycleOnDeleted(ctx context.Context, arg1 config.Config) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LifecycleOnDeleted", ctx, config)
+	ret := m.ctrl.Call(m, "LifecycleOnDeleted", ctx, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // LifecycleOnDeleted indicates an expected call of LifecycleOnDeleted.
-func (mr *MockSourceMockRecorder) LifecycleOnDeleted(ctx, config any) *MockSourceLifecycleOnDeletedCall {
+func (mr *MockSourceMockRecorder) LifecycleOnDeleted(ctx, arg1 any) *MockSourceLifecycleOnDeletedCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnDeleted", reflect.TypeOf((*MockSource)(nil).LifecycleOnDeleted), ctx, config)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifecycleOnDeleted", reflect.TypeOf((*MockSource)(nil).LifecycleOnDeleted), ctx, arg1)
 	return &MockSourceLifecycleOnDeletedCall{Call: call}
 }
 

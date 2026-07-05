@@ -204,7 +204,7 @@ func overwriteDefaults(params config.Parameters, cfg any) {
 			return
 		}
 		if !value.IsZero() {
-			for value.Kind() == reflect.Ptr {
+			for value.Kind() == reflect.Pointer {
 				value = value.Elem()
 			}
 
@@ -235,7 +235,7 @@ func formatSlice(slice reflect.Value) string {
 // for a value.
 func getFullyQualifiedName(t any) (string, string) {
 	typ := reflect.TypeOf(t)
-	for typ.Kind() == reflect.Ptr || typ.Kind() == reflect.Interface {
+	for typ.Kind() == reflect.Pointer || typ.Kind() == reflect.Interface {
 		typ = typ.Elem()
 	}
 	return typ.PkgPath(), typ.Name()

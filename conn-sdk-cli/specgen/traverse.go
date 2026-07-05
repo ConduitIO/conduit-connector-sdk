@@ -91,7 +91,7 @@ func traverseStructFields(v reflect.Value, parentPath string, hook fieldHook) {
 
 		// Get the final type after dereferencing pointers
 		finalType := field.Type
-		for finalType.Kind() == reflect.Ptr {
+		for finalType.Kind() == reflect.Pointer {
 			finalType = finalType.Elem()
 		}
 
@@ -109,7 +109,7 @@ func traverseStructFields(v reflect.Value, parentPath string, hook fieldHook) {
 		}
 
 		// If it's a pointer, recurse deeper
-		for fieldValue.Kind() == reflect.Ptr {
+		for fieldValue.Kind() == reflect.Pointer {
 			fieldValue = fieldValue.Elem()
 		}
 
@@ -124,7 +124,7 @@ func traverseMapWithStructFields(v reflect.Value, parentPath string, hook fieldH
 	valueType := v.Type().Elem()
 
 	// If the value type is a pointer, get the element type
-	if valueType.Kind() == reflect.Ptr {
+	if valueType.Kind() == reflect.Pointer {
 		valueType = valueType.Elem()
 	}
 

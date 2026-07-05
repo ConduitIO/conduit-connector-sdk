@@ -294,7 +294,7 @@ func (ParameterType) FromConfig(t config.ParameterType) ParameterType {
 	case config.ParameterTypeString:
 		return "string"
 	case config.ParameterTypeInt:
-		return "int"
+		return "int" //nolint:goconst // Go type-name literal in codegen output; a constant would hurt readability
 	case config.ParameterTypeFloat:
 		return "float"
 	case config.ParameterTypeBool:

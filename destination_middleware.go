@@ -83,7 +83,7 @@ func DestinationWithMiddleware(d Destination) Destination {
 	cfg := d.Config()
 
 	cfgVal := reflect.ValueOf(cfg)
-	if cfgVal.Kind() != reflect.Ptr {
+	if cfgVal.Kind() != reflect.Pointer {
 		panic("The struct returned in Config() must be a pointer")
 	}
 
@@ -109,7 +109,7 @@ func destinationMiddlewareFromConfigRecursive(cfgVal reflect.Value) []Destinatio
 
 		// If the field is not a pointer, we need to get the address of it so
 		// that the values parsed in Configure are reflected in the config.
-		if field.Kind() != reflect.Ptr {
+		if field.Kind() != reflect.Pointer {
 			field = field.Addr()
 		}
 
@@ -324,11 +324,6 @@ func (c *DestinationWithRecordFormat) Wrap(impl Destination) Destination {
 // DefaultRecordSerializers returns the list of record serializers that are used
 // if DestinationWithRecordFormat.RecordSerializers is nil.
 func (c *DestinationWithRecordFormat) DefaultRecordSerializers() []RecordSerializer {
-	serializers := []RecordSerializer{
-		// define specific serializers here
-		TemplateRecordSerializer{},
-	}
-
 	// add generic serializers here, they are combined in all possible combinations
 	genericConverters := []Converter{
 		OpenCDCConverter{},
@@ -337,6 +332,10 @@ func (c *DestinationWithRecordFormat) DefaultRecordSerializers() []RecordSeriali
 	genericEncoders := []Encoder{
 		JSONEncoder{},
 	}
+
+	serializers := make([]RecordSerializer, 0, 1+len(genericConverters)*len(genericEncoders))
+	// define specific serializers here
+	serializers = append(serializers, TemplateRecordSerializer{})
 
 	for _, conv := range genericConverters {
 		for _, enc := range genericEncoders {
