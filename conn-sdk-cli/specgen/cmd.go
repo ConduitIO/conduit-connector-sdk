@@ -113,7 +113,7 @@ func (cmd *Command) runInDir(ctx context.Context, program []byte, dir string) ([
 
 	// Build the program.
 	buf := bytes.NewBuffer(nil)
-	command := exec.Command("go", "build", "-o", progBinary, progSource)
+	command := exec.CommandContext(ctx, "go", "build", "-o", progBinary, progSource)
 	command.Dir = tmpDir
 	command.Stdout = os.Stdout
 	command.Stderr = io.MultiWriter(os.Stderr, buf)

@@ -72,7 +72,7 @@ func Preprocess(data string) (string, error) {
 			return "", errors.New("unknown readmegen tag: " + comment.tag)
 		}
 
-		_, _ = out.WriteString(fmt.Sprintf("%s%s%s", data[:comment.openEndIndex], tmpl, data[comment.closeStartIndex:comment.closeEndIndex]))
+		_, _ = fmt.Fprintf(&out, "%s%s%s", data[:comment.openEndIndex], tmpl, data[comment.closeStartIndex:comment.closeEndIndex])
 		data = data[comment.closeEndIndex:]
 	}
 	return out.String(), nil
