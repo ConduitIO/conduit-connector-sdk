@@ -29,7 +29,12 @@ import (
 // RecordSerializer is a type that can format a record to bytes. It's used in
 // destination connectors to change the output structure and format.
 type RecordSerializer interface {
+	// Name returns the identifier of the serializer as it appears in the record
+	// format configuration (e.g. "opencdc/json").
 	Name() string
+	// Configure parses the raw options string and returns a new, configured
+	// RecordSerializer. It does not mutate the receiver, so the zero value can be
+	// used as a template from which configured instances are derived.
 	Configure(string) (RecordSerializer, error)
 	opencdc.RecordSerializer
 }
@@ -60,8 +65,14 @@ type GenericRecordSerializer struct {
 // destination connectors to change the output structure (e.g. opencdc records,
 // debezium records etc.).
 type Converter interface {
+	// Name returns the identifier of the converter, used as the first half of a
+	// record format name (e.g. "opencdc" or "debezium").
 	Name() string
+	// Configure returns a new Converter configured with the given options; it
+	// does not mutate the receiver.
 	Configure(map[string]string) (Converter, error)
+	// Convert transforms the record into the target structure. It does not
+	// encode it to bytes; that is the Encoder's job.
 	Convert(opencdc.Record) (any, error)
 }
 
@@ -69,8 +80,14 @@ type Converter interface {
 // used in destination connectors to encode records into different formats
 // (e.g. JSON, Avro etc.).
 type Encoder interface {
+	// Name returns the identifier of the encoder, used as the second half of a
+	// record format name (e.g. "json").
 	Name() string
+	// Configure returns a new Encoder configured with the given options; it does
+	// not mutate the receiver.
 	Configure(options map[string]string) (Encoder, error)
+	// Encode marshals the value produced by a Converter into its byte
+	// representation.
 	Encode(r any) ([]byte, error)
 }
 

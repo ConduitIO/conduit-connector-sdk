@@ -34,15 +34,27 @@ type (
 )
 
 const (
+	// TypeAvro is the only schema type currently supported by the schema service.
 	TypeAvro = schema.TypeAvro
 )
 
+// KnownSerdeFactories maps each supported schema [Type] to a factory that builds
+// the corresponding serializer/deserializer. It is used to encode and decode
+// record data against a registered schema.
 var KnownSerdeFactories = schema.KnownSerdeFactories
 
+// AttachKeySchemaToRecord records the subject and version of s in r's metadata,
+// marking s as the schema of the record key. It mutates r.Metadata in place
+// (the map is shared even though r is passed by value), so r.Metadata must be
+// non-nil.
 func AttachKeySchemaToRecord(r opencdc.Record, s Schema) {
 	schema.AttachKeySchemaToRecord(r, s)
 }
 
+// AttachPayloadSchemaToRecord records the subject and version of s in r's
+// metadata, marking s as the schema of the record payload. It mutates
+// r.Metadata in place (the map is shared even though r is passed by value), so
+// r.Metadata must be non-nil.
 func AttachPayloadSchemaToRecord(r opencdc.Record, s Schema) {
 	schema.AttachPayloadSchemaToRecord(r, s)
 }

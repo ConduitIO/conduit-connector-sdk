@@ -114,6 +114,11 @@ func YAMLSpecification(rawYaml, version string) func() Specification {
 	return func() Specification { return specs }
 }
 
+// ParseYAMLSpecification parses a Specification from the given YAML file,
+// optionally overriding the connector version with the version parameter (pass
+// an empty string to keep the version from the YAML). It is the error-returning
+// counterpart to [YAMLSpecification], which panics on failure; prefer this one
+// when the YAML is not known to be valid at build time.
 func ParseYAMLSpecification(ctx context.Context, rawYaml, version string) (Specification, error) {
 	logger := Logger(ctx)
 
