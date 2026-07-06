@@ -43,6 +43,11 @@ var (
 	_ SourceMiddleware = (*SourceWithSchemaExtraction)(nil)
 )
 
+// DefaultSourceMiddleware should be embedded in the SourceConfig struct to
+// provide the SDK's default source middleware as configuration fields. Its
+// fields are picked up by [SourceWithMiddleware], which wraps the source in the
+// corresponding middleware. Note that if the embedding struct overwrites
+// Validate manually, it should call Validate on this struct as well.
 type DefaultSourceMiddleware struct {
 	UnimplementedSourceConfig
 

@@ -30,10 +30,18 @@ func init() {
 }
 
 var (
+	// ErrSubjectNotFound is returned by [Get] when no schema has been registered
+	// under the requested subject.
 	ErrSubjectNotFound = pconnutils.ErrSubjectNotFound
+	// ErrVersionNotFound is returned by [Get] when the subject exists but the
+	// requested version has not been registered.
 	ErrVersionNotFound = pconnutils.ErrVersionNotFound
-	ErrInvalidSchema   = pconnutils.ErrInvalidSchema
+	// ErrInvalidSchema is returned when the provided schema bytes are not a valid
+	// schema of the given type.
+	ErrInvalidSchema = pconnutils.ErrInvalidSchema
 
+	// ErrUnsupportedType is returned when a schema type other than Avro is used;
+	// Avro is currently the only supported type.
 	ErrUnsupportedType = schema.ErrUnsupportedType
 )
 

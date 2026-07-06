@@ -72,14 +72,32 @@ You need to implement the functions required by [Source] and provide your
 own implementations. Please look at the documentation of [Source] for
 further information about individual functions.
 
+Your source's configuration struct should embed [DefaultSourceMiddleware],
+which contributes the SDK's default source middleware (schema extraction,
+schema context, encoding and batching) as configuration fields. Return a
+pointer to that struct from Source.Config so the SDK can populate it from the
+pipeline configuration:
+
+	type SourceConfig struct {
+	  sdk.DefaultSourceMiddleware
+	  // your own configuration fields go here
+	}
+
+	func (s *Source) Config() sdk.SourceConfig {
+	  return &s.config
+	}
+
 You should also create a constructor function for your source struct.
 Note that this is the same function that should be set as the value of
-[Connector].NewSource. The constructor should be used to wrap your source in
-the default middleware. You can add additional middleware, but unless you
-have a very good reason, you should always include the default middleware.
+[Connector].NewSource. The constructor should wrap the source in the
+middleware declared in its configuration using [SourceWithMiddleware], which
+inspects the struct returned by Config and applies every embedded middleware.
+Unless you have a very good reason, you should always keep the embedded
+[DefaultSourceMiddleware]; add further middleware by embedding additional
+middleware config structs alongside it.
 
 	func NewSource() sdk.Source {
-	  return sdk.SourceWithMiddleware(&Source{}, sdk.DefaultSourceMiddleware()...)
+	  return sdk.SourceWithMiddleware(&Source{})
 	}
 
 Additional tips for implementing a source:
@@ -105,22 +123,40 @@ potentially change the interface in the future while remaining backwards
 compatible with existing [Destination] implementations.
 
 	type Destination struct {
-	  sdk.UnimplementedSource
+	  sdk.UnimplementedDestination
 	}
 
 You need to implement the functions required by [Destination] and provide
 your own implementations. Please look at the documentation of [Destination]
 for further information about individual functions.
 
+Your destination's configuration struct should embed
+[DefaultDestinationMiddleware], which contributes the SDK's default
+destination middleware (rate limiting, record format, batching and schema
+extraction) as configuration fields. Return a pointer to that struct from
+Destination.Config so the SDK can populate it from the pipeline
+configuration:
+
+	type DestinationConfig struct {
+	  sdk.DefaultDestinationMiddleware
+	  // your own configuration fields go here
+	}
+
+	func (d *Destination) Config() sdk.DestinationConfig {
+	  return &d.config
+	}
+
 You should also create a constructor function for your destination struct.
 Note that this is the same function that should be set as the value of
-[Connector].NewDestination. The constructor should be used to wrap your
-destination in the default middleware. You can add additional middleware,
-but unless you have a very good reason, you should always include the
-default middleware.
+[Connector].NewDestination. The constructor should wrap the destination in
+the middleware declared in its configuration using [DestinationWithMiddleware],
+which inspects the struct returned by Config and applies every embedded
+middleware. Unless you have a very good reason, you should always keep the
+embedded [DefaultDestinationMiddleware]; add further middleware by embedding
+additional middleware config structs alongside it.
 
 	func NewDestination() sdk.Destination {
-	  return sdk.DestinationWithMiddleware(&Destination{}, sdk.DefaultDestinationMiddleware()...)
+	  return sdk.DestinationWithMiddleware(&Destination{})
 	}
 
 Additional tips for implementing a destination:
