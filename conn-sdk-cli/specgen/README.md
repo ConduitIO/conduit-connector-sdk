@@ -43,4 +43,4 @@ var Connector = sdk.Connector{
 
 More detailed information about `specgen` and `connector.yaml` can be found in
 the
-[Conduit documentation](https://conduit.io/docs/developing/connectors/connector-specification).
+[Conduit documentation](https://conduitdata.io/docs/developing/connectors/connector-specification).
