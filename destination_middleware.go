@@ -440,6 +440,8 @@ type destinationWithSchemaExtraction struct {
 
 	payloadWarnOnce sync.Once
 	keyWarnOnce     sync.Once
+
+	serdes schemaSerdeMemo
 }
 
 func (d *destinationWithSchemaExtraction) Write(ctx context.Context, records []opencdc.Record) (int, error) {
@@ -544,7 +546,7 @@ func (d *destinationWithSchemaExtraction) decode(ctx context.Context, data openc
 	}
 
 	var structuredData opencdc.StructuredData
-	err = sch.Unmarshal(data.Bytes(), &structuredData)
+	err = d.serdes.unmarshal(sch, data.Bytes(), &structuredData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal bytes with schema: %w", err)
 	}
