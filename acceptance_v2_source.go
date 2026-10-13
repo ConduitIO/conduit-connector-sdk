@@ -15,7 +15,6 @@
 package sdk
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -374,14 +373,11 @@ func (a *acceptanceV2) testSrcGracefulStop(t *testing.T) {
 	}
 	t.Logf("Stop returned after %v", time.Since(start).Round(time.Millisecond))
 
-	// A source that keeps producing may have delivered more than the 30 the
-	// test took; Stop reports the last one that was sent, so compare with
-	// everything received.
-	s.mu.Lock()
-	lastDelivered := s.got[len(s.got)-1].Position
-	s.mu.Unlock()
-	if !bytes.Equal(last, lastDelivered) {
-		t.Fatalf("Stop reported last position %q, the last delivered record has position %q; Conduit drains acks up to this position, a wrong value loses or hangs records", last, lastDelivered)
+	// Stop reports the last position the plugin sent into the stream. The host
+	// side may not have received everything yet, so wait for that record, and
+	// then require that nothing came after it.
+	if err := s.waitDelivered(last, a.readTimeoutFor(0)); err != nil {
+		t.Fatalf("Stop reported last position %q: %v; Conduit drains acks up to this position, a wrong value loses or hangs records", last, err)
 	}
 	// Conduit still acks what it holds after Stop, this source gets none.
 	s.stream.Close(nil)

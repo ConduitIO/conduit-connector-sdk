@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -360,11 +362,12 @@ type AcceptanceReport struct {
 	// revision together with CaseSetHash identifies exactly which cases a
 	// connector had to pass.
 	SuiteRevision string `json:"suite_revision"`
-	// SDKVersion is the version of the SDK module linked into the test binary,
-	// read from the binary's build information. It is "unknown" when the
-	// build information has no entry for the SDK (it is stripped, or the SDK
-	// is the main module), and "(devel)" for a replaced module. It is
-	// informational: compatibility is decided by SuiteRevision and CaseSetHash.
+	// SDKVersion is the version of the SDK module the test binary was built
+	// with: from the build information if it lists the SDK, otherwise from the
+	// module path of the SDK source (binaries built by go test have no
+	// dependency list). "local checkout" means a replace directive or
+	// workspace, "unknown" that neither source says. It is informational:
+	// compatibility is decided by SuiteRevision and CaseSetHash.
 	SDKVersion string `json:"sdk_version"`
 	// Connector identifies the connector under test.
 	Connector struct {
@@ -599,26 +602,47 @@ func (r *AcceptanceReport) finish(t *testing.T) {
 
 const sdkModulePath = "github.com/conduitio/conduit-connector-sdk"
 
-// sdkModuleVersion reads the SDK version from the build information of the
-// running test binary. That information is present in binaries built by
-// `go test` (it is embedded by the linker, no -ldflags needed) and lists the
-// SDK as a dependency of the connector's module. It is "unknown" if it is
-// missing, which happens when the SDK is the main module (the SDK's own tests).
+// sdkModuleVersion returns the SDK version the test binary was built with.
+//
+// It first asks the build information, which lists the SDK as a dependency in
+// ordinary binaries. Binaries built by `go test` carry no dependency list (only
+// the package under test), so for those the version is read from the path of
+// this source file, which the toolchain embeds and which has the form
+// .../conduit-connector-sdk@v0.14.1/... when the SDK comes from the module cache
+// (with or without -trimpath). A checkout used through a replace directive or
+// a workspace has no version in its path and is reported as "local checkout".
+// Anything else is "unknown". The value is informational, see the report.
 func sdkModuleVersion() string {
-	bi, ok := debug.ReadBuildInfo()
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, d := range bi.Deps {
+			if d.Path == sdkModulePath {
+				if d.Replace != nil {
+					return fmt.Sprintf("%s (replaced by %s)", d.Version, d.Replace.Path)
+				}
+				return d.Version
+			}
+		}
+		if bi.Main.Path == sdkModulePath {
+			return "local checkout"
+		}
+	}
+	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		return "unknown"
 	}
-	for _, d := range bi.Deps {
-		if d.Path == sdkModulePath {
-			if d.Replace != nil {
-				return fmt.Sprintf("%s (replaced by %s)", d.Version, d.Replace.Path)
-			}
-			return d.Version
+	return sdkVersionFromPath(file)
+}
+
+// sdkVersionFromPath extracts the version from the path of an SDK source file.
+func sdkVersionFromPath(file string) string {
+	file = filepath.ToSlash(file)
+	if _, rest, found := strings.Cut(file, "conduit-connector-sdk@"); found {
+		if version, _, found := strings.Cut(rest, "/"); found && version != "" {
+			return version
 		}
 	}
-	if bi.Main.Path == sdkModulePath {
-		return "(devel)"
+	if strings.Contains(file, "conduit-connector-sdk") {
+		return "local checkout"
 	}
 	return "unknown"
 }

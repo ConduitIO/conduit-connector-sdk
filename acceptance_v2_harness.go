@@ -692,3 +692,34 @@ func (s *v2Src) waitAckProcessed(pos opencdc.Position, timeout time.Duration) er
 		}
 	}
 }
+
+// waitDelivered waits until the record with position pos was received, and
+// fails if records were received after it (the position Stop reported was not
+// the last one sent) or if it never arrives.
+func (s *v2Src) waitDelivered(pos opencdc.Position, timeout time.Duration) error {
+	deadline := time.After(timeout)
+	for {
+		s.mu.Lock()
+		idx := -1
+		for i := len(s.got) - 1; i >= 0; i-- {
+			if string(s.got[i].Position) == string(pos) {
+				idx = i
+				break
+			}
+		}
+		total := len(s.got)
+		ch := s.changed
+		s.mu.Unlock()
+		switch {
+		case idx >= 0 && idx == total-1:
+			return nil
+		case idx >= 0:
+			return fmt.Errorf("%d records were delivered after the record at that position", total-1-idx)
+		}
+		select {
+		case <-ch:
+		case <-deadline:
+			return fmt.Errorf("no record with that position was delivered within %v", timeout)
+		}
+	}
+}

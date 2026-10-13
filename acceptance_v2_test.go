@@ -128,7 +128,7 @@ func TestAcceptanceV2_ReferencePasses(t *testing.T) {
 		is.True(rep.Complete)
 		is.True(rep.Passed)
 		is.Equal(rep.UnexplainedSkips, 0)
-		is.True(rep.SDKVersion != "") // "unknown" in the SDK's own tests, never empty
+		is.Equal(rep.SDKVersion, "local checkout") // the SDK's own tests run from the checkout
 		is.Equal(rep.Limits.MaxBatchSize, 2000)
 		is.True(!rep.Limits.CertificationFloorMet) // the test lowers MaxBatchSize
 		is.Equal(rep.Limits.BelowFloor, []string{"max_batch_size"})
@@ -186,6 +186,19 @@ func TestAcceptanceV2_UnclaimedCapabilitiesAreSkipped(t *testing.T) {
 	})
 
 	AcceptanceTestV2(t, refDriver(t, AcceptanceCapabilities{ThroughputDuration: 200 * time.Millisecond, MaxBatchSize: 200}))
+}
+
+func TestAcceptanceV2_SDKVersionFromPath(t *testing.T) {
+	for in, want := range map[string]string{
+		"/home/u/go/pkg/mod/github.com/conduitio/conduit-connector-sdk@v0.15.0/acceptance_v2.go": "v0.15.0",
+		"github.com/conduitio/conduit-connector-sdk@v0.15.1-rc.1/acceptance_v2.go":               "v0.15.1-rc.1", // -trimpath
+		"/work/conduit-connector-sdk/acceptance_v2.go":                                           "local checkout",
+		"/somewhere/else/acceptance_v2.go":                                                       "unknown",
+	} {
+		if got := sdkVersionFromPath(in); got != want {
+			t.Errorf("sdkVersionFromPath(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 // A BeforeTest skip by the driver must not produce a passing report.
