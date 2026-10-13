@@ -588,11 +588,11 @@ func (a acceptanceTest) Test(t *testing.T) {
 					res.DurationSeconds = time.Since(start).Seconds()
 					switch {
 					case t.Failed():
-						res.Outcome = "failed"
+						res.Outcome = AcceptanceOutcomeFailed
 					case t.Skipped():
-						res.Outcome = "skipped"
+						res.Outcome = AcceptanceOutcomeSkipped
 					default:
-						res.Outcome = "passed"
+						res.Outcome = AcceptanceOutcomePassed
 					}
 					a.onResult(res)
 				}()

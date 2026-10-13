@@ -379,7 +379,7 @@ func TestAcceptanceV2_ReferencePasses(t *testing.T) {
 				continue
 			}
 			v2++
-			is.Equal(c.Outcome, "passed") // all v2 cases apply to the reference
+			is.Equal(c.Outcome, AcceptanceOutcomePassed) // all v2 cases apply to the reference
 		}
 		is.Equal(v2, len(v2Cases()))
 		is.True(core > 0)
@@ -408,7 +408,7 @@ func TestAcceptanceV2_UnclaimedCapabilitiesAreSkipped(t *testing.T) {
 		is.NoErr(json.Unmarshal(b, &rep))
 		skipped := map[string]string{}
 		for _, c := range rep.Cases {
-			if c.Outcome == "skipped" && !strings.HasPrefix(c.ID, "CORE-") {
+			if c.Outcome == AcceptanceOutcomeSkipped && !strings.HasPrefix(c.ID, "CORE-") {
 				skipped[c.ID] = c.Reason
 			}
 		}

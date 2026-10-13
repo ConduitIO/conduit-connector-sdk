@@ -290,11 +290,18 @@ type AcceptanceReport struct {
 	mu sync.Mutex
 }
 
+// Outcomes of an [AcceptanceCaseResult].
+const (
+	AcceptanceOutcomePassed  = "passed"
+	AcceptanceOutcomeFailed  = "failed"
+	AcceptanceOutcomeSkipped = "skipped"
+)
+
 // AcceptanceCaseResult is the outcome of one v2 test.
 type AcceptanceCaseResult struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
-	Outcome string `json:"outcome"` // "passed", "failed" or "skipped"
+	Outcome string `json:"outcome"` // one of the AcceptanceOutcome constants
 	// Reason says why a test was skipped, e.g. which capability was not
 	// claimed.
 	Reason          string  `json:"reason,omitempty"`
@@ -354,6 +361,7 @@ func (r *AcceptanceReport) finish(t *testing.T) {
 		t.Errorf("failed to marshal acceptance report: %v", err)
 		return
 	}
+	//nolint:gosec,nolintlint // the path is chosen by whoever runs the tests
 	if err := os.WriteFile(path, append(b, '\n'), 0o600); err != nil {
 		t.Errorf("failed to write acceptance report to %q: %v", path, err)
 	}
@@ -445,11 +453,11 @@ func (a *acceptanceV2) run(t *testing.T) {
 				res.DurationSeconds = time.Since(start).Seconds()
 				switch {
 				case t.Failed():
-					res.Outcome = "failed"
+					res.Outcome = AcceptanceOutcomeFailed
 				case t.Skipped():
-					res.Outcome = "skipped"
+					res.Outcome = AcceptanceOutcomeSkipped
 				default:
-					res.Outcome = "passed"
+					res.Outcome = AcceptanceOutcomePassed
 				}
 				a.report.addCase(res)
 			}()
