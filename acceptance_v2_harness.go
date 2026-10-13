@@ -16,8 +16,10 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -590,7 +592,15 @@ func (s *v2Src) ack(recs ...opencdc.Record) error {
 	for i, r := range recs {
 		pos[i] = r.Position
 	}
-	return s.stream.Client().Send(pconnector.SourceRunRequest{AckPositions: pos})
+	if err := s.stream.Client().Send(pconnector.SourceRunRequest{AckPositions: pos}); err != nil {
+		// the stream is closed when Run ends, usually because the connector's
+		// Ack failed; the error of Run is the one worth reporting
+		if runErr := s.runError(); runErr != nil {
+			return fmt.Errorf("%w (Run ended with: %v)", err, runErr)
+		}
+		return err
+	}
+	return nil
 }
 
 // stopGraceful stops the source like Conduit does and returns the last
@@ -663,12 +673,21 @@ func (s *v2Src) crash() {
 	s.cancel()
 	if !s.runEnded(abortTimeout) {
 		s.t.Errorf("source Run did not return within %v after the context was cancelled", abortTimeout)
+	} else if err := s.runError(); err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "context canceled") {
+		// Run ended for a reason of its own before or while it was cancelled
+		s.t.Errorf("source Run failed: %v", err)
 	}
 	s.a.mu.Lock()
 	s.a.crashed = append(s.a.crashed, s)
 	s.a.mu.Unlock()
 	if h, ok := s.a.driver.(AcceptanceProcessDeathDriver); ok {
-		h.AfterSourceKilled(s.t)
+		id := h.KilledSessionID(s.t)
+		if err := h.ReleaseSession(context.Background(), id); err != nil {
+			s.t.Errorf("releasing session %q after the kill: %v", id, err)
+		}
+		s.a.report.mu.Lock()
+		s.a.report.ProcessDeathHookCalls++
+		s.a.report.mu.Unlock()
 	}
 }
 
@@ -686,6 +705,17 @@ func (a *acceptanceV2) reapCrashed() {
 	a.mu.Unlock()
 	for _, s := range crashed {
 		_ = s.teardown()
+	}
+}
+
+// runError returns the error Run returned, or nil if it has not returned.
+func (s *v2Src) runError() error {
+	select {
+	case err := <-s.runDone:
+		s.runDone <- err
+		return err
+	default:
+		return nil
 	}
 }
 
@@ -731,8 +761,12 @@ func (s *v2Src) waitAckProcessed(pos opencdc.Position, timeout time.Duration) er
 		if ok {
 			return nil
 		}
+		if runErr := s.runError(); runErr != nil {
+			return fmt.Errorf("Run ended before the connector finished Ack for position %q: %w", pos, runErr)
+		}
 		select {
 		case <-ch:
+		case <-time.After(50 * time.Millisecond):
 		case <-deadline:
 			return fmt.Errorf("the connector did not finish Ack for position %q within %v", pos, timeout)
 		}

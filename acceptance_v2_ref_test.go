@@ -126,6 +126,7 @@ type refSource struct {
 	snapEnd   int
 	resumed   bool
 	lastAcked int
+	acks      int
 }
 
 func newRefSource() Source {
@@ -140,6 +141,10 @@ func newRefSource() Source {
 }
 
 func (s *refSource) Config() SourceConfig { return &s.config }
+
+// refResumes counts Open calls with a position in the process, for the mutant
+// that misbehaves on one particular restart.
+var refResumes atomic.Int64
 
 // Positions are "s<n>" for snapshot records and "c<n>" for changes.
 func (s *refSource) Open(_ context.Context, pos opencdc.Position) error {
@@ -170,6 +175,19 @@ func (s *refSource) Open(_ context.Context, pos opencdc.Position) error {
 	case "source_redelivers_k":
 		k, _ := strconv.Atoi(os.Getenv("ACCEPTANCE_V2_REF_REDELIVER"))
 		s.next = max(0, last+1-k)
+	case "r3_boundary_restart":
+		if kind == 's' && last == s.snapEnd-1 {
+			s.next = 0 // resuming from the last snapshot position restarts the snapshot
+		}
+	case "r3_boundary_drop":
+		if kind == 's' && last == s.snapEnd-1 {
+			s.next = last + 2 // and drops the first change after it
+		}
+	case "r3_resume_n_loses_one":
+		n, _ := strconv.Atoi(os.Getenv("ACCEPTANCE_V2_REF_REDELIVER"))
+		if int(refResumes.Add(1)) == n {
+			s.next++
+		}
 	case "cdc_resume_loses_one":
 		if kind == 'c' {
 			s.next++
@@ -194,9 +212,9 @@ func (s *refSource) recordAt(idx int) (opencdc.Record, bool) {
 	switch refMutant() {
 	case "source_emits_dups":
 		src = idx / 2 // every record twice
-	case "source_reorders", "source_reorders_after_resume":
+	case "source_reorders", "source_reorders_after_resume", "r3_cdc_reorders":
 		// reverse blocks of 9 once they are complete
-		if refMutant() == "source_reorders" || s.resumed {
+		if refMutant() == "source_reorders" || (refMutant() == "r3_cdc_reorders" && idx >= s.snapEnd) || (refMutant() == "source_reorders_after_resume" && s.resumed) {
 			if blk := idx / 9 * 9; blk+9 <= s.store.length() {
 				src = blk + 8 - idx%9
 			}
@@ -252,6 +270,15 @@ func (s *refSource) Ack(_ context.Context, pos opencdc.Position) error {
 		s.mu.Lock()
 		s.lastAcked = max(s.lastAcked, idx)
 		s.mu.Unlock()
+	}
+	if refMutant() == "r3_ack_error" {
+		s.mu.Lock()
+		s.acks++
+		n := s.acks
+		s.mu.Unlock()
+		if n == 5 {
+			return errors.New("r3 injected ack failure")
+		}
 	}
 	if refMutant() == "source_ack_blocks_read" {
 		// Ack holds the lock that Read needs. With acks that lag reads, Read

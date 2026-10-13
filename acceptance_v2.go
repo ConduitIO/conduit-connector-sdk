@@ -15,10 +15,13 @@
 package sdk
 
 import (
+	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -129,6 +132,13 @@ type AcceptanceCapabilities struct {
 	// default is 3 seconds. The result is recorded in the report, never
 	// asserted.
 	ThroughputDuration time.Duration `json:"throughput_duration_ns,omitempty"`
+
+	// Waivers names the limits or exceptions the connector asks the registry
+	// maintainers to waive (for example "max_redelivery", "max_batch_size").
+	// Declaring a waiver waives nothing: it puts the request in the report, and
+	// the registry entry must carry a matching approval from a maintainer
+	// (who, when, why) for the Certified check to accept it.
+	Waivers []string `json:"waivers,omitempty"`
 }
 
 // SourceCapabilities are the optional claims of a source connector.
@@ -285,17 +295,32 @@ type AcceptanceReadAllDriver interface {
 }
 
 // AcceptanceProcessDeathDriver is optionally implemented by an
-// [AcceptanceTestDriver] to do what the death of a connector process does to the
-// system it talks to. The suite kills a source by cancelling its context and
-// leaving it alone (no Stop, no Teardown); a real kill also closes the
-// process's sockets, which releases server-side sessions such as a replication
-// slot held by the dead instance. In-process that never happens, so a successor
-// can find the slot still attached to a session that is not going to end.
-// AfterSourceKilled is called after each kill, before the successor opens; it
-// must only release what the operating system would have released, never
-// persist or commit anything on the connector's behalf.
+// [AcceptanceTestDriver] to do, on the system the connector talks to, what the
+// death of a connector process does. The suite kills a source by cancelling its
+// context and leaving it alone (no Stop, no Teardown); a real kill also closes
+// the process's sockets, which ends server-side sessions such as the
+// replication slot walsender of a dead instance. In-process that never
+// happens, and a successor can find the session still attached.
+//
+// The hook is deliberately narrow. The driver names the session once
+// ([AcceptanceProcessDeathDriver.KilledSessionID], for example a replication
+// slot name) and the suite later asks it to release exactly that
+// ([AcceptanceProcessDeathDriver.ReleaseSession]) with a context and the
+// identifier, nothing else: no source instance, no test handle, no record. It
+// is meant for what the operating system or the server would do on its own
+// (like Postgres's pg_terminate_backend of the walsender holding the slot) and
+// must never persist, commit or flush anything on the connector's behalf.
+//
+// Using the hook is recorded in the report (exception "process_death_hook"). A
+// connector that needs it has NOT passed a real kill: the in-process kill is an
+// approximation, and the attested kill -9 test stays mandatory for Certified.
 type AcceptanceProcessDeathDriver interface {
-	AfterSourceKilled(*testing.T)
+	// KilledSessionID returns the identifier of the server-side session the
+	// connector's source holds, for example "conduitslot".
+	KilledSessionID(*testing.T) string
+	// ReleaseSession ends the session with that identifier, as process death
+	// would.
+	ReleaseSession(ctx context.Context, sessionID string) error
 }
 
 // AcceptanceKeyedRecordGenerator is optionally implemented by an
@@ -431,6 +456,25 @@ type AcceptanceReport struct {
 		OpaqueOptions    int      `json:"opaque_options"`
 		Unreviewable     bool     `json:"unreviewable"`
 	} `json:"goleak"`
+	// RunID is random, chosen when the run starts. A registry that runs the
+	// suite itself can tie a report to its own run through it (for example by
+	// passing it in the environment of the job log) and can tell two reports of
+	// one connector version apart.
+	RunID string `json:"run_id"`
+	// TestBinarySHA256 is the hash of the test executable that produced the
+	// report; SuiteSourceHash is the hash of the suite's own source files as
+	// they were compiled in. A registry-side re-run compares both with the
+	// values it computes for the pinned SDK revision and the connector build.
+	TestBinarySHA256 string `json:"test_binary_sha256"`
+	SuiteSourceHash  string `json:"suite_source_hash"`
+	// Exceptions lists everything that weakens the run and that a maintainer
+	// has to approve: "synthetic", "write_only", "process_death_hook",
+	// "max_redelivery_above_default", and "waiver:<name>" for every declared
+	// waiver. Empty means none. See the design document.
+	Exceptions []string `json:"exceptions"`
+	// ProcessDeathHookCalls counts how often the driver's
+	// [AcceptanceProcessDeathDriver] released a session.
+	ProcessDeathHookCalls int `json:"process_death_hook_calls"`
 	// ExpectedCaseIDs is every case that must have a result for the run to be
 	// complete, in execution order.
 	ExpectedCaseIDs []string `json:"expected_case_ids"`
@@ -596,7 +640,13 @@ func newAcceptanceReport(driver AcceptanceTestDriver, caps AcceptanceCapabilitie
 	r.Limits.MaxRecordBytes = caps.maxRecordBytes()
 	r.Limits.MaxRedelivery = caps.maxRedelivery()
 	r.Limits.BelowFloor = caps.belowFloor()
-	r.Limits.CertificationFloorMet = len(r.Limits.BelowFloor) == 0
+	r.RunID = newRunID()
+	r.TestBinarySHA256 = testBinaryHash()
+	r.SuiteSourceHash = suiteSourceHash()
+	r.Exceptions = exceptionsOf(driver, caps)
+	// The floors are not met by a connector that removed checks, whatever the
+	// numbers say: Synthetic and WriteOnly count against them.
+	r.Limits.CertificationFloorMet = len(r.Limits.BelowFloor) == 0 && !caps.Source.Synthetic && !caps.Destination.WriteOnly
 	r.ExpectedCaseIDs = expectedCaseIDs()
 	r.ExpectedCaseCount = len(r.ExpectedCaseIDs)
 	r.CaseSetHash = caseSetHash(r.ExpectedCaseIDs)
@@ -617,6 +667,53 @@ func newAcceptanceReport(driver AcceptanceTestDriver, caps AcceptanceCapabilitie
 		r.Goleak.Unreviewable = r.Goleak.OpaqueOptions > 0
 	}
 	return r
+}
+
+func newRunID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "unavailable"
+	}
+	return hex.EncodeToString(b)
+}
+
+// testBinaryHash returns the SHA-256 of the running test executable.
+func testBinaryHash() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "unavailable"
+	}
+	f, err := os.Open(exe)
+	if err != nil {
+		return "unavailable"
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "unavailable"
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// exceptionsOf lists what weakens the run, see [AcceptanceReport.Exceptions].
+func exceptionsOf(driver AcceptanceTestDriver, caps AcceptanceCapabilities) []string {
+	out := []string{}
+	if caps.Source.Synthetic {
+		out = append(out, "synthetic")
+	}
+	if caps.Destination.WriteOnly {
+		out = append(out, "write_only")
+	}
+	if _, ok := driver.(AcceptanceProcessDeathDriver); ok {
+		out = append(out, "process_death_hook")
+	}
+	if caps.maxRedelivery() > DefaultMaxRedelivery {
+		out = append(out, "max_redelivery_above_default")
+	}
+	for _, w := range caps.Waivers {
+		out = append(out, "waiver:"+w)
+	}
+	return out
 }
 
 func (r *AcceptanceReport) addCase(c AcceptanceCaseResult) {
@@ -972,7 +1069,7 @@ func v2Cases() []v2Case {
 		{id: caseDst01, name: "pipelined_writes", logic: 1, needs: dst, fn: (*acceptanceV2).testDstPipelinedWrites},
 		{id: caseDst02, name: "slow_acks", logic: 1, needs: dst, fn: (*acceptanceV2).testDstSlowAcks},
 		{id: caseDst03, name: "mixed_batch_sizes", logic: 1, needs: dst, fn: (*acceptanceV2).testDstBatchSizes},
-		{id: caseDst04, name: "crash_replay_at_least_once", logic: 1, needs: dstRead, fn: (*acceptanceV2).testDstCrashReplay},
+		{id: caseDst04, name: "crash_replay_at_least_once", logic: 2, needs: dstRead, fn: (*acceptanceV2).testDstCrashReplay},
 		{
 			id: caseDst05, name: "crash_replay_idempotent", logic: 1,
 			needs: all(dstRead, func(a *acceptanceV2) v2Applicability {
@@ -982,7 +1079,7 @@ func v2Cases() []v2Case {
 			fn:      (*acceptanceV2).testDstCrashReplayIdempotent,
 		},
 		{
-			id: caseDst06, name: "ordering_per_key", logic: 1,
+			id: caseDst06, name: "ordering_per_key", logic: 2,
 			needs: all(dstRead, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(dstOrder(a), "Destination.OrdersByKey")
 			}),
@@ -1004,9 +1101,9 @@ func v2Cases() []v2Case {
 		// Source
 		{id: caseSrc01, name: "pipelined_and_lagging_acks", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcLaggingAcks},
 		{id: caseSrc02, name: "mixed_batch_sizes", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcBatchSizes},
-		{id: caseSrc03, name: "crash_resume_no_gap", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcCrashResume},
+		{id: caseSrc03, name: "crash_resume_no_gap", logic: 2, needs: seeded, fn: (*acceptanceV2).testSrcCrashResume},
 		{
-			id: caseSrc04, name: "ordering_per_key", logic: 1,
+			id: caseSrc04, name: "ordering_per_key", logic: 2,
 			needs: all(seeded, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(srcOrder(a), "Source.OrdersByKey")
 			}),

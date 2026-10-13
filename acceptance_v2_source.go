@@ -276,7 +276,8 @@ func (a *acceptanceV2) ackFresh(t *testing.T, s *v2Src, run *resumeRun, got []op
 }
 
 // SRC-03: the source is killed several times, first while it is reading the
-// snapshot, then while it is capturing changes, with some records acked and
+// snapshot, then right at the boundary between snapshot and changes, then while
+// it is capturing changes, with some records acked and
 // some only delivered. After each kill it resumes from the last acked position,
 // snapshot positions and CDC positions alike. Checked:
 //
@@ -343,6 +344,18 @@ func (a *acceptanceV2) testSrcCrashResume(t *testing.T) {
 			t.Fatalf("snapshot completion: %v", err)
 		}
 	}
+
+	// The boundary: kill right after the ack that completed the snapshot and
+	// resume from exactly that position, before any change exists. A source
+	// that restarts the snapshot from the last snapshot position, or drops the
+	// first change after it, is caught here and nowhere else.
+	s.crash()
+	s = a.openSrc(t, run.resumeAt)
+	boundary := s.drain(len(want), a.driver.ReadTimeout())
+	check("snapshot boundary", boundary)
+	a.reapCrashed()
+
+	// change capture cycle 0: changes written after Open, partly acked
 	cdc1 := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationCreate, 40*k))
 	want = append(want, cdc1...)
 	got := s.next(40*k, a.readTimeoutFor(40*k))
@@ -350,17 +363,23 @@ func (a *acceptanceV2) testSrcCrashResume(t *testing.T) {
 	t.Logf("cdc cycle 0: read %d changes, acked %d, killing source", len(got), 25*k)
 	s.crash()
 
-	// resume from a change capture position, write more changes after Open
-	s = a.openSrc(t, run.resumeAt)
-	cdc2 := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationCreate, 20*k))
-	want = append(want, cdc2...)
-	got = s.next(35*k, a.readTimeoutFor(35*k))
-	got = append(got, s.drain(len(want), a.driver.ReadTimeout())...)
-	check("cdc cycle 1", got)
-	a.reapCrashed()
-	a.ackFresh(t, s, run, got, 30*k, "cdc cycle 1")
-	t.Logf("cdc cycle 1: read %d, acked %d, killing source", len(got), 30*k)
-	s.crash()
+	// cycles 1 and 2 resume from a change capture position and write more
+	// changes after Open. Three restarts in change capture (the boundary, then
+	// these two) plus the final one are exercised; a source that misbehaves
+	// only from its eighth restart on is not caught, see the design document.
+	for i, c := range []struct{ read, ack int }{{35, 30}, {25, 20}} {
+		label := fmt.Sprintf("cdc cycle %d", i+1)
+		s = a.openSrc(t, run.resumeAt)
+		more := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationCreate, 20*k))
+		want = append(want, more...)
+		got = s.next(c.read*k, a.readTimeoutFor(c.read*k))
+		got = append(got, s.drain(len(want), a.driver.ReadTimeout())...)
+		check(label, got)
+		a.reapCrashed()
+		a.ackFresh(t, s, run, got, c.ack*k, label)
+		t.Logf("%s: read %d, acked %d, killing source", label, len(got), c.ack*k)
+		s.crash()
+	}
 
 	s = a.openSrc(t, run.resumeAt)
 	final := s.drainAck(len(want)*2, a.driver.ReadTimeout())
@@ -372,11 +391,14 @@ func (a *acceptanceV2) testSrcCrashResume(t *testing.T) {
 	requireNoGap(t, want, append(append([]opencdc.Record{}, run.acked...), final...), "after repeated kill and resume")
 }
 
-// SRC-04: records of one key are delivered in the order they were written, also
-// across a restart: half of them are acked and the source is killed, the rest
-// arrives after resuming from the last acked position.
+// SRC-04: records of one key are delivered in the order they were written, in
+// the snapshot, while capturing changes, and across a restart: half of the
+// snapshot is acked and the source is killed, then the rest arrives after
+// resuming from the last acked position, followed by keyed records written after
+// Open.
 func (a *acceptanceV2) testSrcOrdering(t *testing.T) {
-	want := a.driver.WriteToSource(t, a.keyedRecords(t, []string{"key-a", "key-b", "key-c"}, 30))
+	keys := []string{"key-a", "key-b", "key-c"}
+	want := a.driver.WriteToSource(t, a.keyedRecords(t, keys, 30)) // 90 records, a snapshot
 
 	run := &resumeRun{ackedSet: map[string]struct{}{}}
 	s := a.openSrc(t, nil)
@@ -385,15 +407,21 @@ func (a *acceptanceV2) testSrcOrdering(t *testing.T) {
 	s.crash()
 
 	s = a.openSrc(t, run.resumeAt)
-	rest := s.drainAck(len(want)*2, a.driver.ReadTimeout())
 	a.reapCrashed()
+	snap := s.drainAck(len(want)*2, a.driver.ReadTimeout())           // the rest of the snapshot, acked: changes can start
+	changes := a.driver.WriteToSource(t, a.keyedRecords(t, keys, 15)) // 45 changes, written after Open
+	want = append(want, changes...)
+	more := s.next(len(changes), a.readTimeoutFor(len(changes)))
+	more = append(more, s.drain(len(want), a.driver.ReadTimeout())...)
 	if err := s.stopGraceful(); err != nil {
 		t.Fatalf("graceful shutdown failed: %v", err)
 	}
-	// everything that was acked, then what the restart delivered beyond it
-	got := append(append([]opencdc.Record{}, run.acked...), run.fresh(rest)...)
+
+	// what was acked first, then what the restart delivered beyond it
+	got := append(append([]opencdc.Record{}, run.acked...), run.fresh(snap)...)
+	got = append(got, run.fresh(more)...)
 	requireNoGap(t, want, got, "ordering test restart")
-	requireKeyOrder(t, want, got, "source claims OrdersByKey (across a restart)")
+	requireKeyOrder(t, want, got, "source claims OrdersByKey (snapshot, changes and a restart)")
 }
 
 // SRC-05: a field that appears while the source runs reaches the output

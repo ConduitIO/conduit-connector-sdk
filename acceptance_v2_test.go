@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,6 +137,9 @@ func TestAcceptanceV2_ReferencePasses(t *testing.T) {
 		is.Equal(rep.ExpectedCaseCount, len(rep.ExpectedCaseIDs))
 		is.Equal(rep.ExpectedCaseCount, len(coreTestIDs)+len(v2Cases()))
 		is.Equal(rep.CaseSetHash, caseSetHash(rep.ExpectedCaseIDs))
+		is.Equal(rep.Exceptions, []string{})
+		is.True(rep.RunID != "")
+		is.Equal(rep.SuiteSourceHash, suiteSourceHash())
 		is.True(rep.Complete)
 		is.True(rep.Passed)
 		is.Equal(rep.UnexplainedSkips, 0)
@@ -307,20 +311,39 @@ func TestAcceptanceV2_FilteredRunIsIncomplete(t *testing.T) {
 	is.True(len(rep.Cases) < rep.ExpectedCaseCount)
 }
 
-// pinnedRevisions is the history of suite revisions: for each, the hash of
-// what the cases are (caseContentHash). The test below fails when the cases
-// change without the pin being edited, which forces a reviewed decision about
-// the revision. It cannot see an edit to a case's code that forgot to bump the
-// case's logic version, so reviewers bump v2Case.logic for any change that can
-// change a verdict. Once a revision is released, its entry is final: a change
-// to the cases then needs a new revision (and a new entry), never an edited
-// hash.
+// pinnedRevisions is the history of suite revisions. For each: the hash of what
+// the cases are (caseContentHash, IDs, names and per-case logic versions) and
+// the hash of the suite's source files (suiteSourceHash, which also covers the
+// shared helpers, the constants for bounds, floors, timeouts and data sizes, and
+// the Core bodies that the content hash cannot see).
+//
+// What the test below enforces:
+//   - the newest revision must be the current one;
+//   - the case content hash must match, always: adding, removing, renaming or
+//     bumping the logic version of a case fails the build until the pin is
+//     edited, so the edit shows in review;
+//   - once the newest revision is released, the suite source hash must match
+//     too: any edit to the harness, helpers, constants or Core then needs a new
+//     revision and a new entry. While a revision is unreleased the source hash
+//     is only logged, because every review round edits those files;
+//   - every older entry must be released, and no two entries pin the same case
+//     set.
+//
+// What it cannot enforce: an in-repo pin is editable by whoever edits the code.
+// A released entry that is rewritten instead of superseded is visible in the
+// diff of this table and nowhere else, so it is a review obligation (CODEOWNERS
+// on this file is the intended backstop). The registry does not rely on the pin:
+// it holds its own table of (revision, case content hash, suite source hash) for
+// the revisions it supports.
 var pinnedRevisions = []struct {
 	revision string
-	hash     string
-	released bool
+	// hash is the case content hash
+	hash string
+	// sourceHash is the suite source hash; only enforced once released
+	sourceHash string
+	released   bool
 }{
-	{"2.0.0", "add36d8553f972c5f236ca75cdb117af2f1209f0cf507d5132f65831474b5376", false},
+	{"2.0.0", "fd548736d83163b3800c31d6c3e997a0e18431a2856381d327c10df47cec3982", "unreleased", false},
 }
 
 func TestAcceptanceV2_CaseSetIsPinned(t *testing.T) {
@@ -331,14 +354,51 @@ func TestAcceptanceV2_CaseSetIsPinned(t *testing.T) {
 	if got := caseContentHash(); got != current.hash {
 		t.Fatalf("the cases changed (content hash %s). Unreleased revision: update the pin. Released revision: bump AcceptanceSuiteV2Revision and add a pinned entry", got)
 	}
+	got := suiteSourceHash()
+	if current.released && got != current.sourceHash {
+		t.Fatalf("the suite source changed (hash %s) after revision %s was released: bump AcceptanceSuiteV2Revision and add a pinned entry", got, current.revision)
+	}
+	if !current.released {
+		t.Logf("suite source hash of unreleased revision %s: %s (pinned: %s)", current.revision, got, current.sourceHash)
+	}
 	seen := map[string]string{}
-	for _, p := range pinnedRevisions {
+	for i, p := range pinnedRevisions {
+		if i < len(pinnedRevisions)-1 && !p.released {
+			t.Errorf("revision %s is not the newest and is not marked released", p.revision)
+		}
 		if other, dup := seen[p.hash]; dup {
 			t.Errorf("revisions %s and %s pin the same case set; a new revision must change something", other, p.revision)
 		}
 		seen[p.hash] = p.revision
 	}
 }
+
+func TestAcceptanceV2_ExceptionsAreListed(t *testing.T) {
+	is := is.New(t)
+	d := refDriver(t, AcceptanceCapabilities{})
+	is.Equal(exceptionsOf(d, AcceptanceCapabilities{}), []string{}) // nothing weakened, an empty list, not null
+
+	caps := AcceptanceCapabilities{
+		Source:      SourceCapabilities{Synthetic: true, MaxRedelivery: 100},
+		Destination: DestinationCapabilities{WriteOnly: true},
+		Waivers:     []string{"max_batch_size"},
+	}
+	is.Equal(exceptionsOf(d, caps), []string{"synthetic", "write_only", "max_redelivery_above_default", "waiver:max_batch_size"})
+	// a driver with the process death hook says so
+	is.Equal(exceptionsOf(hookDriver{d}, AcceptanceCapabilities{}), []string{"process_death_hook"})
+
+	rep := newAcceptanceReport(d, caps)
+	is.True(!rep.Limits.CertificationFloorMet) // removed checks count against the floors
+	is.True(rep.RunID != "" && rep.RunID != "unavailable")
+	is.True(newAcceptanceReport(d, caps).RunID != rep.RunID) // random per run
+	is.Equal(len(rep.TestBinarySHA256), 64)
+	is.Equal(len(rep.SuiteSourceHash), 64)
+}
+
+type hookDriver struct{ AcceptanceTestDriver }
+
+func (hookDriver) KilledSessionID(*testing.T) string                { return "slot" }
+func (hookDriver) ReleaseSession(_ context.Context, _ string) error { return nil }
 
 // Every v1 test method has a stable ID, and the IDs have no gaps.
 func TestAcceptanceV2_CoreIDsCoverV1(t *testing.T) {
@@ -407,6 +467,9 @@ func TestAcceptanceV2_Mutants(t *testing.T) {
 		{"source_commits_in_teardown", "", "SRC-03"},
 		{"source_ignores_position", "redelivery1000", "SRC-03"},
 		{"source_reorders", "ordering", "SRC-04"},
+		{"r3_cdc_reorders", "ordering", "SRC-04"},
+		{"r3_boundary_restart", "", "SRC-03"},
+		{"r3_boundary_drop", "", "SRC-03"},
 		{"source_reorders_after_resume", "ordering", "SRC-04"},
 		{"source_drops_new_field", "", "SRC-05"},
 		{"source_truncates_large", "", "SRC-06"},
@@ -465,6 +528,39 @@ func TestAcceptanceV2_RedeliveryBoundIsExact(t *testing.T) {
 	}
 	if ok, out := runRefCase(t, "source_redelivers_k", "redelivery1000", "1000", "SRC-03"); !ok {
 		t.Fatalf("a source redelivering exactly the declared 1000 must pass:\n%s", tail(out, 3000))
+	}
+}
+
+// SRC-03 restarts the source seven times with a position (two in the snapshot,
+// the completion run, the boundary, two in change capture, the final run). A
+// source that loses a record on any of them is caught; one that misbehaves only
+// from its eighth restart on is not, and this test states that limit.
+func TestAcceptanceV2_RestartCountLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the test binary")
+	}
+	for n := 1; n <= 7; n++ {
+		if ok, _ := runRefCase(t, "r3_resume_n_loses_one", "", fmt.Sprint(n), "SRC-03"); ok {
+			t.Errorf("a source that loses a record on restart %d must fail SRC-03", n)
+		}
+	}
+	if ok, out := runRefCase(t, "r3_resume_n_loses_one", "", "8", "SRC-03"); !ok {
+		t.Fatalf("restart 8 is beyond what SRC-03 exercises, the limit moved:\n%s", tail(out, 2000))
+	}
+}
+
+// When the connector's Ack fails, the run fails with the error of the
+// connector, not with a closed stream.
+func TestAcceptanceV2_AckErrorIsSurfaced(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the test binary")
+	}
+	ok, out := runRefCase(t, "r3_ack_error", "", "", "SRC-01")
+	if ok {
+		t.Fatal("SRC-01 must fail when Ack fails")
+	}
+	if !strings.Contains(out, "r3 injected ack failure") {
+		t.Fatalf("the failure does not carry the connector's Ack error:\n%s", tail(out, 3000))
 	}
 }
 
