@@ -279,6 +279,20 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req pconnector.Dest
 	return pconnector.DestinationStopResponse{}, err
 }
 
+// Teardown waits for a running Write, refuses later ones and calls the
+// connector's Teardown.
+//
+// Records that reach the adapter after Teardown started are never written and
+// are left unanswered (neither acked nor nacked), so Conduit redelivers them
+// after a restart instead of routing them to a DLQ.
+//
+// The wait is bounded by destinationTeardownTimeout (1 minute). If a Write is
+// still running when it expires, Teardown gives up on it and goes on: the
+// connector's Teardown is called while that Write is still running, which
+// breaks the connector's "no other call after Teardown" guarantee, but keeping
+// the guarantee that Teardown is called wins over waiting forever. The
+// abandoned Write is not acked when it returns, whatever it returns, and
+// Teardown returns an error that says so.
 func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ pconnector.DestinationTeardownRequest) (pconnector.DestinationTeardownResponse, error) {
 	ctx = internal.Enrich(ctx, a.cfg)
 
@@ -360,21 +374,22 @@ type writeStrategy interface {
 type writeStrategySingle struct {
 	impl Destination
 
-	// inflight tracks Write calls that are running inside the connector, so
+	// inflight counts Write calls that are running inside the connector, so
 	// Teardown can wait for them (see closeAndWait). closed is set once
 	// Teardown starts; later writes are refused instead of reaching a
-	// connector that was promised no more calls.
-	mu       sync.Mutex
-	inflight sync.WaitGroup
-	closed   bool
+	// connector that was promised no more calls. abandoned is set when
+	// Teardown stopped waiting for a Write that was still running; that Write
+	// must not ack when it finally returns. idle is closed when inflight drops
+	// to zero while closeAndWait is parked on it.
+	mu        sync.Mutex
+	inflight  int
+	closed    bool
+	abandoned bool
+	idle      chan struct{}
 
 	ackFn  func([]opencdc.Record, error, pconnector.DestinationRunStreamServer) error
 	stream pconnector.DestinationRunStreamServer
 }
-
-// errDestinationTornDown is the nack reason for records that arrive after
-// Teardown started.
-var errDestinationTornDown = errors.New("destination is being torn down, record not written")
 
 // enter registers a Write call. It returns false if Teardown already started.
 func (w *writeStrategySingle) enter() bool {
@@ -383,32 +398,78 @@ func (w *writeStrategySingle) enter() bool {
 	if w.closed {
 		return false
 	}
-	w.inflight.Add(1)
+	w.inflight++
 	return true
 }
 
+// leave deregisters a Write call. It reports whether Teardown gave up waiting
+// for it, in which case the Write's result must not be acked.
+func (w *writeStrategySingle) leave() (abandoned bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.inflight--
+	if w.inflight == 0 && w.idle != nil {
+		close(w.idle)
+		w.idle = nil
+	}
+	return w.abandoned
+}
+
 // closeAndWait refuses new writes and waits, at most timeout, for the ones
-// running inside the connector to return.
+// running inside the connector to return. It starts no goroutine, so giving up
+// leaves nothing behind. On timeout the running writes are marked abandoned.
 func (w *writeStrategySingle) closeAndWait(ctx context.Context, timeout time.Duration) error {
 	w.mu.Lock()
 	w.closed = true
+	if w.inflight == 0 {
+		w.mu.Unlock()
+		return nil
+	}
+	if w.idle == nil {
+		w.idle = make(chan struct{})
+	}
+	idle := w.idle
 	w.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return csync.Run(ctx, w.inflight.Wait)
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		if w.inflight == 0 {
+			return nil // finished while we were giving up
+		}
+		w.abandoned = true
+		return ctx.Err()
+	}
 }
 
 func (w *writeStrategySingle) Write(ctx context.Context, batch []opencdc.Record) error {
-	var (
-		n   int
-		err error
-	)
-	if w.enter() {
-		n, err = w.impl.Write(ctx, batch)
-		w.inflight.Done()
-	} else {
-		err = errDestinationTornDown
+	if !w.enter() {
+		// Teardown started. Leave the records unanswered: neither ack nor
+		// nack. A nack can make Conduit route them to the DLQ (with a
+		// non-zero threshold the DLQ handler acks them at the source), which
+		// would create spurious DLQ entries for records that were never
+		// attempted. Unanswered records are redelivered after a restart
+		// (at-least-once). This does not block the stream: Run keeps receiving
+		// until the stream is closed.
+		Logger(ctx).Warn().
+			Int("records", len(batch)).
+			Msg("records received after Teardown started were not written and are left unacknowledged")
+		return nil
+	}
+	n, err := w.impl.Write(ctx, batch)
+	if w.leave() {
+		// Teardown gave up waiting for this Write and already called the
+		// connector's Teardown. Whatever the connector reports now, the
+		// outcome is not acked: the records are redelivered after a restart.
+		Logger(ctx).Warn().
+			Int("records", len(batch)).
+			Msg("Write returned after Teardown gave up waiting for it, not acknowledging its records")
+		return nil
 	}
 	if err != nil {
 		var pos []byte
