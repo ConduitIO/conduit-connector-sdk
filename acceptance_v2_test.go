@@ -373,6 +373,17 @@ func TestAcceptanceV2_CaseSetIsPinned(t *testing.T) {
 	}
 }
 
+func TestAcceptanceV2_SourceHashIgnoresLineEndings(t *testing.T) {
+	lf := hashFiles(map[string][]byte{"a.go": []byte("x\ny\n")})
+	crlf := hashFiles(map[string][]byte{"a.go": []byte("x\r\ny\r\n")})
+	if lf != crlf {
+		t.Fatal("CRLF and LF checkouts must hash the same")
+	}
+	if lf == hashFiles(map[string][]byte{"a.go": []byte("x\nz\n")}) {
+		t.Fatal("different content must hash differently")
+	}
+}
+
 func TestAcceptanceV2_ExceptionsAreListed(t *testing.T) {
 	is := is.New(t)
 	d := refDriver(t, AcceptanceCapabilities{})
@@ -393,6 +404,7 @@ func TestAcceptanceV2_ExceptionsAreListed(t *testing.T) {
 	is.True(newAcceptanceReport(d, caps).RunID != rep.RunID) // random per run
 	is.Equal(len(rep.TestBinarySHA256), 64)
 	is.Equal(len(rep.SuiteSourceHash), 64)
+	is.True(rep.Build.GoVersion != "" && rep.Build.GOOS != "" && rep.Build.GOARCH != "") // build settings are recorded
 }
 
 type hookDriver struct{ AcceptanceTestDriver }

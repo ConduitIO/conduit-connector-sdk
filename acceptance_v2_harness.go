@@ -596,7 +596,7 @@ func (s *v2Src) ack(recs ...opencdc.Record) error {
 		// the stream is closed when Run ends, usually because the connector's
 		// Ack failed; the error of Run is the one worth reporting
 		if runErr := s.runError(); runErr != nil {
-			return fmt.Errorf("%w (Run ended with: %v)", err, runErr)
+			return fmt.Errorf("%w (Run ended with: %w)", err, runErr)
 		}
 		return err
 	}

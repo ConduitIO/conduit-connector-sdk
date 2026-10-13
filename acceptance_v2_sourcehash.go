@@ -15,6 +15,7 @@
 package sdk
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -26,30 +27,39 @@ import (
 // the code behind a report, including the helpers, constants (bounds, floors,
 // timeouts, data sizes) and Core bodies that the case content hash cannot see.
 //
-//go:embed acceptance_testing.go acceptance_v2.go acceptance_v2_destination.go acceptance_v2_harness.go acceptance_v2_source.go
+//go:embed acceptance_testing.go acceptance_v2.go acceptance_v2_destination.go acceptance_v2_harness.go acceptance_v2_source.go acceptance_v2_sourcehash.go
 var suiteSources embed.FS
 
 // suiteSourceHash returns the SHA-256 of the suite's source files, in name
-// order.
+// order, with line endings normalized.
 func suiteSourceHash() string {
 	entries, err := suiteSources.ReadDir(".")
 	if err != nil {
-		return "unavailable"
+		return hashUnavailable
 	}
-	names := make([]string, 0, len(entries))
+	files := make(map[string][]byte, len(entries))
 	for _, e := range entries {
-		names = append(names, e.Name())
+		b, err := suiteSources.ReadFile(e.Name())
+		if err != nil {
+			return hashUnavailable
+		}
+		files[e.Name()] = b
+	}
+	return hashFiles(files)
+}
+
+func hashFiles(files map[string][]byte) string {
+	names := make([]string, 0, len(files))
+	for n := range files {
+		names = append(names, n)
 	}
 	sort.Strings(names)
 	h := sha256.New()
 	for _, n := range names {
-		b, err := suiteSources.ReadFile(n)
-		if err != nil {
-			return "unavailable"
-		}
 		h.Write([]byte(n))
 		h.Write([]byte{0})
-		h.Write(b)
+		// a checkout with CRLF line endings must hash like one with LF
+		h.Write(bytes.ReplaceAll(files[n], []byte("\r\n"), []byte("\n")))
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))

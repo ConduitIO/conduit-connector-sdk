@@ -302,12 +302,17 @@ type AcceptanceReadAllDriver interface {
 // replication slot walsender of a dead instance. In-process that never
 // happens, and a successor can find the session still attached.
 //
-// The hook is deliberately narrow. The driver names the session once
+// The signature is deliberately narrow. The driver names the session once
 // ([AcceptanceProcessDeathDriver.KilledSessionID], for example a replication
 // slot name) and the suite later asks it to release exactly that
 // ([AcceptanceProcessDeathDriver.ReleaseSession]) with a context and the
-// identifier, nothing else: no source instance, no test handle, no record. It
-// is meant for what the operating system or the server would do on its own
+// identifier: the suite hands the hook no source instance, no test handle, no
+// record. That is a property of the signature, not a guarantee: the driver
+// creates the source (Connector().NewSource), so a driver can still reach the
+// instance some other way, and can rescue a connector with or without the hook.
+// With the hook the rescue is flagged and counted in the report; without it,
+// it is not flagged at all and is caught only by the attested kill -9 test. The
+// hook is meant for what the operating system or the server would do on its own
 // (like Postgres's pg_terminate_backend of the walsender holding the slot) and
 // must never persist, commit or flush anything on the connector's behalf.
 //
@@ -465,8 +470,17 @@ type AcceptanceReport struct {
 	// report; SuiteSourceHash is the hash of the suite's own source files as
 	// they were compiled in. A registry-side re-run compares both with the
 	// values it computes for the pinned SDK revision and the connector build.
+	//
+	// The binary hash is stable only in a pinned build environment: the module
+	// path of the build, -race, CGO, the toolchain and GOOS/GOARCH all change
+	// it (and without -trimpath, so do the directories). It matches a re-run
+	// with identical build settings and is informational otherwise; Build
+	// records the settings so a registry can tell. CI should build with
+	// -trimpath.
 	TestBinarySHA256 string `json:"test_binary_sha256"`
-	SuiteSourceHash  string `json:"suite_source_hash"`
+	// Build records the settings the test binary was built with.
+	Build           BuildSettings `json:"build"`
+	SuiteSourceHash string        `json:"suite_source_hash"`
 	// Exceptions lists everything that weakens the run and that a maintainer
 	// has to approve: "synthetic", "write_only", "process_death_hook",
 	// "max_redelivery_above_default", and "waiver:<name>" for every declared
@@ -510,6 +524,47 @@ type AcceptanceReport struct {
 	DurationSeconds float64 `json:"duration_seconds"`
 
 	mu sync.Mutex
+}
+
+// BuildSettings are the build settings of the test binary, from its build
+// information.
+type BuildSettings struct {
+	GoVersion string `json:"go_version"`
+	GOOS      string `json:"goos"`
+	GOARCH    string `json:"goarch"`
+	Compiler  string `json:"compiler,omitempty"`
+	Race      bool   `json:"race"`
+	Trimpath  bool   `json:"trimpath"`
+	CGO       bool   `json:"cgo"`
+	Tags      string `json:"tags,omitempty"`
+}
+
+func buildSettings() BuildSettings {
+	b := BuildSettings{GoVersion: runtime.Version(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Compiler: runtime.Compiler}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return b
+	}
+	if bi.GoVersion != "" {
+		b.GoVersion = bi.GoVersion
+	}
+	for _, kv := range bi.Settings {
+		switch kv.Key {
+		case "-race":
+			b.Race = kv.Value == "true"
+		case "-trimpath":
+			b.Trimpath = kv.Value == "true"
+		case "CGO_ENABLED":
+			b.CGO = kv.Value == "1"
+		case "-tags":
+			b.Tags = kv.Value
+		case "GOOS":
+			b.GOOS = kv.Value
+		case "GOARCH":
+			b.GOARCH = kv.Value
+		}
+	}
+	return b
 }
 
 // Outcomes of an [AcceptanceCaseResult].
@@ -642,6 +697,7 @@ func newAcceptanceReport(driver AcceptanceTestDriver, caps AcceptanceCapabilitie
 	r.Limits.BelowFloor = caps.belowFloor()
 	r.RunID = newRunID()
 	r.TestBinarySHA256 = testBinaryHash()
+	r.Build = buildSettings()
 	r.SuiteSourceHash = suiteSourceHash()
 	r.Exceptions = exceptionsOf(driver, caps)
 	// The floors are not met by a connector that removed checks, whatever the
@@ -672,7 +728,7 @@ func newAcceptanceReport(driver AcceptanceTestDriver, caps AcceptanceCapabilitie
 func newRunID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return "unavailable"
+		return hashUnavailable
 	}
 	return hex.EncodeToString(b)
 }
@@ -681,16 +737,16 @@ func newRunID() string {
 func testBinaryHash() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "unavailable"
+		return hashUnavailable
 	}
 	f, err := os.Open(exe)
 	if err != nil {
-		return "unavailable"
+		return hashUnavailable
 	}
 	defer f.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		return "unavailable"
+		return hashUnavailable
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -782,6 +838,10 @@ const (
 	sdkModulePath      = "github.com/conduitio/conduit-connector-sdk"
 	sdkSourceBuildInfo = "build_info"
 	sdkUnknown         = "unknown"
+	sdkLocalCheckout   = "local checkout"
+	sdkVendored        = "vendored"
+	sdkModuleCache     = "module_cache_path"
+	hashUnavailable    = "unavailable"
 )
 
 // sdkModuleVersion returns the SDK version the test binary was built with and
@@ -806,7 +866,7 @@ func sdkModuleVersion() (version, source string) {
 			}
 		}
 		if bi.Main.Path == sdkModulePath {
-			return "local checkout", sdkSourceBuildInfo
+			return sdkLocalCheckout, sdkSourceBuildInfo
 		}
 	}
 	_, file, _, ok := runtime.Caller(0)
@@ -821,11 +881,11 @@ func sdkVersionFromPath(file string) (version, source string) {
 	file = filepath.ToSlash(file)
 	if _, rest, found := strings.Cut(file, "conduit-connector-sdk@"); found {
 		if v, _, found := strings.Cut(rest, "/"); found && v != "" {
-			return v, "module_cache_path"
+			return v, sdkModuleCache
 		}
 	}
 	if strings.Contains(file, "/vendor/github.com/conduitio/conduit-connector-sdk/") {
-		return "vendored", "vendored"
+		return sdkVendored, sdkVendored
 	}
 	// walk up looking for the SDK's go.mod
 	for dir := filepath.Dir(file); dir != "/" && dir != "." && dir != ""; dir = filepath.Dir(dir) {
@@ -835,7 +895,7 @@ func sdkVersionFromPath(file string) (version, source string) {
 		}
 		if strings.HasPrefix(strings.TrimSpace(string(b)), "module "+sdkModulePath+"\n") ||
 			strings.Contains(string(b), "\nmodule "+sdkModulePath+"\n") {
-			return "local checkout", "local_checkout"
+			return sdkLocalCheckout, "local_checkout"
 		}
 		break // some other module owns this file
 	}
