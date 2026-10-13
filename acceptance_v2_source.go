@@ -218,93 +218,182 @@ func (a *acceptanceV2) testSrcBatchSizes(t *testing.T) {
 	}
 }
 
-// SRC-03: the source is killed several times at different points, with some
-// records acked and some only delivered. After each kill it resumes from the
-// last acked position. Two things are checked:
+// resumeRun tracks what a source session acked, for SRC-03.
+type resumeRun struct {
+	acked    []opencdc.Record
+	ackedSet map[string]struct{}
+	resumeAt opencdc.Position
+}
+
+func (r *resumeRun) countAcked(recs []opencdc.Record) int {
+	n := 0
+	for _, rec := range recs {
+		if _, ok := r.ackedSet[v2ID(rec)]; ok {
+			n++
+		}
+	}
+	return n
+}
+
+// fresh returns the records not acked before.
+func (r *resumeRun) fresh(recs []opencdc.Record) []opencdc.Record {
+	var out []opencdc.Record
+	for _, rec := range recs {
+		if _, ok := r.ackedSet[v2ID(rec)]; !ok {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+// ackFresh acks the first n records of got that were not acked before, waits
+// until the connector processed the last ack, and moves the resume position
+// there. Records delivered again are not acked again: that would move the
+// resume position backwards and shrink the redelivery the case measures.
+func (a *acceptanceV2) ackFresh(t *testing.T, s *v2Src, run *resumeRun, got []opencdc.Record, n int, label string) {
+	t.Helper()
+	fresh := run.fresh(got)
+	if n > len(fresh) {
+		n = len(fresh)
+	}
+	if n == 0 {
+		return
+	}
+	if err := s.ack(fresh[:n]...); err != nil {
+		t.Fatalf("%s: ack failed: %v", label, err)
+	}
+	last := fresh[n-1].Position
+	// the kill must land after the connector processed the ack, not while it
+	// is still in the stream
+	if err := s.waitAckProcessed(last, a.readTimeoutFor(0)); err != nil {
+		t.Fatalf("%s: %v", label, err)
+	}
+	for _, r := range fresh[:n] {
+		run.ackedSet[v2ID(r)] = struct{}{}
+		run.acked = append(run.acked, r)
+	}
+	run.resumeAt = last
+}
+
+// SRC-03: the source is killed several times, first while it is reading the
+// snapshot, then while it is capturing changes, with some records acked and
+// some only delivered. After each kill it resumes from the last acked position,
+// snapshot positions and CDC positions alike. Checked:
 //
 //   - no gap: every record is either acked in some run or delivered by the
 //     final run. Records that were merely delivered before a kill do not count,
 //     the host never handled them;
 //   - bounded redelivery: a restart delivers at most MaxRedelivery records that
 //     were already acked (none with ExactResume). A source that ignores the
-//     position and starts over fails this even though it has no gap.
+//     position and starts over fails, snapshot or CDC;
+//   - the kill is a kill: Teardown does not run, so a source that commits its
+//     position only in Teardown is caught.
+//
+// The data set is scaled with the declared bound so that the records acked
+// before the last restart are at least five times the bound; bounds above
+// MaxAcceptedRedelivery fail the case.
 func (a *acceptanceV2) testSrcCrashResume(t *testing.T) {
-	want := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationSnapshot, 100))
 	bound := a.caps.maxRedelivery()
-
-	var (
-		acked    []opencdc.Record // acked by some run, in order of first ack
-		ackedSet = map[string]struct{}{}
-		resumeAt opencdc.Position
-	)
-	countAcked := func(recs []opencdc.Record) int {
-		n := 0
-		for _, r := range recs {
-			if _, ok := ackedSet[v2ID(r)]; ok {
-				n++
-			}
-		}
-		return n
+	if !a.caps.Source.ExactResume && a.caps.Source.MaxRedelivery > MaxAcceptedRedelivery {
+		t.Fatalf("MaxRedelivery %d is above the largest bound the suite accepts (%d): a bound that large says nothing about resume",
+			a.caps.Source.MaxRedelivery, MaxAcceptedRedelivery)
+	}
+	k := 1
+	if bound > DefaultMaxRedelivery {
+		k = (bound + DefaultMaxRedelivery - 1) / DefaultMaxRedelivery
 	}
 
-	// read, ack, kill: (read this many, ack this many)
-	cycles := [][2]int{{30, 25}, {30, 20}, {20, 5}, {5, 0}}
-	for i, c := range cycles {
-		s := a.openSrc(t, resumeAt)
-		if i == len(cycles)-1 {
-			// the last cycle also sees records written while the source runs
-			cdc := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationCreate, 20))
-			want = append(want, cdc...)
+	want := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationSnapshot, 100*k))
+	run := &resumeRun{ackedSet: map[string]struct{}{}}
+	check := func(label string, got []opencdc.Record) {
+		t.Helper()
+		if redelivered := run.countAcked(got); redelivered > bound {
+			t.Fatalf("%s: after resuming from the last acked position the source delivered %d records that were already acked (allowed: %d, ExactResume=%v); a source that restarts from the beginning does this",
+				label, redelivered, bound, a.caps.Source.ExactResume)
 		}
-		got := s.next(c[0], a.readTimeoutFor(c[0]))
+	}
 
-		if redelivered := countAcked(got); redelivered > bound {
-			t.Fatalf("cycle %d: after resuming from the last acked position the source delivered %d records that were already acked (allowed: %d, ExactResume=%v); a source that restarts from the beginning does this",
-				i, redelivered, bound, a.caps.Source.ExactResume)
-		}
-
-		if c[1] > 0 && len(got) >= c[1] {
-			if err := s.ack(got[:c[1]]...); err != nil {
-				t.Fatalf("cycle %d: ack failed: %v", i, err)
-			}
-			resumeAt = got[c[1]-1].Position
-			// the kill must land after the connector processed the ack, not
-			// while it is still in the stream
-			if err := s.waitAckProcessed(resumeAt, a.readTimeoutFor(0)); err != nil {
-				t.Fatalf("cycle %d: %v", i, err)
-			}
-			for _, r := range got[:c[1]] {
-				if _, ok := ackedSet[v2ID(r)]; !ok {
-					ackedSet[v2ID(r)] = struct{}{}
-					acked = append(acked, r)
-				}
-			}
-		}
-		t.Logf("cycle %d: read %d, acked %d, killing source", i, len(got), c[1])
+	// snapshot: read, ack, kill
+	for i, c := range [][2]int{{30, 25}, {30, 20}, {20, 5}} {
+		label := fmt.Sprintf("snapshot cycle %d", i)
+		s := a.openSrc(t, run.resumeAt)
+		got := s.next(c[0]*k, a.readTimeoutFor(c[0]*k))
+		check(label, got)
+		a.reapCrashed()
+		a.ackFresh(t, s, run, got, c[1]*k, label)
+		t.Logf("%s: read %d, acked %d, killing source", label, len(got), c[1]*k)
 		s.crash()
 	}
 
-	s := a.openSrc(t, resumeAt)
+	// finish the snapshot in one run, so that the source moves on to change
+	// capture, then write changes and kill it there
+	s := a.openSrc(t, run.resumeAt)
+	a.reapCrashed()
+	rest := s.drainAck(len(want)*2, a.driver.ReadTimeout())
+	check("snapshot completion", rest)
+	for _, r := range rest {
+		if _, ok := run.ackedSet[v2ID(r)]; !ok {
+			run.ackedSet[v2ID(r)] = struct{}{}
+			run.acked = append(run.acked, r)
+		}
+	}
+	if len(rest) > 0 {
+		run.resumeAt = rest[len(rest)-1].Position
+		if err := s.waitAckProcessed(run.resumeAt, a.readTimeoutFor(0)); err != nil {
+			t.Fatalf("snapshot completion: %v", err)
+		}
+	}
+	cdc1 := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationCreate, 40*k))
+	want = append(want, cdc1...)
+	got := s.next(40*k, a.readTimeoutFor(40*k))
+	a.ackFresh(t, s, run, got, 25*k, "cdc cycle 0")
+	t.Logf("cdc cycle 0: read %d changes, acked %d, killing source", len(got), 25*k)
+	s.crash()
+
+	// resume from a change capture position, write more changes after Open
+	s = a.openSrc(t, run.resumeAt)
+	cdc2 := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationCreate, 20*k))
+	want = append(want, cdc2...)
+	got = s.next(35*k, a.readTimeoutFor(35*k))
+	got = append(got, s.drain(len(want), a.driver.ReadTimeout())...)
+	check("cdc cycle 1", got)
+	a.reapCrashed()
+	a.ackFresh(t, s, run, got, 30*k, "cdc cycle 1")
+	t.Logf("cdc cycle 1: read %d, acked %d, killing source", len(got), 30*k)
+	s.crash()
+
+	s = a.openSrc(t, run.resumeAt)
 	final := s.drainAck(len(want)*2, a.driver.ReadTimeout())
+	a.reapCrashed()
 	if err := s.stopGraceful(); err != nil {
 		t.Fatalf("graceful shutdown failed: %v", err)
 	}
-	requireNoGap(t, want, append(append([]opencdc.Record{}, acked...), final...), "after repeated kill and resume")
-	if redelivered := countAcked(final); redelivered > bound {
-		t.Fatalf("final run: the source delivered %d records that were already acked (allowed: %d)", redelivered, bound)
-	}
+	check("final run", final)
+	requireNoGap(t, want, append(append([]opencdc.Record{}, run.acked...), final...), "after repeated kill and resume")
 }
 
-// SRC-04: records of one key are delivered in the order they were written.
+// SRC-04: records of one key are delivered in the order they were written, also
+// across a restart: half of them are acked and the source is killed, the rest
+// arrives after resuming from the last acked position.
 func (a *acceptanceV2) testSrcOrdering(t *testing.T) {
 	want := a.driver.WriteToSource(t, a.keyedRecords(t, []string{"key-a", "key-b", "key-c"}, 30))
 
+	run := &resumeRun{ackedSet: map[string]struct{}{}}
 	s := a.openSrc(t, nil)
-	got := a.requireReadAck(t, s, want)
-	requireKeyOrder(t, want, got, "source claims OrdersByKey")
+	first := s.next(45, a.readTimeoutFor(45))
+	a.ackFresh(t, s, run, first, len(first), "ordering")
+	s.crash()
+
+	s = a.openSrc(t, run.resumeAt)
+	rest := s.drainAck(len(want)*2, a.driver.ReadTimeout())
+	a.reapCrashed()
 	if err := s.stopGraceful(); err != nil {
 		t.Fatalf("graceful shutdown failed: %v", err)
 	}
+	// everything that was acked, then what the restart delivered beyond it
+	got := append(append([]opencdc.Record{}, run.acked...), run.fresh(rest)...)
+	requireNoGap(t, want, got, "ordering test restart")
+	requireKeyOrder(t, want, got, "source claims OrdersByKey (across a restart)")
 }
 
 // SRC-05: a field that appears while the source runs reaches the output

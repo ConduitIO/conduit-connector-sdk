@@ -500,7 +500,10 @@ func (a *acceptanceV2) openSrc(t *testing.T, pos opencdc.Position) *v2Src {
 	}
 	go func() { s.runDone <- plugin.Run(ctx, s.stream) }()
 	go s.collect()
-	t.Cleanup(func() { s.crash() })
+	t.Cleanup(func() {
+		s.crash() // no-op if already ended
+		_ = s.teardown()
+	})
 	return s
 }
 
@@ -645,12 +648,55 @@ func (s *v2Src) teardown() error {
 	return err
 }
 
-// crash ends the source without a Stop, the way an aborted process would: no
-// further acks, no drain.
+// crash ends the source the way an aborted process would: the context is
+// cancelled and the stream closed, there is no Stop, no further ack, and no
+// Teardown.
+//
+// Teardown is deliberately not called. A source that commits its position only
+// in Teardown (or flushes anything there) would otherwise be rescued by the
+// harness and pass a restart check it would fail after a real kill. The
+// resources of a crashed instance are released by reapCrashed, or at the end of
+// the test by the cleanup registered in openSrc. It reports an error if Run does
+// not return.
 func (s *v2Src) crash() {
 	s.stream.Close(context.Canceled)
 	s.cancel()
-	_ = s.teardown()
+	if !s.runEnded(abortTimeout) {
+		s.t.Errorf("source Run did not return within %v after the context was cancelled", abortTimeout)
+	}
+	s.a.mu.Lock()
+	s.a.crashed = append(s.a.crashed, s)
+	s.a.mu.Unlock()
+	if h, ok := s.a.driver.(AcceptanceProcessDeathDriver); ok {
+		h.AfterSourceKilled(s.t)
+	}
+}
+
+// reapCrashed tears down the sources that were killed. A killed process loses
+// its connections when the operating system reaps it, which in-process only
+// happens at Teardown. It is called once the instance that replaced them has
+// opened and read, so that Teardown cannot rescue the check that the
+// replacement starts from what was acked, but before the replacement is
+// stopped, so that the dead instances no longer hold the system's resources
+// (a replication slot, a lock) the way a live one would.
+func (a *acceptanceV2) reapCrashed() {
+	a.mu.Lock()
+	crashed := a.crashed
+	a.crashed = nil
+	a.mu.Unlock()
+	for _, s := range crashed {
+		_ = s.teardown()
+	}
+}
+
+func (s *v2Src) runEnded(timeout time.Duration) bool {
+	select {
+	case err := <-s.runDone:
+		s.runDone <- err
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // ackWatcher wraps the connector's Source to learn when an Ack call returned.

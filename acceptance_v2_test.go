@@ -83,6 +83,12 @@ func refCapabilities() AcceptanceCapabilities {
 	if refClaim("idempotent") {
 		caps.Destination.Idempotence = IdempotenceYes
 	}
+	if refClaim("redelivery1000") {
+		caps.Source.MaxRedelivery = 1000
+	}
+	if refClaim("redelivery5000") {
+		caps.Source.MaxRedelivery = 5000
+	}
 	if refClaim("reject") {
 		caps.Destination.SchemaEvolution = SchemaEvolutionReject
 	}
@@ -119,6 +125,11 @@ func TestAcceptanceV2_ReferencePasses(t *testing.T) {
 		is.Equal(rep.ReportSchemaVersion, ReportSchemaVersion)
 		is.Equal(rep.SuiteVersion, 2)
 		is.Equal(rep.SuiteRevision, AcceptanceSuiteV2Revision)
+		is.True(rep.Finished)
+		is.Equal(rep.SDKVersion, "local checkout") // the SDK's own tests run from the checkout
+		is.Equal(rep.CaseContentHash, caseContentHash())
+		is.Equal(rep.Limits.MaxRedelivery, 0) // ExactResume claimed
+		is.True(!rep.Goleak.Unreviewable)
 		is.Equal(rep.Connector.Name, "acceptance-v2-reference")
 		is.Equal(rep.Capabilities.Destination.Idempotence, IdempotenceYes)
 		is.True(rep.Capabilities.Source.ExactResume)
@@ -128,7 +139,7 @@ func TestAcceptanceV2_ReferencePasses(t *testing.T) {
 		is.True(rep.Complete)
 		is.True(rep.Passed)
 		is.Equal(rep.UnexplainedSkips, 0)
-		is.Equal(rep.SDKVersion, "local checkout") // the SDK's own tests run from the checkout
+
 		is.Equal(rep.Limits.MaxBatchSize, 2000)
 		is.True(!rep.Limits.CertificationFloorMet) // the test lowers MaxBatchSize
 		is.Equal(rep.Limits.BelowFloor, []string{"max_batch_size"})
@@ -189,14 +200,31 @@ func TestAcceptanceV2_UnclaimedCapabilitiesAreSkipped(t *testing.T) {
 }
 
 func TestAcceptanceV2_SDKVersionFromPath(t *testing.T) {
-	for in, want := range map[string]string{
-		"/home/u/go/pkg/mod/github.com/conduitio/conduit-connector-sdk@v0.15.0/acceptance_v2.go": "v0.15.0",
-		"github.com/conduitio/conduit-connector-sdk@v0.15.1-rc.1/acceptance_v2.go":               "v0.15.1-rc.1", // -trimpath
-		"/work/conduit-connector-sdk/acceptance_v2.go":                                           "local checkout",
-		"/somewhere/else/acceptance_v2.go":                                                       "unknown",
+	dir := t.TempDir()
+	renamed := filepath.Join(dir, "my-fork-of-the-sdk")
+	if err := os.MkdirAll(renamed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(renamed, "go.mod"), []byte("module "+sdkModulePath+"\n\ngo 1.25\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "other")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "go.mod"), []byte("module example.com/other\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for in, want := range map[string][2]string{
+		"/home/u/go/pkg/mod/github.com/conduitio/conduit-connector-sdk@v0.15.0/acceptance_v2.go": {"v0.15.0", "module_cache_path"},
+		"github.com/conduitio/conduit-connector-sdk@v0.15.1-rc.1/acceptance_v2.go":               {"v0.15.1-rc.1", "module_cache_path"}, // -trimpath
+		"/app/vendor/github.com/conduitio/conduit-connector-sdk/acceptance_v2.go":                {"vendored", "vendored"},
+		filepath.Join(renamed, "acceptance_v2.go"):                                               {"local checkout", "local_checkout"}, // the directory name does not matter
+		filepath.Join(other, "acceptance_v2.go"):                                                 {"unknown", "unknown"},
+		"/somewhere/else/acceptance_v2.go":                                                       {"unknown", "unknown"},
 	} {
-		if got := sdkVersionFromPath(in); got != want {
-			t.Errorf("sdkVersionFromPath(%q) = %q, want %q", in, got, want)
+		if v, src := sdkVersionFromPath(in); v != want[0] || src != want[1] {
+			t.Errorf("sdkVersionFromPath(%q) = %q, %q; want %q, %q", in, v, src, want[0], want[1])
 		}
 	}
 }
@@ -245,6 +273,25 @@ func TestAcceptanceV2_InCaseSkipReasonIsRecorded(t *testing.T) {
 	}
 }
 
+// A run that dies leaves an unfinished report that is never passed, not the
+// report of the previous run.
+func TestAcceptanceV2_ReportIsWrittenAtStart(t *testing.T) {
+	report := filepath.Join(t.TempDir(), "report.json")
+	if err := os.WriteFile(report, []byte(`{"passed": true, "finished": true}`), 0o600); err != nil { // the previous run
+		t.Fatal(err)
+	}
+	t.Setenv(AcceptanceReportEnv, report)
+	rep := newAcceptanceReport(refDriver(t, refCapabilities()), refCapabilities())
+	rep.writeUnfinished(t)
+
+	got := readReport(t, report)
+	is := is.New(t)
+	is.True(!got.Finished)
+	is.True(!got.Passed)
+	is.True(!got.Complete)
+	is.Equal(got.CaseSetHash, rep.CaseSetHash)
+}
+
 // A filtered run must be reported as incomplete.
 func TestAcceptanceV2_FilteredRunIsIncomplete(t *testing.T) {
 	report := filepath.Join(t.TempDir(), "report.json")
@@ -260,18 +307,36 @@ func TestAcceptanceV2_FilteredRunIsIncomplete(t *testing.T) {
 	is.True(len(rep.Cases) < rep.ExpectedCaseCount)
 }
 
-// The case set is part of the contract. If this test fails, a case was added,
-// removed or renamed: bump AcceptanceSuiteV2Revision (minor for new
-// claim-dependent cases, major for anything that changes the baseline) and
-// update the hash here in the same change.
+// pinnedRevisions is the history of suite revisions: for each, the hash of
+// what the cases are (caseContentHash). The test below fails when the cases
+// change without the pin being edited, which forces a reviewed decision about
+// the revision. It cannot see an edit to a case's code that forgot to bump the
+// case's logic version, so reviewers bump v2Case.logic for any change that can
+// change a verdict. Once a revision is released, its entry is final: a change
+// to the cases then needs a new revision (and a new entry), never an edited
+// hash.
+var pinnedRevisions = []struct {
+	revision string
+	hash     string
+	released bool
+}{
+	{"2.0.0", "add36d8553f972c5f236ca75cdb117af2f1209f0cf507d5132f65831474b5376", false},
+}
+
 func TestAcceptanceV2_CaseSetIsPinned(t *testing.T) {
-	const wantRevision = "2.0.0"
-	const wantHash = "89745d24d42ed9fccca645e44eb39cbaba9dbdc6fbbd05f12877faf445bde5c4"
-	if AcceptanceSuiteV2Revision != wantRevision {
-		t.Fatalf("revision is %s, this test pins %s: update the pinned hash too", AcceptanceSuiteV2Revision, wantRevision)
+	current := pinnedRevisions[len(pinnedRevisions)-1]
+	if AcceptanceSuiteV2Revision != current.revision {
+		t.Fatalf("AcceptanceSuiteV2Revision is %s but the newest pinned revision is %s: add an entry", AcceptanceSuiteV2Revision, current.revision)
 	}
-	if got := caseSetHash(expectedCaseIDs()); got != wantHash {
-		t.Fatalf("case set hash changed to %s without a revision bump", got)
+	if got := caseContentHash(); got != current.hash {
+		t.Fatalf("the cases changed (content hash %s). Unreleased revision: update the pin. Released revision: bump AcceptanceSuiteV2Revision and add a pinned entry", got)
+	}
+	seen := map[string]string{}
+	for _, p := range pinnedRevisions {
+		if other, dup := seen[p.hash]; dup {
+			t.Errorf("revisions %s and %s pin the same case set; a new revision must change something", other, p.revision)
+		}
+		seen[p.hash] = p.revision
 	}
 }
 
@@ -329,17 +394,27 @@ func TestAcceptanceV2_Mutants(t *testing.T) {
 		{"dest_acks_before_durable", "", "DST-09"},
 		{"dest_ignores_ctx", "", "DST-10"},
 		{"dest_nacks_under_load", "", "DST-11"},
+		{"dest_flush_in_teardown_large", "", "DST-04"},
+		{"dest_reorders_large_batch", "ordering", "DST-06"},
+		{"dest_reorders_after_restart", "ordering", "DST-06"},
 		{"source_ack_blocks_read", "", "SRC-01"},
 		{"source_emits_dups", "", "SRC-02"},
 		{"source_gap", "", "SRC-03"},
 		{"source_ignores_position", "", "SRC-03"},
 		{"source_dups_on_resume", "exact", "SRC-03"},
+		{"cdc_resume_loses_one", "exact", "SRC-03"},
+		{"cdc_resume_starts_over", "", "SRC-03"},
+		{"source_commits_in_teardown", "", "SRC-03"},
+		{"source_ignores_position", "redelivery1000", "SRC-03"},
 		{"source_reorders", "ordering", "SRC-04"},
+		{"source_reorders_after_resume", "ordering", "SRC-04"},
 		{"source_drops_new_field", "", "SRC-05"},
 		{"source_truncates_large", "", "SRC-06"},
 		{"source_leaks_goroutine", "", "SRC-07"},
 		{"source_ignores_ctx", "", "SRC-08"},
 		{"source_stalls", "", "SRC-09"},
+		// a bound above what the suite accepts fails the case
+		{"none", "redelivery5000", "SRC-03"},
 		// claims the suite cannot verify must fail, not skip
 		{"none", "idempotent,writeonly", "DST-05"},
 		{"none", "idempotent,noreadall", "DST-05"},
@@ -361,6 +436,35 @@ func TestAcceptanceV2_Mutants(t *testing.T) {
 				t.Fatalf("mutant %q: the run failed, but not in %s:\n%s", m.mutant, m.failing, tail(out.String(), 4000))
 			}
 		})
+	}
+}
+
+// runRefCase runs one case of the reference connector in a subprocess and
+// returns whether it passed, with the output.
+func runRefCase(t *testing.T, mutant, claims, redeliver, caseID string) (bool, string) {
+	t.Helper()
+	cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestAcceptanceV2_Reference$/^V2$/^"+caseID+"$", "-test.v=true")
+	cmd.Env = append(os.Environ(), refMutantEnv+"="+mutant, refClaimsEnv+"="+claims, "ACCEPTANCE_V2_REF_REDELIVER="+redeliver)
+	out, err := cmd.CombinedOutput()
+	return err == nil, string(out)
+}
+
+// A source that redelivers exactly MaxRedelivery already acked records per
+// restart passes with the default bound; one more fails. This pins the
+// effective bound to the declared one: acking redelivered records would let the
+// resume position drift backwards and shrink it.
+func TestAcceptanceV2_RedeliveryBoundIsExact(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the test binary")
+	}
+	if ok, out := runRefCase(t, "source_redelivers_k", "", "10", "SRC-03"); !ok {
+		t.Fatalf("a source redelivering exactly %d records must pass:\n%s", DefaultMaxRedelivery, tail(out, 3000))
+	}
+	if ok, _ := runRefCase(t, "source_redelivers_k", "", "11", "SRC-03"); ok {
+		t.Fatalf("a source redelivering %d records must fail", DefaultMaxRedelivery+1)
+	}
+	if ok, out := runRefCase(t, "source_redelivers_k", "redelivery1000", "1000", "SRC-03"); !ok {
+		t.Fatalf("a source redelivering exactly the declared 1000 must pass:\n%s", tail(out, 3000))
 	}
 }
 

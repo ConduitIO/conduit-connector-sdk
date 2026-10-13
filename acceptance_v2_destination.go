@@ -213,15 +213,21 @@ type crashKillPoint struct {
 	// the kill follows the sends immediately, after a short random delay, which
 	// tends to land while the connector is inside Write.
 	acked int
+	// batch is the batch size, 0 means 10 records per batch for 200 records.
+	// A large batch (more than 500) is its own kill point because connectors
+	// switch strategy on batch size (a bulk path that buffers, a COPY).
+	batch int
 }
 
 var crashKillPoints = []crashKillPoint{
-	{"during_write", -1},
-	{"after_first_ack", 1},
-	{"after_half_acked", 10},
+	{name: "during_write", acked: -1},
+	{name: "after_first_ack", acked: 1},
+	{name: "after_half_acked", acked: 10},
+	{name: "large_batch_after_first_ack", acked: 1, batch: 600},
 }
 
-// crashReplay writes 200 records in 20 batches, kills the destination at the
+// crashReplay writes 200 records in 20 batches (or 1200 in 2 for the large
+// batch kill point), kills the destination at the
 // given point, checks that everything acked is stored, replays the whole batch
 // on a new instance and returns what was written and what is stored.
 //
@@ -229,10 +235,14 @@ var crashKillPoints = []crashKillPoint{
 // records in memory and flushes them in Teardown would otherwise be rescued by
 // the harness's own cleanup; a real kill -9 gives it no Teardown.
 func (a *acceptanceV2) crashReplay(t *testing.T, kp crashKillPoint) (want []opencdc.Record, got []opencdc.Record) {
-	want = a.generateRecords(t, opencdc.OperationCreate, 200)
+	size, count := 10, 200
+	if kp.batch > 0 {
+		size, count = kp.batch, 2*kp.batch
+	}
+	want = a.generateRecords(t, opencdc.OperationCreate, count)
 
 	d1 := a.openDest(t, v2DestOptions{})
-	batches := splitBatches(want, 10)
+	batches := splitBatches(want, size)
 	for _, b := range batches {
 		if err := d1.send(b); err != nil {
 			t.Fatalf("send failed: %v", err)
@@ -240,7 +250,7 @@ func (a *acceptanceV2) crashReplay(t *testing.T, kp crashKillPoint) (want []open
 	}
 	if kp.acked < 0 {
 		time.Sleep(time.Duration(rand.Intn(4000)) * time.Microsecond) //nolint:gosec // jitter
-	} else if err := d1.waitAcks(flatten(batches[:kp.acked]), a.ackTimeout(10*kp.acked)); err != nil {
+	} else if err := d1.waitAcks(flatten(batches[:kp.acked]), a.ackTimeout(size*kp.acked)); err != nil {
 		t.Fatalf("%v", err)
 	}
 	if !d1.abort() {
@@ -375,24 +385,38 @@ func requireKeyOrder(t *testing.T, want, got []opencdc.Record, claim string) {
 	}
 }
 
-// DST-06: records with the same key are stored in write order.
+// DST-06: records with the same key are stored in write order, in small and in
+// large batches, and across a restart of the destination: the second part is
+// written by a new instance after the first was stopped.
 func (a *acceptanceV2) testDstOrdering(t *testing.T) {
-	want := a.keyedRecords(t, []string{"key-a", "key-b", "key-c"}, 30)
+	keys := []string{"key-a", "key-b", "key-c"}
+	part1 := a.keyedRecords(t, keys, 30)  // 90 records in batches of 9
+	part2 := a.keyedRecords(t, keys, 200) // 600 records in batches of 300
 
 	d := a.openDest(t, v2DestOptions{})
-	for _, b := range splitBatches(want, 9) {
+	for _, b := range splitBatches(part1, 9) {
 		if err := d.send(b); err != nil {
 			t.Fatalf("send failed: %v", err)
 		}
 	}
-	a.requireAllAcked(t, d, want)
+	a.requireAllAcked(t, d, part1)
 	a.mustStopGraceful(t, d)
 
+	d = a.openDest(t, v2DestOptions{})
+	for _, b := range splitBatches(part2, 300) {
+		if err := d.send(b); err != nil {
+			t.Fatalf("send failed: %v", err)
+		}
+	}
+	a.requireAllAcked(t, d, part2)
+	a.mustStopGraceful(t, d)
+
+	want := append(append([]opencdc.Record{}, part1...), part2...)
 	got := a.readAll(t, want)
 	if missing, _, _ := v2Diff(want, got); len(missing) > 0 {
 		t.Fatalf("%d of %d records are missing", len(missing), len(want))
 	}
-	requireKeyOrder(t, want, got, "destination claims OrdersByKey")
+	requireKeyOrder(t, want, got, "destination claims OrdersByKey (small batches, a batch of 300, across a restart)")
 }
 
 // structuredRecords returns n generated records whose payload is structured. It

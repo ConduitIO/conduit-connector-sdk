@@ -57,6 +57,12 @@ type refStore struct {
 	recs    []opencdc.Record
 	pending []opencdc.Record
 	seen    map[string]struct{}
+
+	// snapEnd is the number of records the first source Open found: records
+	// before it are snapshot records, records after it are changes.
+	snapEnd   int
+	snapSet   bool
+	committed int // position a source that commits in Teardown resumes from
 }
 
 var refStores sync.Map // name -> *refStore
@@ -83,6 +89,17 @@ func (s *refStore) get(i int) (opencdc.Record, bool) {
 	return s.recs[i].Clone(), true
 }
 
+// snapshotEnd fixes the end of the snapshot at the first call.
+func (s *refStore) snapshotEnd() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.snapSet {
+		s.snapSet = true
+		s.snapEnd = len(s.recs)
+	}
+	return s.snapEnd
+}
+
 func (s *refStore) length() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -104,8 +121,11 @@ type refSource struct {
 	config refSourceConfig
 	store  *refStore
 
-	mu   sync.Mutex
-	next int
+	mu        sync.Mutex
+	next      int
+	snapEnd   int
+	resumed   bool
+	lastAcked int
 }
 
 func newRefSource() Source {
@@ -121,12 +141,21 @@ func newRefSource() Source {
 
 func (s *refSource) Config() SourceConfig { return &s.config }
 
+// Positions are "s<n>" for snapshot records and "c<n>" for changes.
 func (s *refSource) Open(_ context.Context, pos opencdc.Position) error {
 	s.store = getRefStore(s.config.Store)
+	s.lastAcked = -1
 	if pos == nil {
+		s.snapEnd = s.store.snapshotEnd()
 		return nil
 	}
-	last, err := strconv.Atoi(string(pos))
+	s.snapEnd = s.store.snapshotEnd()
+	s.resumed = true
+	if len(pos) < 2 {
+		return errors.New("invalid position")
+	}
+	kind := pos[0]
+	last, err := strconv.Atoi(string(pos[1:]))
 	if err != nil {
 		return err
 	}
@@ -138,6 +167,23 @@ func (s *refSource) Open(_ context.Context, pos opencdc.Position) error {
 		s.next = 0 // starts over
 	case "source_dups_on_resume":
 		s.next = max(0, last-2) // delivers the last three acked records again
+	case "source_redelivers_k":
+		k, _ := strconv.Atoi(os.Getenv("ACCEPTANCE_V2_REF_REDELIVER"))
+		s.next = max(0, last+1-k)
+	case "cdc_resume_loses_one":
+		if kind == 'c' {
+			s.next++
+		}
+	case "cdc_resume_starts_over":
+		if kind == 'c' {
+			s.next = s.snapEnd
+		}
+	case "source_commits_in_teardown":
+		// ignores the position the host passes and resumes from what it
+		// committed in Teardown
+		s.store.mu.Lock()
+		s.next = s.store.committed
+		s.store.mu.Unlock()
 	}
 	return nil
 }
@@ -148,10 +194,12 @@ func (s *refSource) recordAt(idx int) (opencdc.Record, bool) {
 	switch refMutant() {
 	case "source_emits_dups":
 		src = idx / 2 // every record twice
-	case "source_reorders":
+	case "source_reorders", "source_reorders_after_resume":
 		// reverse blocks of 9 once they are complete
-		if blk := idx / 9 * 9; blk+9 <= s.store.length() {
-			src = blk + 8 - idx%9
+		if refMutant() == "source_reorders" || s.resumed {
+			if blk := idx / 9 * 9; blk+9 <= s.store.length() {
+				src = blk + 8 - idx%9
+			}
 		}
 	case "source_stalls":
 		if idx >= 1000 {
@@ -162,7 +210,11 @@ func (s *refSource) recordAt(idx int) (opencdc.Record, bool) {
 	if !ok {
 		return r, false
 	}
-	r.Position = opencdc.Position(strconv.Itoa(idx))
+	kind := "c"
+	if idx < s.snapEnd {
+		kind = "s"
+	}
+	r.Position = opencdc.Position(kind + strconv.Itoa(idx))
 	switch refMutant() {
 	case "source_drops_new_field":
 		r.Payload.After = withoutField(r.Payload.After, v2AddedField)
@@ -195,7 +247,12 @@ func (s *refSource) Read(ctx context.Context) (opencdc.Record, error) {
 	}
 }
 
-func (s *refSource) Ack(context.Context, opencdc.Position) error {
+func (s *refSource) Ack(_ context.Context, pos opencdc.Position) error {
+	if idx, err := strconv.Atoi(string(pos[1:])); err == nil {
+		s.mu.Lock()
+		s.lastAcked = max(s.lastAcked, idx)
+		s.mu.Unlock()
+	}
 	if refMutant() == "source_ack_blocks_read" {
 		// Ack holds the lock that Read needs. With acks that lag reads, Read
 		// is blocked for as long as an Ack takes.
@@ -207,6 +264,15 @@ func (s *refSource) Ack(context.Context, opencdc.Position) error {
 }
 
 func (s *refSource) Teardown(context.Context) error {
+	if refMutant() == "source_commits_in_teardown" && s.store != nil {
+		// the position is only made durable here
+		s.mu.Lock()
+		last := s.lastAcked
+		s.mu.Unlock()
+		s.store.mu.Lock()
+		s.store.committed = last + 1
+		s.store.mu.Unlock()
+	}
 	if refMutant() == "source_leaks_goroutine" {
 		go func() { select {} }()
 	}
@@ -226,7 +292,12 @@ type refDestination struct {
 	store  *refStore
 	closed chan struct{}
 	calls  atomic.Int64
+	// instance counts Open calls of destinations in the process, so a mutant
+	// can misbehave only after a restart.
+	instance int64
 }
+
+var refDestInstances atomic.Int64
 
 // refWritten counts records written by all destinations of the process, for
 // the mutant that fails under load.
@@ -241,6 +312,7 @@ func (d *refDestination) Config() DestinationConfig { return &d.config }
 func (d *refDestination) Open(context.Context) error {
 	d.store = getRefStore(d.config.Store)
 	d.closed = make(chan struct{})
+	d.instance = refDestInstances.Add(1)
 	return nil
 }
 
@@ -265,9 +337,12 @@ func (d *refDestination) Write(_ context.Context, recs []opencdc.Record) (int, e
 	}
 
 	switch refMutant() {
-	case "dest_reorders":
-		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-			out[i], out[j] = out[j], out[i]
+	case "dest_reorders", "dest_reorders_large_batch", "dest_reorders_after_restart":
+		m := refMutant()
+		if m == "dest_reorders" || (m == "dest_reorders_large_batch" && len(out) > 100) || (m == "dest_reorders_after_restart" && d.instance >= 2) {
+			for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+				out[i], out[j] = out[j], out[i]
+			}
 		}
 	case "dest_caps_batch":
 		if len(out) > 1000 {
@@ -281,6 +356,14 @@ func (d *refDestination) Write(_ context.Context, recs []opencdc.Record) (int, e
 		d.store.pending = append(d.store.pending, out...)
 		d.store.mu.Unlock()
 		return len(recs), nil
+	case "dest_flush_in_teardown_large":
+		if len(out) > 500 {
+			// only the bulk path buffers
+			d.store.mu.Lock()
+			d.store.pending = append(d.store.pending, out...)
+			d.store.mu.Unlock()
+			return len(recs), nil
+		}
 	}
 
 	d.store.append(out...)
@@ -333,7 +416,7 @@ func (d *refDestination) storeLater(recs []opencdc.Record) {
 }
 
 func (d *refDestination) Teardown(context.Context) error {
-	if refMutant() == "dest_flush_in_teardown" && d.store != nil {
+	if (refMutant() == "dest_flush_in_teardown" || refMutant() == "dest_flush_in_teardown_large") && d.store != nil {
 		// records acked earlier become durable only now
 		d.store.mu.Lock()
 		d.store.recs = append(d.store.recs, d.store.pending...)

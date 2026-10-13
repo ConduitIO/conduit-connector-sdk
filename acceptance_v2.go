@@ -98,6 +98,12 @@ const (
 // again after a restart when it does not claim ExactResume.
 const DefaultMaxRedelivery = 10
 
+// MaxAcceptedRedelivery is the largest MaxRedelivery the suite accepts. SRC-03
+// sizes its data set to more than twice the declared bound so that a source
+// that starts over cannot hide inside it; beyond this value the data set would
+// be unreasonably large and the claim says nothing, so SRC-03 fails.
+const MaxAcceptedRedelivery = 1000
+
 // AcceptanceCapabilities declares what a connector claims to support, beyond
 // the baseline every connector must meet. A conditional test runs only when the
 // matching claim is made; a claim that is made is verified. Claims are part of
@@ -138,7 +144,12 @@ type SourceCapabilities struct {
 	ExactResume bool `json:"exact_resume,omitempty"`
 	// MaxRedelivery is the number of already acked records a source without
 	// ExactResume may deliver again per restart. Zero means
-	// [DefaultMaxRedelivery]. It is ignored if ExactResume is claimed.
+	// [DefaultMaxRedelivery]; values above [MaxAcceptedRedelivery] fail SRC-03.
+	// It is ignored if ExactResume is claimed. SRC-03 scales its data set so
+	// that the records acked before the last restart are at least five times
+	// the bound, which means a source that starts over fails even with a large
+	// bound, but the bound still weakens the case: the report flags any value
+	// above the default and the certification floor is not met.
 	MaxRedelivery int `json:"max_redelivery,omitempty"`
 	// Synthetic declares that the source produces records on its own (a
 	// generator) and cannot be fed through the 3rd party system. Tests that
@@ -214,6 +225,9 @@ func (c AcceptanceCapabilities) belowFloor() []string {
 	if c.maxRecordBytes() < CertificationMinRecordBytes {
 		out = append(out, "max_record_bytes")
 	}
+	if c.Source.MaxRedelivery > DefaultMaxRedelivery && !c.Source.ExactResume {
+		out = append(out, "max_redelivery")
+	}
 	return out
 }
 
@@ -270,6 +284,20 @@ type AcceptanceReadAllDriver interface {
 	ReadAllFromDestination(*testing.T) []opencdc.Record
 }
 
+// AcceptanceProcessDeathDriver is optionally implemented by an
+// [AcceptanceTestDriver] to do what the death of a connector process does to the
+// system it talks to. The suite kills a source by cancelling its context and
+// leaving it alone (no Stop, no Teardown); a real kill also closes the
+// process's sockets, which releases server-side sessions such as a replication
+// slot held by the dead instance. In-process that never happens, so a successor
+// can find the slot still attached to a session that is not going to end.
+// AfterSourceKilled is called after each kill, before the successor opens; it
+// must only release what the operating system would have released, never
+// persist or commit anything on the connector's behalf.
+type AcceptanceProcessDeathDriver interface {
+	AfterSourceKilled(*testing.T)
+}
+
 // AcceptanceKeyedRecordGenerator is optionally implemented by an
 // [AcceptanceTestDriver] to produce records with a given key, for the ordering
 // tests. Without it the suite takes a generated record and replaces its key
@@ -321,6 +349,10 @@ func AcceptanceTestV2(t *testing.T, driver AcceptanceTestDriver) {
 	}
 
 	rep := newAcceptanceReport(driver, caps)
+	// Write the report now, marked unfinished, so that a run that dies (a panic
+	// in the connector kills the test binary before any cleanup) never leaves
+	// the previous run's report behind as if it were this one.
+	rep.writeUnfinished(t)
 	t.Cleanup(func() { rep.finish(t) })
 
 	t.Run("Core", func(t *testing.T) {
@@ -369,6 +401,9 @@ type AcceptanceReport struct {
 	// workspace, "unknown" that neither source says. It is informational:
 	// compatibility is decided by SuiteRevision and CaseSetHash.
 	SDKVersion string `json:"sdk_version"`
+	// SDKVersionSource says how SDKVersion was found (build_info,
+	// module_cache_path, local_checkout, vendored, unknown). Informational.
+	SDKVersionSource string `json:"sdk_version_source"`
 	// Connector identifies the connector under test.
 	Connector struct {
 		Name    string `json:"name"`
@@ -381,16 +416,20 @@ type AcceptanceReport struct {
 	Limits struct {
 		MaxBatchSize          int      `json:"max_batch_size"`
 		MaxRecordBytes        int      `json:"max_record_bytes"`
+		MaxRedelivery         int      `json:"max_redelivery"`
 		CertificationFloorMet bool     `json:"certification_floor_met"`
 		BelowFloor            []string `json:"below_floor,omitempty"`
 	} `json:"limits"`
 	// Goleak records what the driver told the goroutine leak check to ignore.
 	// Names are only available for ignores declared through
-	// [ConfigurableAcceptanceTestDriverConfig.GoleakIgnoreFunctions];
-	// OtherOptions counts opaque goleak options, which cannot be inspected.
+	// [ConfigurableAcceptanceTestDriverConfig.GoleakIgnoreFunctions].
+	// goleak.Option is opaque, so options passed any other way cannot be
+	// listed: OpaqueOptions counts them and Unreviewable says that the
+	// ignore list is incomplete. A registry should require zero.
 	Goleak struct {
 		IgnoredFunctions []string `json:"ignored_functions,omitempty"`
-		OtherOptions     int      `json:"other_options"`
+		OpaqueOptions    int      `json:"opaque_options"`
+		Unreviewable     bool     `json:"unreviewable"`
 	} `json:"goleak"`
 	// ExpectedCaseIDs is every case that must have a result for the run to be
 	// complete, in execution order.
@@ -400,6 +439,9 @@ type AcceptanceReport struct {
 	// CaseSetHash is the SHA-256 of the suite revision and the sorted expected
 	// IDs.
 	CaseSetHash string `json:"case_set_hash"`
+	// CaseContentHash is the SHA-256 of the case IDs, names and logic versions
+	// (not the revision), see caseContentHash.
+	CaseContentHash string `json:"case_content_hash"`
 	// Complete is true if every expected case has a result. A run filtered with
 	// -run is never complete.
 	Complete bool `json:"complete"`
@@ -407,6 +449,10 @@ type AcceptanceReport struct {
 	// reason, an unclaimed capability, or a declaration. A skip by the driver
 	// or inside a case counts.
 	UnexplainedSkips int `json:"unexplained_skips"`
+	// Finished is false in the report written when the run starts and true in
+	// the one written when it ends. A report with finished=false is the trace
+	// of a run that did not end (a crash); it never has passed=true.
+	Finished bool `json:"finished"`
 	// Passed is true if no test failed, the run is complete and there are no
 	// unexplained skips.
 	Passed bool `json:"passed"`
@@ -512,6 +558,25 @@ func caseSetHash(ids []string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// caseContentHash identifies what the cases are, without the revision: for each
+// case its ID, name and logic version, plus the core IDs. A reviewer who
+// changes what a case checks bumps its logic version (v2Case.logic), which
+// changes this hash and fails TestAcceptanceV2_CaseSetIsPinned until the pin is
+// updated together with a conscious decision about the revision. The test cannot
+// see an edit to a case's code that forgot the logic bump; it forces the edit
+// to the pin, and the pin is reviewed.
+func caseContentHash() string {
+	var b strings.Builder
+	for i := 1; i <= len(coreTestIDs); i++ {
+		fmt.Fprintf(&b, "CORE-%02d\n", i)
+	}
+	for _, c := range v2Cases() {
+		fmt.Fprintf(&b, "%s|%s|%d\n", c.id, c.name, c.logic)
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
+
 // goleakReporter is implemented by [ConfigurableAcceptanceTestDriver].
 type goleakReporter interface {
 	GoleakIgnoredFunctions() []string
@@ -522,17 +587,20 @@ func newAcceptanceReport(driver AcceptanceTestDriver, caps AcceptanceCapabilitie
 		ReportSchemaVersion: ReportSchemaVersion,
 		SuiteVersion:        2,
 		SuiteRevision:       AcceptanceSuiteV2Revision,
-		SDKVersion:          sdkModuleVersion(),
+		SDKVersion:          "",
 		Capabilities:        caps,
 		StartedAt:           time.Now().UTC(),
 	}
+	r.SDKVersion, r.SDKVersionSource = sdkModuleVersion()
 	r.Limits.MaxBatchSize = caps.maxBatchSize()
 	r.Limits.MaxRecordBytes = caps.maxRecordBytes()
+	r.Limits.MaxRedelivery = caps.maxRedelivery()
 	r.Limits.BelowFloor = caps.belowFloor()
 	r.Limits.CertificationFloorMet = len(r.Limits.BelowFloor) == 0
 	r.ExpectedCaseIDs = expectedCaseIDs()
 	r.ExpectedCaseCount = len(r.ExpectedCaseIDs)
 	r.CaseSetHash = caseSetHash(r.ExpectedCaseIDs)
+	r.CaseContentHash = caseContentHash()
 	if c := driver.Connector(); c.NewSpecification != nil {
 		spec := c.NewSpecification()
 		r.Connector.Name = spec.Name
@@ -545,7 +613,8 @@ func newAcceptanceReport(driver AcceptanceTestDriver, caps AcceptanceCapabilitie
 	// we know about. A nil *testing.T is fine for the drivers we know, a
 	// custom driver may use it, so don't risk it: only Configurable is counted.
 	if c, ok := driver.(interface{ GoleakOtherOptionCount() int }); ok {
-		r.Goleak.OtherOptions = c.GoleakOtherOptionCount()
+		r.Goleak.OpaqueOptions = c.GoleakOtherOptionCount()
+		r.Goleak.Unreviewable = r.Goleak.OpaqueOptions > 0
 	}
 	return r
 }
@@ -562,9 +631,16 @@ func (r *AcceptanceReport) addMetric(m AcceptanceMetric) {
 	r.Metrics = append(r.Metrics, m)
 }
 
+func (r *AcceptanceReport) writeUnfinished(t *testing.T) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.write(t)
+}
+
 func (r *AcceptanceReport) finish(t *testing.T) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.Finished = true
 
 	r.DurationSeconds = time.Since(r.StartedAt).Seconds()
 
@@ -584,7 +660,12 @@ func (r *AcceptanceReport) finish(t *testing.T) {
 		}
 	}
 	r.Passed = !t.Failed() && r.Complete && r.UnexplainedSkips == 0
+	r.write(t)
+}
 
+// write stores the report at the path in AcceptanceReportEnv, if set. The
+// caller holds r.mu.
+func (r *AcceptanceReport) write(t *testing.T) {
 	path := os.Getenv(AcceptanceReportEnv)
 	if path == "" {
 		return
@@ -600,51 +681,68 @@ func (r *AcceptanceReport) finish(t *testing.T) {
 	}
 }
 
-const sdkModulePath = "github.com/conduitio/conduit-connector-sdk"
+const (
+	sdkModulePath      = "github.com/conduitio/conduit-connector-sdk"
+	sdkSourceBuildInfo = "build_info"
+	sdkUnknown         = "unknown"
+)
 
-// sdkModuleVersion returns the SDK version the test binary was built with.
+// sdkModuleVersion returns the SDK version the test binary was built with and
+// how it was found. The value is informational.
 //
-// It first asks the build information, which lists the SDK as a dependency in
-// ordinary binaries. Binaries built by `go test` carry no dependency list (only
-// the package under test), so for those the version is read from the path of
-// this source file, which the toolchain embeds and which has the form
-// .../conduit-connector-sdk@v0.14.1/... when the SDK comes from the module cache
-// (with or without -trimpath). A checkout used through a replace directive or
-// a workspace has no version in its path and is reported as "local checkout".
-// Anything else is "unknown". The value is informational, see the report.
-func sdkModuleVersion() string {
+// Ordinary binaries list the SDK as a dependency in their build information.
+// Binaries built by `go test` carry no dependency list, so for those the
+// version comes from the path of this source file, which the toolchain embeds
+// (also with -trimpath): a module cache path has the form
+// ".../conduit-connector-sdk@v0.15.0/...", a vendored copy is under
+// "vendor/", and a checkout (replace directive, workspace, the SDK's own tests)
+// is recognized by a go.mod with the SDK's module path above the file, whatever
+// the directory is called. Anything else is "unknown".
+func sdkModuleVersion() (version, source string) {
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		for _, d := range bi.Deps {
 			if d.Path == sdkModulePath {
 				if d.Replace != nil {
-					return fmt.Sprintf("%s (replaced by %s)", d.Version, d.Replace.Path)
+					return fmt.Sprintf("%s (replaced by %s)", d.Version, d.Replace.Path), sdkSourceBuildInfo
 				}
-				return d.Version
+				return d.Version, sdkSourceBuildInfo
 			}
 		}
 		if bi.Main.Path == sdkModulePath {
-			return "local checkout"
+			return "local checkout", sdkSourceBuildInfo
 		}
 	}
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		return "unknown"
+		return sdkUnknown, sdkUnknown
 	}
 	return sdkVersionFromPath(file)
 }
 
-// sdkVersionFromPath extracts the version from the path of an SDK source file.
-func sdkVersionFromPath(file string) string {
+// sdkVersionFromPath derives the version from the path of an SDK source file.
+func sdkVersionFromPath(file string) (version, source string) {
 	file = filepath.ToSlash(file)
 	if _, rest, found := strings.Cut(file, "conduit-connector-sdk@"); found {
-		if version, _, found := strings.Cut(rest, "/"); found && version != "" {
-			return version
+		if v, _, found := strings.Cut(rest, "/"); found && v != "" {
+			return v, "module_cache_path"
 		}
 	}
-	if strings.Contains(file, "conduit-connector-sdk") {
-		return "local checkout"
+	if strings.Contains(file, "/vendor/github.com/conduitio/conduit-connector-sdk/") {
+		return "vendored", "vendored"
 	}
-	return "unknown"
+	// walk up looking for the SDK's go.mod
+	for dir := filepath.Dir(file); dir != "/" && dir != "." && dir != ""; dir = filepath.Dir(dir) {
+		b, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if err != nil {
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(string(b)), "module "+sdkModulePath+"\n") ||
+			strings.Contains(string(b), "\nmodule "+sdkModulePath+"\n") {
+			return "local checkout", "local_checkout"
+		}
+		break // some other module owns this file
+	}
+	return sdkUnknown, sdkUnknown
 }
 
 // classifyCoreResult sets the skip kind of a v1 test result. The skip reasons
@@ -685,6 +783,9 @@ type v2Case struct {
 	// the language-neutral conformance suite refer to.
 	id   string
 	name string
+	// logic is the version of what the case checks. Bump it whenever the
+	// case's code changes in a way that can change its verdict.
+	logic int
 	// needs says whether the case applies to this connector.
 	needs func(a *acceptanceV2) v2Applicability
 	// claimed returns the name of the capability whose claim this case
@@ -701,6 +802,7 @@ type acceptanceV2 struct {
 
 	mu          sync.Mutex
 	skipReasons map[string]string
+	crashed     []*v2Src // killed sources not torn down yet, see reapCrashed
 }
 
 // skipInCase skips the running case and records why. Do not use it for a case
@@ -867,12 +969,12 @@ func v2Cases() []v2Case {
 
 	return []v2Case{
 		// Destination
-		{id: caseDst01, name: "pipelined_writes", needs: dst, fn: (*acceptanceV2).testDstPipelinedWrites},
-		{id: caseDst02, name: "slow_acks", needs: dst, fn: (*acceptanceV2).testDstSlowAcks},
-		{id: caseDst03, name: "mixed_batch_sizes", needs: dst, fn: (*acceptanceV2).testDstBatchSizes},
-		{id: caseDst04, name: "crash_replay_at_least_once", needs: dstRead, fn: (*acceptanceV2).testDstCrashReplay},
+		{id: caseDst01, name: "pipelined_writes", logic: 1, needs: dst, fn: (*acceptanceV2).testDstPipelinedWrites},
+		{id: caseDst02, name: "slow_acks", logic: 1, needs: dst, fn: (*acceptanceV2).testDstSlowAcks},
+		{id: caseDst03, name: "mixed_batch_sizes", logic: 1, needs: dst, fn: (*acceptanceV2).testDstBatchSizes},
+		{id: caseDst04, name: "crash_replay_at_least_once", logic: 1, needs: dstRead, fn: (*acceptanceV2).testDstCrashReplay},
 		{
-			id: caseDst05, name: "crash_replay_idempotent",
+			id: caseDst05, name: "crash_replay_idempotent", logic: 1,
 			needs: all(dstRead, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(idem(a), "Destination.Idempotence=idempotent")
 			}),
@@ -880,7 +982,7 @@ func v2Cases() []v2Case {
 			fn:      (*acceptanceV2).testDstCrashReplayIdempotent,
 		},
 		{
-			id: caseDst06, name: "ordering_per_key",
+			id: caseDst06, name: "ordering_per_key", logic: 1,
 			needs: all(dstRead, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(dstOrder(a), "Destination.OrdersByKey")
 			}),
@@ -888,23 +990,23 @@ func v2Cases() []v2Case {
 			fn:      (*acceptanceV2).testDstOrdering,
 		},
 		{
-			id: caseDst07, name: "schema_evolution",
+			id: caseDst07, name: "schema_evolution", logic: 1,
 			needs: all(dst, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(dstEvo(a), "Destination.SchemaEvolution")
 			}),
 			claimed: claim(dstEvo, "Destination.SchemaEvolution"),
 			fn:      (*acceptanceV2).testDstSchemaEvolution,
 		},
-		{id: caseDst08, name: "large_record", needs: dst, fn: (*acceptanceV2).testDstLargeRecord},
-		{id: caseDst09, name: "graceful_stop_drains_in_flight", needs: dst, fn: (*acceptanceV2).testDstGracefulStop},
-		{id: caseDst10, name: "context_cancellation", needs: dst, fn: (*acceptanceV2).testDstContextCancel},
-		{id: caseDst11, name: "throughput_smoke", needs: dst, fn: (*acceptanceV2).testDstThroughput},
+		{id: caseDst08, name: "large_record", logic: 1, needs: dst, fn: (*acceptanceV2).testDstLargeRecord},
+		{id: caseDst09, name: "graceful_stop_drains_in_flight", logic: 1, needs: dst, fn: (*acceptanceV2).testDstGracefulStop},
+		{id: caseDst10, name: "context_cancellation", logic: 1, needs: dst, fn: (*acceptanceV2).testDstContextCancel},
+		{id: caseDst11, name: "throughput_smoke", logic: 1, needs: dst, fn: (*acceptanceV2).testDstThroughput},
 		// Source
-		{id: caseSrc01, name: "pipelined_and_lagging_acks", needs: seeded, fn: (*acceptanceV2).testSrcLaggingAcks},
-		{id: caseSrc02, name: "mixed_batch_sizes", needs: seeded, fn: (*acceptanceV2).testSrcBatchSizes},
-		{id: caseSrc03, name: "crash_resume_no_gap", needs: seeded, fn: (*acceptanceV2).testSrcCrashResume},
+		{id: caseSrc01, name: "pipelined_and_lagging_acks", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcLaggingAcks},
+		{id: caseSrc02, name: "mixed_batch_sizes", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcBatchSizes},
+		{id: caseSrc03, name: "crash_resume_no_gap", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcCrashResume},
 		{
-			id: caseSrc04, name: "ordering_per_key",
+			id: caseSrc04, name: "ordering_per_key", logic: 1,
 			needs: all(seeded, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(srcOrder(a), "Source.OrdersByKey")
 			}),
@@ -912,17 +1014,17 @@ func v2Cases() []v2Case {
 			fn:      (*acceptanceV2).testSrcOrdering,
 		},
 		{
-			id: caseSrc05, name: "schema_evolution",
+			id: caseSrc05, name: "schema_evolution", logic: 1,
 			needs: all(seeded, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(srcEvo(a), "Source.SchemaEvolution=evolve")
 			}),
 			claimed: claim(srcEvo, "Source.SchemaEvolution=evolve"),
 			fn:      (*acceptanceV2).testSrcSchemaEvolution,
 		},
-		{id: caseSrc06, name: "large_record", needs: seeded, fn: (*acceptanceV2).testSrcLargeRecord},
-		{id: caseSrc07, name: "graceful_stop_with_unacked", needs: src, fn: (*acceptanceV2).testSrcGracefulStop},
-		{id: caseSrc08, name: "context_cancellation", needs: src, fn: (*acceptanceV2).testSrcContextCancel},
-		{id: caseSrc09, name: "throughput_smoke", needs: src, fn: (*acceptanceV2).testSrcThroughput},
+		{id: caseSrc06, name: "large_record", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcLargeRecord},
+		{id: caseSrc07, name: "graceful_stop_with_unacked", logic: 1, needs: src, fn: (*acceptanceV2).testSrcGracefulStop},
+		{id: caseSrc08, name: "context_cancellation", logic: 1, needs: src, fn: (*acceptanceV2).testSrcContextCancel},
+		{id: caseSrc09, name: "throughput_smoke", logic: 1, needs: src, fn: (*acceptanceV2).testSrcThroughput},
 	}
 }
 
