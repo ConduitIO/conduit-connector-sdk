@@ -528,6 +528,8 @@ type sourceWithEncoding struct {
 
 	keyWarnOnce     sync.Once
 	payloadWarnOnce sync.Once
+
+	serdes schemaSerdeMemo
 }
 
 func (s *sourceWithEncoding) Read(ctx context.Context) (opencdc.Record, error) {
@@ -701,7 +703,7 @@ func (s *sourceWithEncoding) schemaForPayload(ctx context.Context, rec opencdc.R
 }
 
 func (s *sourceWithEncoding) encodeWithSchema(sch schema.Schema, data any) ([]byte, error) {
-	srd, err := sch.Serde()
+	srd, err := s.serdes.serde(sch)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get serde for schema: %w", err)
 	}
