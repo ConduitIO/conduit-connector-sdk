@@ -871,10 +871,30 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	a.isEqualRecords(is, want, got)
 }
 
+// processLifetimeGoroutines are goroutines that the SDK's dependencies start
+// once per process, at package initialization, and that no connector can stop.
+// They are not leaks of the connector under test and must not fail its suite.
+//
+// The only entry is the auto clean loop of the process-wide serde cache in
+// conduit-commons/schema (a package level twmb/go-cache cache created with
+// cache.AutoCleanInterval). It is process-global on purpose: serdes are shared
+// by fingerprint across all schemas, so there is no per connector instance to
+// tear down. The SDK's own caches (schema/cached.go) are created without an
+// auto clean interval and start no goroutine.
+//
+// The name is the goroutine function in twmb/go-cache v1.4.0 and later. It was
+// "cache.New[...].func1" before, and the rename silently turned the suite red
+// for every connector (conduit-connector-sdk#392). The reference connector
+// test (internal/refconnector/acceptance_test.go) runs the suite on every SDK change, so
+// the next rename fails there instead. Do not add entries for goroutines a
+// connector starts itself, connectors pass those through GoleakOptions.
+var processLifetimeGoroutines = []goleak.Option{
+	goleak.IgnoreAnyFunction("github.com/twmb/go-cache/cache.autoClean[...]"),
+}
+
 func (a acceptanceTest) verifyGoleaks(t *testing.T) {
 	opts := a.driver.GoleakOptions(t)
-	// always ignore goroutine spawned in go-cache, used in conduit-commons/schema
-	opts = append(opts, goleak.IgnoreAnyFunction("github.com/twmb/go-cache/cache.New[...].func1"))
+	opts = append(opts, processLifetimeGoroutines...)
 	goleak.VerifyNone(t, opts...)
 }
 
