@@ -136,6 +136,11 @@ func sourceMiddlewareFromConfigRecursive(cfgVal reflect.Value) []SourceMiddlewar
 // payload and key schemas. The schema is extracted from the record data
 // for each record produced by the source. The schema is registered with the
 // schema service and the schema subject is attached to the record metadata.
+//
+// Records with the same shape (same field names and value types) are given the
+// schema registered for the first of them, the schema is not inferred and
+// registered again for every record. The remembered registrations expire after
+// 15 minutes, on top of the schema service client's own cache of the same age.
 type SourceWithSchemaExtraction struct {
 	// The type of the payload schema.
 	SchemaTypeStr string `json:"sdk.schema.extract.type" validate:"inclusion=avro" default:"avro"`
@@ -186,6 +191,11 @@ type sourceWithSchemaExtraction struct {
 
 	payloadWarnOnce sync.Once
 	keyWarnOnce     sync.Once
+
+	// shapes caches the schema registered for a given record shape, so that the
+	// schema is not inferred and registered again for every record. See
+	// schema_shape_cache.go for the correctness argument.
+	shapes schemaShapeCache
 }
 
 func (s *sourceWithSchemaExtraction) Read(ctx context.Context) (opencdc.Record, error) {
@@ -277,12 +287,7 @@ func (s *sourceWithSchemaExtraction) extractKeySchema(ctx context.Context, rec o
 	}
 
 	// No schema subject or version is attached, we need to extract the schema.
-	subject = *s.config.KeySubject
-	if collection, err := rec.Metadata.GetCollection(); err == nil {
-		subject = collection + "." + subject
-	}
-
-	sch, err := s.schemaForType(ctx, rec.Key, subject)
+	sch, err := s.extractSchema(ctx, schemaKindKey, rec.Key, *s.config.KeySubject, rec.Metadata)
 	if err != nil {
 		return schema.Schema{}, fmt.Errorf("failed to extract schema for key: %w", err)
 	}
@@ -345,22 +350,85 @@ func (s *sourceWithSchemaExtraction) extractPayloadSchema(ctx context.Context, r
 	}
 
 	// No schema subject or version is attached, we need to extract the schema.
-	subject = *s.config.PayloadSubject
-	if collection, err := rec.Metadata.GetCollection(); err == nil {
-		subject = collection + "." + subject
-	}
-
 	val := rec.Payload.After
 	if _, ok := val.(opencdc.StructuredData); !ok {
 		// use before as a fallback
 		val = rec.Payload.Before
 	}
 
-	sch, err := s.schemaForType(ctx, val, subject)
+	sch, err := s.extractSchema(ctx, schemaKindPayload, val, *s.config.PayloadSubject, rec.Metadata)
 	if err != nil {
 		return schema.Schema{}, fmt.Errorf("failed to extract schema for payload: %w", err)
 	}
 
+	return sch, nil
+}
+
+// Kinds of data a schema is extracted for. They are part of the shape cache key
+// (the key and the payload of a record are registered under different subjects).
+const (
+	schemaKindKey     byte = 'k'
+	schemaKindPayload byte = 'p'
+)
+
+// extractSchema returns the schema for data, registered under the subject
+// derived from baseSubject and the record's collection. Records with the same
+// shape (same field names and value types, see shapeKeyBuilder) go to the same
+// subject with the same schema bytes, so after the first one the result is
+// served from the shape cache without inferring or registering anything.
+func (s *sourceWithSchemaExtraction) extractSchema(ctx context.Context, kind byte, data any, baseSubject string, md opencdc.Metadata) (schema.Schema, error) {
+	// Same as md.GetCollection() == nil, an empty collection counts as none,
+	// without building an error for every record that has no collection.
+	collection := md[opencdc.MetadataCollection]
+	hasCollection := collection != ""
+
+	subjectOf := func() string {
+		if hasCollection {
+			return collection + "." + baseSubject
+		}
+		return baseSubject
+	}
+
+	now := time.Now()
+	if s.shapes.skip(now) {
+		return s.schemaForType(ctx, data, subjectOf()) // shapes aren't repeating
+	}
+
+	// Everything that influences what ends up registered must be in the key:
+	// the schema type, the schema context (qualifies the subject), the subject
+	// parts, and the shape of the data itself.
+	kb := getShapeKeyBuilder()
+	defer putShapeKeyBuilder(kb)
+	kb.buf = append(kb.buf, kind)
+	ok := kb.appendString(s.config.SchemaType().String()) &&
+		kb.appendString(schema.GetSchemaContextName(ctx))
+	if hasCollection {
+		kb.buf = append(kb.buf, 1)
+		ok = ok && kb.appendString(collection)
+	} else {
+		kb.buf = append(kb.buf, 0)
+	}
+	if !ok || !kb.appendString(baseSubject) || !kb.appendShape(data, 0) {
+		// Not a shape we can key exactly (or one too big to keep), take the
+		// slow path.
+		return s.schemaForType(ctx, data, subjectOf())
+	}
+
+	if sch, ok := s.shapes.get(kb.buf, now); ok {
+		// Invariant 6: the key is an exact encoding of the inputs of schema
+		// inference, so this is the schema inference would produce for data.
+		return sch, nil
+	}
+	if s.shapes.consumeTrip() {
+		Logger(ctx).Warn().Msgf("record shapes are not repeating (under 1%% of the last %d lookups hit the schema shape cache), "+
+			"skipping it for %s; schema extraction is expensive for records whose field names or value types vary from record to record", schemaShapeChurnWindow, schemaShapeChurnCooldown)
+	}
+
+	sch, err := s.schemaForType(ctx, data, subjectOf())
+	if err != nil {
+		return schema.Schema{}, err // errors are not cached
+	}
+	s.shapes.put(kb.buf, sch, now)
 	return sch, nil
 }
 
