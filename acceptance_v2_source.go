@@ -359,17 +359,27 @@ func (a *acceptanceV2) testSrcContextCancel(t *testing.T) {
 
 	// An idle Read with a deadline returns when the deadline passes.
 	deadlineCtx, deadlineCancel := context.WithTimeout(ctx, a.driver.ReadTimeout())
-	for {
-		_, err := readOne(deadlineCtx, source)
-		if errors.Is(err, ErrBackoffRetry) && deadlineCtx.Err() == nil {
-			time.Sleep(10 * time.Millisecond)
-			continue
+	deadlineDone := make(chan error, 1)
+	go func() {
+		for {
+			_, err := readOne(deadlineCtx, source)
+			if errors.Is(err, ErrBackoffRetry) && deadlineCtx.Err() == nil {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			deadlineDone <- err // nil only if another test left records behind, which is fine
+			return
 		}
+	}()
+	select {
+	case err := <-deadlineDone:
 		if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, ErrBackoffRetry) {
 			deadlineCancel()
 			t.Fatalf("idle Read returned %v at its deadline, expected context.DeadlineExceeded or ErrBackoffRetry", err)
 		}
-		break // err is nil only if another test left records behind, which is fine
+	case <-time.After(a.readTimeoutFor(0)):
+		deadlineCancel()
+		t.Fatalf("Read did not return within %v although its deadline (%v) passed", a.readTimeoutFor(0), a.driver.ReadTimeout())
 	}
 	deadlineCancel()
 
