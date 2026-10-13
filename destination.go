@@ -286,7 +286,8 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req pconnector.Dest
 // are left unanswered (neither acked nor nacked), so Conduit redelivers them
 // after a restart instead of routing them to a DLQ.
 //
-// The wait is bounded by destinationTeardownTimeout (1 minute). If a Write is
+// The wait is bounded by min(ctx, destinationTeardownTimeout), 1 minute at
+// most, so a Teardown ctx that is already canceled abandons immediately. If a Write is
 // still running when it expires, Teardown gives up on it and goes on: the
 // connector's Teardown is called while that Write is still running, which
 // breaks the connector's "no other call after Teardown" guarantee, but keeping
