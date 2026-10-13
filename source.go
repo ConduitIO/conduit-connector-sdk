@@ -38,6 +38,9 @@ var (
 	// TODO make the timeout configurable (https://github.com/ConduitIO/conduit/issues/183)
 	stopTimeout     = time.Minute
 	teardownTimeout = time.Minute
+	// destinationTeardownTimeout bounds how long the destination adapter's
+	// Teardown waits for a running Write to return.
+	destinationTeardownTimeout = time.Minute
 )
 
 // Source fetches records from 3rd party resources and sends them to Conduit.
