@@ -39,7 +39,9 @@ var (
 	stopTimeout     = time.Minute
 	teardownTimeout = time.Minute
 	// destinationTeardownTimeout bounds how long the destination adapter's
-	// Teardown waits for a running Write to return.
+	// Teardown waits for a running Write to return. After it expires the
+	// connector's Teardown is called while the Write is still running, and
+	// that Write is not acked. A variable so tests can shorten it.
 	destinationTeardownTimeout = time.Minute
 )
 
