@@ -276,7 +276,7 @@ func (d ConfigurableAcceptanceTestDriver) GenerateData(t *testing.T) opencdc.Dat
 		}
 		return data
 	default:
-		t.Fatalf("invalid config value for GenerateDataType %q", d.Config.GenerateDataType)
+		t.Fatalf("invalid config value for GenerateDataType %d", d.Config.GenerateDataType)
 		return nil
 	}
 }
