@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/conduitio/conduit-commons/ccontext"
@@ -290,11 +291,42 @@ func (a *destinationPluginAdapter) Teardown(ctx context.Context, _ pconnector.De
 		a.openCancel()
 	}
 
+	// Teardown can arrive without a prior Stop, while Run is still inside the
+	// connector's Write. The Destination contract promises the connector that
+	// no other call happens once Teardown starts, so wait (bounded) for
+	// running writes to return and refuse new ones. Like the source adapter,
+	// log and carry on if a write does not return in time, to keep the
+	// guarantee that Teardown is called.
+	var waitErr error
+	if a.writeStrategy != nil {
+		if single := a.singleStrategy(); single != nil {
+			if err := single.closeAndWait(ctx, destinationTeardownTimeout); err != nil {
+				waitErr = fmt.Errorf("failed to wait for Write to return: %w", err)
+				Logger(ctx).Warn().Err(err).Msg("failed to wait for Write to return, tearing down anyway")
+			}
+		}
+	}
+
 	err := a.impl.Teardown(ctx)
+	if err == nil {
+		err = waitErr
+	}
 	if err != nil {
 		return pconnector.DestinationTeardownResponse{}, err
 	}
 	return pconnector.DestinationTeardownResponse{}, nil
+}
+
+// singleStrategy returns the strategy that calls the connector's Write, which
+// is the write strategy itself or, with batching, the one it wraps.
+func (a *destinationPluginAdapter) singleStrategy() *writeStrategySingle {
+	switch ws := a.writeStrategy.(type) {
+	case *writeStrategySingle:
+		return ws
+	case *writeStrategyBatch:
+		return ws.writer
+	}
+	return nil
 }
 
 func (a *destinationPluginAdapter) LifecycleOnCreated(ctx context.Context, req pconnector.DestinationLifecycleOnCreatedRequest) (pconnector.DestinationLifecycleOnCreatedResponse, error) {
@@ -328,12 +360,56 @@ type writeStrategy interface {
 type writeStrategySingle struct {
 	impl Destination
 
+	// inflight tracks Write calls that are running inside the connector, so
+	// Teardown can wait for them (see closeAndWait). closed is set once
+	// Teardown starts; later writes are refused instead of reaching a
+	// connector that was promised no more calls.
+	mu       sync.Mutex
+	inflight sync.WaitGroup
+	closed   bool
+
 	ackFn  func([]opencdc.Record, error, pconnector.DestinationRunStreamServer) error
 	stream pconnector.DestinationRunStreamServer
 }
 
+// errDestinationTornDown is the nack reason for records that arrive after
+// Teardown started.
+var errDestinationTornDown = errors.New("destination is being torn down, record not written")
+
+// enter registers a Write call. It returns false if Teardown already started.
+func (w *writeStrategySingle) enter() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return false
+	}
+	w.inflight.Add(1)
+	return true
+}
+
+// closeAndWait refuses new writes and waits, at most timeout, for the ones
+// running inside the connector to return.
+func (w *writeStrategySingle) closeAndWait(ctx context.Context, timeout time.Duration) error {
+	w.mu.Lock()
+	w.closed = true
+	w.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return csync.Run(ctx, w.inflight.Wait)
+}
+
 func (w *writeStrategySingle) Write(ctx context.Context, batch []opencdc.Record) error {
-	n, err := w.impl.Write(ctx, batch)
+	var (
+		n   int
+		err error
+	)
+	if w.enter() {
+		n, err = w.impl.Write(ctx, batch)
+		w.inflight.Done()
+	} else {
+		err = errDestinationTornDown
+	}
 	if err != nil {
 		var pos []byte
 		if n < len(batch) {

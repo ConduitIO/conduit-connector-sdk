@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -466,4 +467,114 @@ func TestDestinationPluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	req := pconnector.DestinationLifecycleOnDeletedRequest{Config: want}
 	_, err := dstPlugin.LifecycleOnDeleted(ctx, req)
 	is.NoErr(err)
+}
+
+// TestDestinationPluginAdapter_Teardown_WaitsForWrite: Teardown can arrive
+// without a prior Stop while Run is inside the connector's Write. The connector
+// is promised that no other call happens once Teardown starts, so Teardown must
+// wait for the running Write and later writes must not reach the connector.
+func TestDestinationPluginAdapter_Teardown_WaitsForWrite(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		batch bool
+	}{{"single", false}, {"batch", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			ctrl := gomock.NewController(t)
+			dst := NewMockDestination(ctrl)
+
+			dstPlugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}, nil).(*destinationPluginAdapter)
+
+			rec := opencdc.Record{
+				Position:  opencdc.Position("foo"),
+				Operation: opencdc.OperationCreate,
+				Key:       opencdc.RawData("bar"),
+				Payload:   opencdc.Change{After: opencdc.RawData("x")},
+			}
+
+			var (
+				inWrite      = make(chan struct{})
+				releaseWrite = make(chan struct{})
+				tornDown     atomic.Bool
+				writeDone    atomic.Bool
+				writesAfter  atomic.Int32
+				writeCalls   atomic.Int32
+			)
+
+			dst.EXPECT().Config().Return(nil)
+			dst.EXPECT().Open(gomock.Any()).Return(nil)
+			dst.EXPECT().Write(gomock.Any(), gomock.Any()).DoAndReturn(
+				func(_ context.Context, recs []opencdc.Record) (int, error) {
+					if tornDown.Load() {
+						writesAfter.Add(1)
+					}
+					if writeCalls.Add(1) == 1 {
+						close(inWrite)
+						<-releaseWrite // the "connection" is busy until released
+						writeDone.Store(true)
+					}
+					return len(recs), nil
+				}).AnyTimes()
+			dst.EXPECT().Teardown(gomock.Any()).DoAndReturn(func(context.Context) error {
+				// the contract: no Write is running when Teardown is called
+				if !writeDone.Load() {
+					t.Error("Teardown was called while Write was still running")
+				}
+				tornDown.Store(true)
+				return nil
+			})
+
+			ctx := context.Background()
+			stream := NewInMemoryDestinationRunStream(ctx)
+			_, err := dstPlugin.Configure(ctx, pconnector.DestinationConfigureRequest{Config: config.Config{}})
+			is.NoErr(err)
+			_, err = dstPlugin.Open(ctx, pconnector.DestinationOpenRequest{})
+			is.NoErr(err)
+			if tc.batch {
+				// force the batch strategy
+				dstPlugin.configureWriteStrategy((&destinationWithBatch{}).setBatchConfig(ctx, DestinationWithBatch{BatchSize: 2, BatchDelay: time.Hour}))
+			}
+
+			go func() { _ = dstPlugin.Run(ctx, stream) }()
+			client := stream.Client()
+			go func() { // the in-memory stream is unbuffered: keep draining acks
+				for {
+					if _, err := client.Recv(); err != nil {
+						return
+					}
+				}
+			}()
+			if tc.batch {
+				is.NoErr(client.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{rec, rec}}))
+			} else {
+				is.NoErr(client.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{rec}}))
+			}
+			<-inWrite
+
+			tdDone := make(chan error, 1)
+			go func() {
+				_, err := dstPlugin.Teardown(ctx, pconnector.DestinationTeardownRequest{})
+				tdDone <- err
+			}()
+
+			select {
+			case <-tdDone:
+				t.Fatal("Teardown returned while Write was still running")
+			case <-time.After(300 * time.Millisecond):
+			}
+
+			close(releaseWrite)
+			select {
+			case err := <-tdDone:
+				is.NoErr(err)
+			case <-time.After(10 * time.Second):
+				t.Fatal("Teardown did not return after Write returned")
+			}
+
+			// a batch that arrives after Teardown must not reach the connector
+			_ = client.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{rec, rec}})
+			time.Sleep(500 * time.Millisecond)
+			is.Equal(writesAfter.Load(), int32(0))
+		})
+	}
 }
