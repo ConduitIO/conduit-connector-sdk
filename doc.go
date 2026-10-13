@@ -242,16 +242,18 @@ was.
 	      SourceConfig: map[string]string{ … },
 	      DestinationConfig: map[string]string{ … },
 	      Capabilities: sdk.AcceptanceCapabilities{
-	        Destination: sdk.DestinationCapabilities{IdempotentWrites: true},
+	        Destination: sdk.DestinationCapabilities{Idempotence: sdk.IdempotenceYes},
 	      },
 	    },
 	  })
 	}
 
 Some tests only make sense if the connector has a property, for example
-idempotent writes, ordering per key or a schema evolution policy. They run only
-if the connector claims the property in [AcceptanceCapabilities], and a claim
-that is made is verified. Without claims only the baseline runs, and the report
+idempotent writes, ordering per key, exact resume or a schema evolution policy.
+They run only if the connector claims the property in [AcceptanceCapabilities],
+and a claim that is made is verified; a claim the suite cannot verify (for
+example idempotence with a driver that cannot return duplicates) fails the case
+instead of skipping it. Without claims only the baseline runs, and the report
 lists what was skipped. Source-only and sink-only connectors declare
 [SourceCapabilities.Synthetic] and [DestinationCapabilities.WriteOnly].
 

@@ -164,7 +164,12 @@ func (s v2SrcStream) Server() pconnector.SourceRunStreamServer {
 	return (*v2StreamServer[pconnector.SourceRunRequest, pconnector.SourceRunResponse])(s.v2Stream)
 }
 
-const v2StopTimeout = 30 * time.Second
+const (
+	v2StopTimeout = 30 * time.Second
+	// abortTimeout bounds the wait for Run to return after the context of an
+	// aborted plugin was cancelled.
+	abortTimeout = 15 * time.Second
+)
 
 // -- Destination session -----------------------------------------------------
 
@@ -411,14 +416,23 @@ func (d *v2Dest) teardown() error {
 	return err
 }
 
-// crash simulates an abrupt end as far as that is possible in-process: the
-// context is cancelled, nothing is flushed through Stop, and the host
-// disappears. Teardown is called afterwards only to release resources, it is
-// not given a chance to be the reason records become durable. A real kill -9
-// needs the standalone harness.
-func (d *v2Dest) crash() {
+// abort ends the destination abruptly as far as that is possible in-process:
+// the context is cancelled, the stream is closed, nothing is flushed through
+// Stop. It waits (bounded) for Run to return and reports whether it did. It
+// does not call Teardown: a connector that flushes in Teardown would otherwise
+// be rescued before the caller can check what is durable. Call teardown (or
+// crash) when the check is done.
+//
+// A real kill -9 needs the standalone harness.
+func (d *v2Dest) abort() (runEnded bool) {
 	d.stream.Close(context.Canceled)
 	d.cancel()
+	return d.runEnded(abortTimeout)
+}
+
+// crash is abort followed by teardown, to release resources.
+func (d *v2Dest) crash() {
+	d.abort()
 	_ = d.teardown()
 }
 
@@ -426,12 +440,13 @@ func (d *v2Dest) crash() {
 
 // v2Src is the host side of a source plugin under test.
 type v2Src struct {
-	a      *acceptanceV2
-	t      *testing.T
-	plugin pconnector.SourcePlugin
-	stream v2SrcStream
-	cancel context.CancelFunc
-	ctx    context.Context //nolint:containedctx // test helper
+	watcher *ackWatcher
+	a       *acceptanceV2
+	t       *testing.T
+	plugin  pconnector.SourcePlugin
+	stream  v2SrcStream
+	cancel  context.CancelFunc
+	ctx     context.Context //nolint:containedctx // test helper
 
 	runDone chan error
 	recvEnd chan struct{}
@@ -439,6 +454,7 @@ type v2Src struct {
 	mu      sync.Mutex
 	got     []opencdc.Record
 	taken   int
+	known   map[string]struct{} // identities delivered in earlier requireRead calls
 	changed chan struct{}
 
 	tornDown bool
@@ -451,8 +467,9 @@ func (a *acceptanceV2) openSrc(t *testing.T, pos opencdc.Position) *v2Src {
 	ctx, cancel := context.WithCancel(rootCtx)
 
 	spec := a.driver.Connector().NewSpecification()
+	watcher := &ackWatcher{Source: a.driver.Connector().NewSource(), done: map[string]struct{}{}, changed: make(chan struct{})}
 	plugin := NewSourcePlugin(
-		a.driver.Connector().NewSource(),
+		watcher,
 		pconnector.PluginConfig{},
 		spec.SourceParams,
 	)
@@ -469,6 +486,7 @@ func (a *acceptanceV2) openSrc(t *testing.T, pos opencdc.Position) *v2Src {
 	}
 
 	s := &v2Src{
+		watcher: watcher,
 		a:       a,
 		t:       t,
 		plugin:  plugin,
@@ -478,6 +496,7 @@ func (a *acceptanceV2) openSrc(t *testing.T, pos opencdc.Position) *v2Src {
 		runDone: make(chan error, 1),
 		recvEnd: make(chan struct{}),
 		changed: make(chan struct{}),
+		known:   map[string]struct{}{},
 	}
 	go func() { s.runDone <- plugin.Run(ctx, s.stream) }()
 	go s.collect()
@@ -632,4 +651,44 @@ func (s *v2Src) crash() {
 	s.stream.Close(context.Canceled)
 	s.cancel()
 	_ = s.teardown()
+}
+
+// ackWatcher wraps the connector's Source to learn when an Ack call returned.
+// The plugin adapter delivers acks asynchronously from the stream, so without
+// this a test that wants "the connector has processed my acks" can only sleep.
+type ackWatcher struct {
+	Source
+
+	mu      sync.Mutex
+	done    map[string]struct{}
+	changed chan struct{}
+}
+
+func (w *ackWatcher) Ack(ctx context.Context, pos opencdc.Position) error {
+	err := w.Source.Ack(ctx, pos)
+	w.mu.Lock()
+	w.done[string(pos)] = struct{}{}
+	close(w.changed)
+	w.changed = make(chan struct{})
+	w.mu.Unlock()
+	return err
+}
+
+// waitAckProcessed waits until Ack returned for pos.
+func (s *v2Src) waitAckProcessed(pos opencdc.Position, timeout time.Duration) error {
+	deadline := time.After(timeout)
+	for {
+		s.watcher.mu.Lock()
+		_, ok := s.watcher.done[string(pos)]
+		ch := s.watcher.changed
+		s.watcher.mu.Unlock()
+		if ok {
+			return nil
+		}
+		select {
+		case <-ch:
+		case <-deadline:
+			return fmt.Errorf("the connector did not finish Ack for position %q within %v", pos, timeout)
+		}
+	}
 }

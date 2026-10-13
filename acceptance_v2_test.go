@@ -17,361 +17,121 @@ package sdk
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
+	"reflect"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/conduitio/conduit-commons/config"
-	"github.com/conduitio/conduit-commons/lang"
-	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/matryer/is"
-	"go.uber.org/goleak"
 )
 
 // This file tests the v2 acceptance suite itself. A reference connector backed
-// by an in-memory store must pass it. For each known class of connector bug
-// there is a mutant of the reference connector, and the suite must fail it on
-// the expected test. A suite that passes broken connectors is worse than none.
+// by an in-memory store (acceptance_v2_ref_test.go) must pass it. For each
+// class of connector bug there is a mutant of the reference connector, and the
+// suite must fail it on the case that is meant to catch it. A suite that passes
+// broken connectors is worse than none.
 //
 // Mutants run in a subprocess (the test binary itself), because a failing
 // suite cannot be observed from inside the process that runs it. Each
 // subprocess runs only the case that is supposed to catch the mutant.
 
-const (
-	refMutantEnv = "ACCEPTANCE_V2_REF_MUTANT"
-	refClaimsEnv = "ACCEPTANCE_V2_REF_CLAIMS"
-)
-
-// refGoleakOptions ignores the twmb/go-cache goroutine that leaks since
-// go-cache v1.4.0 (https://github.com/ConduitIO/conduit-connector-sdk/issues/392).
-// Remove this once the leak is fixed at the source.
-func refGoleakOptions() []goleak.Option {
-	return []goleak.Option{
-		goleak.IgnoreAnyFunction("github.com/twmb/go-cache/cache.autoClean[...]"),
-		goleak.IgnoreAnyFunction("github.com/twmb/go-cache/cache.New[...].func1"),
-	}
-}
-
-type refStore struct {
-	mu      sync.Mutex
-	recs    []opencdc.Record
-	pending []opencdc.Record
-	seen    map[string]struct{}
-}
-
-var refStores sync.Map // name -> *refStore
-
-func getRefStore(name string) *refStore {
-	s, _ := refStores.LoadOrStore(name, &refStore{seen: map[string]struct{}{}})
-	return s.(*refStore)
-}
-
-func (s *refStore) append(recs ...opencdc.Record) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, r := range recs {
-		s.recs = append(s.recs, r.Clone())
-	}
-}
-
-func (s *refStore) get(i int) (opencdc.Record, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if i >= len(s.recs) {
-		return opencdc.Record{}, false
-	}
-	return s.recs[i].Clone(), true
-}
-
-func refMutant() string { return os.Getenv(refMutantEnv) }
-
-// refCurrentTest is the name of the running acceptance test, set in BeforeTest.
-// A mutant can restrict itself to one test with it, so that unrelated tests
-// don't wait for it.
-var refCurrentTest atomic.Value
-
-func refRunning(name string) bool {
-	cur, _ := refCurrentTest.Load().(string)
-	return strings.Contains(cur, name)
-}
-
-//go:embed testdata/acceptance_v2_reference.yaml
-var refSpecYAML string
-
-type refSourceConfig struct {
-	DefaultSourceMiddleware
-	Store string `json:"store" validate:"required"`
-}
-
-func (refSourceConfig) Validate(context.Context) error { return nil }
-
-type refSource struct {
-	UnimplementedSource
-	config refSourceConfig
-	store  *refStore
-	next   int
-}
-
-func newRefSource() Source {
-	return SourceWithMiddleware(&refSource{config: refSourceConfig{
-		DefaultSourceMiddleware: DefaultSourceMiddleware{
-			SourceWithSchemaExtraction: SourceWithSchemaExtraction{
-				PayloadEnabled: lang.Ptr(false),
-				KeyEnabled:     lang.Ptr(false),
-			},
-		},
-	}})
-}
-
-func (s *refSource) Config() SourceConfig { return &s.config }
-
-func (s *refSource) Open(_ context.Context, pos opencdc.Position) error {
-	s.store = getRefStore(s.config.Store)
-	if pos != nil {
-		last, err := strconv.Atoi(string(pos))
-		if err != nil {
-			return err
-		}
-		s.next = last + 1
-		if refMutant() == "source_gap" {
-			s.next++ // resume one record too late: the first unacked record is skipped
-		}
-	}
-	return nil
-}
-
-func (s *refSource) Read(ctx context.Context) (opencdc.Record, error) {
-	for {
-		if r, ok := s.store.get(s.next); ok {
-			r.Position = opencdc.Position(strconv.Itoa(s.next))
-			s.next++
-			return r, nil
-		}
-		if refMutant() == "source_ignores_ctx" && refRunning("SRC-08") {
-			time.Sleep(15 * time.Second) // a Read that never looks at its context
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return opencdc.Record{}, ctx.Err()
-		case <-time.After(2 * time.Millisecond):
-		}
-	}
-}
-
-func (s *refSource) Ack(context.Context, opencdc.Position) error { return nil }
-func (s *refSource) Teardown(context.Context) error              { return nil }
-
-type refDestinationConfig struct {
-	DefaultDestinationMiddleware
-	Store string `json:"store" validate:"required"`
-}
-
-func (refDestinationConfig) Validate(context.Context) error { return nil }
-
-type refDestination struct {
-	UnimplementedDestination
-	config refDestinationConfig
-	store  *refStore
-	closed chan struct{}
-}
-
-func newRefDestination() Destination {
-	return DestinationWithMiddleware(&refDestination{})
-}
-
-func (d *refDestination) Config() DestinationConfig { return &d.config }
-
-func (d *refDestination) Open(context.Context) error {
-	d.store = getRefStore(d.config.Store)
-	d.closed = make(chan struct{})
-	return nil
-}
-
-func (d *refDestination) Write(_ context.Context, recs []opencdc.Record) (int, error) {
-	out := make([]opencdc.Record, 0, len(recs))
-	for i, r := range recs {
-		r, keep, err := d.apply(i, r)
-		if err != nil {
-			return i, err
-		}
-		if keep {
-			out = append(out, r)
-		}
-	}
-
-	if refMutant() == "dest_reorders" {
-		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-			out[i], out[j] = out[j], out[i]
-		}
-	}
-
-	if refMutant() == "dest_acks_before_durable" {
-		d.storeLater(out)
-		return len(recs), nil
-	}
-
-	d.store.append(out...)
-	return len(recs), nil
-}
-
-// apply runs the behavior of the configured mutant or claim on one record.
-func (d *refDestination) apply(i int, r opencdc.Record) (_ opencdc.Record, keep bool, _ error) {
-	switch refMutant() {
-	case "dest_lossy":
-		if i%7 == 6 {
-			return r, false, nil // acked but never stored
-		}
-	case "dest_drops_new_field":
-		r.Payload.After = withoutField(r.Payload.After, v2AddedField)
-	}
-	if os.Getenv(refClaimsEnv) == "reject" && hasField(r.Payload.After, v2AddedField) {
-		return r, false, errors.New("unknown field " + v2AddedField + ", refusing to drop it")
-	}
-	if refMutant() != "dest_dups" && strings.Contains(os.Getenv(refClaimsEnv), "idempotent") {
-		d.store.mu.Lock()
-		_, dup := d.store.seen[string(r.Position)]
-		d.store.seen[string(r.Position)] = struct{}{}
-		d.store.mu.Unlock()
-		if dup {
-			return r, false, nil
-		}
-	}
-	return r, true, nil
-}
-
-// storeLater buffers the records and makes them durable only after a delay. A
-// crash in between loses records that were already acked.
-func (d *refDestination) storeLater(recs []opencdc.Record) {
-	d.store.mu.Lock()
-	d.store.pending = append(d.store.pending, recs...)
-	d.store.mu.Unlock()
-	go func() {
-		select {
-		case <-time.After(400 * time.Millisecond):
-			d.store.mu.Lock()
-			d.store.recs = append(d.store.recs, d.store.pending...)
-			d.store.pending = nil
-			d.store.mu.Unlock()
-		case <-d.closed:
-		}
-	}()
-}
-
-func hasField(d opencdc.Data, name string) bool {
-	sd, ok := d.(opencdc.StructuredData)
-	if !ok {
-		return false
-	}
-	_, has := sd[name]
-	return has
-}
-
-func withoutField(d opencdc.Data, name string) opencdc.Data {
-	sd, ok := d.(opencdc.StructuredData)
-	if !ok || !hasField(d, name) {
-		return d
-	}
-	cp := make(opencdc.StructuredData, len(sd))
-	for k, v := range sd {
-		if k != name {
-			cp[k] = v
-		}
-	}
-	return cp
-}
-
-func (d *refDestination) Teardown(context.Context) error {
-	if d.closed != nil {
-		close(d.closed)
-	}
-	return nil
-}
-
-func refConnector() Connector {
-	return Connector{
-		NewSpecification: YAMLSpecification(refSpecYAML, ""),
-		NewSource:        newRefSource,
-		NewDestination:   newRefDestination,
-	}
-}
-
 func refDriver(t *testing.T, caps AcceptanceCapabilities) AcceptanceTestDriver {
 	store := strings.ReplaceAll(t.Name(), "/", "_")
 	refStores.Delete(store)
 	cfg := config.Config{"store": store}
+	genType := GenerateStructuredData
+	if refClaim("rawdata") {
+		genType = GenerateRawData
+	}
 	return ConfigurableAcceptanceTestDriver{
 		Config: ConfigurableAcceptanceTestDriverConfig{
 			Connector:         refConnector(),
 			SourceConfig:      cfg,
 			DestinationConfig: cfg,
-			GenerateDataType:  GenerateStructuredData,
-			GoleakOptions:     refGoleakOptions(),
-			BeforeTest: func(t *testing.T) {
-				refStores.Delete(store)
-				refCurrentTest.Store(t.Name())
-			},
-			ReadTimeout:  300 * time.Millisecond,
-			WriteTimeout: 300 * time.Millisecond,
-			Capabilities: caps,
+			GenerateDataType:  genType,
+			BeforeTest:        func(*testing.T) { refStores.Delete(store) },
+			ReadTimeout:       300 * time.Millisecond,
+			WriteTimeout:      300 * time.Millisecond,
+			ReadAllFromSource: !refClaim("noreadall"),
+			Capabilities:      caps,
 		},
 	}
 }
 
+// refCapabilities derives the claims from the claims environment variable.
 func refCapabilities() AcceptanceCapabilities {
 	caps := AcceptanceCapabilities{
 		Destination: DestinationCapabilities{
-			IdempotentWrites: strings.Contains(os.Getenv(refClaimsEnv), "idempotent"),
-			OrdersByKey:      strings.Contains(os.Getenv(refClaimsEnv), "ordering"),
-			SchemaEvolution:  SchemaEvolutionEvolve,
+			Idempotence:     IdempotenceNo,
+			OrdersByKey:     refClaim("ordering"),
+			SchemaEvolution: SchemaEvolutionEvolve,
+			WriteOnly:       refClaim("writeonly"),
 		},
 		Source: SourceCapabilities{
-			OrdersByKey:     strings.Contains(os.Getenv(refClaimsEnv), "ordering"),
+			OrdersByKey:     refClaim("ordering"),
+			ExactResume:     refClaim("exact"),
 			SchemaEvolution: SchemaEvolutionEvolve,
 		},
 		ThroughputDuration: 500 * time.Millisecond,
 		MaxBatchSize:       2000,
 	}
-	if os.Getenv(refClaimsEnv) == "reject" {
+	if refClaim("idempotent") {
+		caps.Destination.Idempotence = IdempotenceYes
+	}
+	if refClaim("reject") {
 		caps.Destination.SchemaEvolution = SchemaEvolutionReject
 	}
 	return caps
 }
 
-// TestAcceptanceV2_Reference is the entry point for the reference connector,
-// both for the direct run and for the mutant subprocesses.
+// TestAcceptanceV2_Reference is the entry point for the mutant subprocesses.
 func TestAcceptanceV2_Reference(t *testing.T) {
-	// Only the v2 group: mutants are built to fail it, and the v1 group
-	// has its own tests.
-	d := refDriver(t, refCapabilities())
-	runAcceptanceV2(t, d, refCapabilities(), newAcceptanceReport(d, refCapabilities()))
+	AcceptanceTestV2(t, refDriver(t, refCapabilities()))
+}
+
+func readReport(t *testing.T, path string) *AcceptanceReport {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("report not written: %v", err)
+	}
+	var rep AcceptanceReport
+	if err := json.Unmarshal(b, &rep); err != nil {
+		t.Fatal(err)
+	}
+	return &rep
 }
 
 func TestAcceptanceV2_ReferencePasses(t *testing.T) {
-	t.Setenv(refClaimsEnv, "idempotent,ordering")
+	t.Setenv(refClaimsEnv, "idempotent,ordering,exact")
 	report := filepath.Join(t.TempDir(), "report.json")
 	t.Setenv(AcceptanceReportEnv, report)
 
 	// registered first so that it runs after the report was written
 	t.Cleanup(func() {
 		is := is.New(t)
-		b, err := os.ReadFile(report)
-		is.NoErr(err)
-		var rep AcceptanceReport
-		is.NoErr(json.Unmarshal(b, &rep))
+		rep := readReport(t, report)
+		is.Equal(rep.ReportSchemaVersion, ReportSchemaVersion)
 		is.Equal(rep.SuiteVersion, 2)
 		is.Equal(rep.SuiteRevision, AcceptanceSuiteV2Revision)
 		is.Equal(rep.Connector.Name, "acceptance-v2-reference")
-		is.True(rep.Capabilities.Destination.IdempotentWrites)
+		is.Equal(rep.Capabilities.Destination.Idempotence, IdempotenceYes)
+		is.True(rep.Capabilities.Source.ExactResume)
+		is.Equal(rep.ExpectedCaseCount, len(rep.ExpectedCaseIDs))
+		is.Equal(rep.ExpectedCaseCount, len(coreTestIDs)+len(v2Cases()))
+		is.Equal(rep.CaseSetHash, caseSetHash(rep.ExpectedCaseIDs))
+		is.True(rep.Complete)
+		is.True(rep.Passed)
+		is.Equal(rep.UnexplainedSkips, 0)
+		is.True(rep.SDKVersion != "") // "unknown" in the SDK's own tests, never empty
+		is.Equal(rep.Limits.MaxBatchSize, 2000)
+		is.True(!rep.Limits.CertificationFloorMet) // the test lowers MaxBatchSize
+		is.Equal(rep.Limits.BelowFloor, []string{"max_batch_size"})
 		var core, v2 int
 		for _, c := range rep.Cases {
 			if strings.HasPrefix(c.ID, "CORE-") {
@@ -382,8 +142,8 @@ func TestAcceptanceV2_ReferencePasses(t *testing.T) {
 			is.Equal(c.Outcome, AcceptanceOutcomePassed) // all v2 cases apply to the reference
 		}
 		is.Equal(v2, len(v2Cases()))
-		is.True(core > 0)
-		is.True(len(rep.Metrics) == 2) // both throughput checks recorded a number
+		is.Equal(core, len(coreTestIDs))
+		is.Equal(len(rep.Metrics), 2) // both throughput checks recorded a number
 	})
 
 	AcceptanceTestV2(t, refDriver(t, refCapabilities()))
@@ -402,26 +162,139 @@ func TestAcceptanceV2_UnclaimedCapabilitiesAreSkipped(t *testing.T) {
 
 	t.Cleanup(func() {
 		is := is.New(t)
-		b, err := os.ReadFile(report)
-		is.NoErr(err)
-		var rep AcceptanceReport
-		is.NoErr(json.Unmarshal(b, &rep))
-		skipped := map[string]string{}
+		rep := readReport(t, report)
+		skipped := map[string]AcceptanceCaseResult{}
 		for _, c := range rep.Cases {
 			if c.Outcome == AcceptanceOutcomeSkipped && !strings.HasPrefix(c.ID, "CORE-") {
-				skipped[c.ID] = c.Reason
+				skipped[c.ID] = c
 			}
 		}
 		for _, id := range []string{"DST-05", "DST-06", "DST-07", "SRC-04", "SRC-05"} {
-			is.True(strings.HasPrefix(skipped[id], "capability not claimed")) // test must skip with the reason
+			is.Equal(skipped[id].SkipKind, SkipUnclaimed) // must skip as unclaimed, with the reason
+			is.True(strings.HasPrefix(skipped[id].Reason, "capability not claimed"))
 		}
 		is.Equal(len(skipped), 5)
+		is.True(rep.Complete)
+		is.Equal(rep.UnexplainedSkips, 0)
+		is.True(rep.Passed) // unclaimed capabilities do not fail a run
+		// the replaced v1 tests are skips of their own kind
+		for _, c := range rep.Cases {
+			if c.ID == "CORE-09" {
+				is.Equal(c.SkipKind, SkipReplaced)
+			}
+		}
 	})
 
 	AcceptanceTestV2(t, refDriver(t, AcceptanceCapabilities{ThroughputDuration: 200 * time.Millisecond, MaxBatchSize: 200}))
 }
 
+// A BeforeTest skip by the driver must not produce a passing report.
+func TestAcceptanceV2_DriverSkipIsUnexplained(t *testing.T) {
+	report := filepath.Join(t.TempDir(), "report.json")
+	t.Setenv(AcceptanceReportEnv, report)
+
+	t.Cleanup(func() {
+		is := is.New(t)
+		rep := readReport(t, report)
+		var found bool
+		for _, c := range rep.Cases {
+			if c.ID == "DST-01" {
+				found = true
+				is.Equal(c.Outcome, AcceptanceOutcomeSkipped)
+				is.Equal(c.SkipKind, SkipDriver)
+			}
+		}
+		is.True(found)
+		is.True(rep.UnexplainedSkips >= 1)
+		is.True(!rep.Passed) // skipped by the driver, nothing failed
+	})
+
+	d := refDriver(t, AcceptanceCapabilities{ThroughputDuration: 100 * time.Millisecond, MaxBatchSize: 100}).(ConfigurableAcceptanceTestDriver)
+	d.Config.Skip = []string{`DST-01`}
+	AcceptanceTestV2(t, d)
+}
+
+// A case that skips itself has its reason recorded, and the skip counts as
+// unexplained.
+func TestAcceptanceV2_InCaseSkipReasonIsRecorded(t *testing.T) {
+	a := &acceptanceV2{skipReasons: map[string]string{}}
+	var name string
+	t.Run("skipper", func(t *testing.T) {
+		name = t.Name()
+		a.skipInCase(t, "the reason")
+	})
+	if got := a.takeSkipReason(name); got != "the reason" {
+		t.Fatalf("reason = %q", got)
+	}
+	res := AcceptanceCaseResult{Outcome: AcceptanceOutcomeSkipped, SkipKind: SkipInCase}
+	if !res.unexplainedSkip() {
+		t.Fatal("an in-case skip must count as unexplained")
+	}
+}
+
+// A filtered run must be reported as incomplete.
+func TestAcceptanceV2_FilteredRunIsIncomplete(t *testing.T) {
+	report := filepath.Join(t.TempDir(), "report.json")
+	cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestAcceptanceV2_Reference$/^V2$/^DST-01$")
+	cmd.Env = append(os.Environ(), AcceptanceReportEnv+"="+report)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("the filtered run itself should pass: %v\n%s", err, tail(string(out), 2000))
+	}
+	rep := readReport(t, report)
+	is := is.New(t)
+	is.True(!rep.Complete)
+	is.True(!rep.Passed)
+	is.True(len(rep.Cases) < rep.ExpectedCaseCount)
+}
+
+// The case set is part of the contract. If this test fails, a case was added,
+// removed or renamed: bump AcceptanceSuiteV2Revision (minor for new
+// claim-dependent cases, major for anything that changes the baseline) and
+// update the hash here in the same change.
+func TestAcceptanceV2_CaseSetIsPinned(t *testing.T) {
+	const wantRevision = "2.0.0"
+	const wantHash = "89745d24d42ed9fccca645e44eb39cbaba9dbdc6fbbd05f12877faf445bde5c4"
+	if AcceptanceSuiteV2Revision != wantRevision {
+		t.Fatalf("revision is %s, this test pins %s: update the pinned hash too", AcceptanceSuiteV2Revision, wantRevision)
+	}
+	if got := caseSetHash(expectedCaseIDs()); got != wantHash {
+		t.Fatalf("case set hash changed to %s without a revision bump", got)
+	}
+}
+
+// Every v1 test method has a stable ID, and the IDs have no gaps.
+func TestAcceptanceV2_CoreIDsCoverV1(t *testing.T) {
+	typ := reflect.TypeOf(acceptanceTest{})
+	seen := map[string]bool{}
+	for i := 0; i < typ.NumMethod(); i++ {
+		name := typ.Method(i).Name
+		if !strings.HasPrefix(name, "Test") || name == "Test" {
+			continue
+		}
+		id, ok := coreTestIDs[name]
+		if !ok {
+			t.Errorf("v1 test %s has no entry in coreTestIDs", name)
+		}
+		seen[id] = true
+	}
+	if len(seen) != len(coreTestIDs) {
+		t.Errorf("coreTestIDs has %d entries for %d v1 tests", len(coreTestIDs), len(seen))
+	}
+	for id := range seen {
+		if !strings.HasPrefix(id, "CORE-") {
+			t.Errorf("unexpected core ID %q", id)
+		}
+	}
+}
+
 // TestAcceptanceV2_Mutants checks that the suite catches known bug classes.
+//
+// Cases without a connector mutant, and why:
+//   - DST-02 (slow acks): the acks are sent by the SDK's destination adapter,
+//     a connector cannot block them. The case guards the adapter's ack path;
+//     it would be mutation tested by an SDK change.
+//   - CORE-*: the v1 specification and configuration tests are the v1 suite's
+//     own, it has no mutants here.
 func TestAcceptanceV2_Mutants(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the test binary once per mutant")
@@ -433,15 +306,35 @@ func TestAcceptanceV2_Mutants(t *testing.T) {
 		failing string
 	}{
 		{"dest_lossy", "", "DST-01"},
+		{"dest_caps_batch", "", "DST-03"},
 		{"dest_acks_before_durable", "", "DST-04"},
+		{"dest_flush_in_teardown", "", "DST-04"},
 		{"dest_dups", "idempotent", "DST-05"},
 		{"dest_reorders", "ordering", "DST-06"},
 		{"dest_drops_new_field", "", "DST-07"},
+		{"dest_truncates_large", "", "DST-08"},
+		{"dest_acks_before_durable", "", "DST-09"},
+		{"dest_ignores_ctx", "", "DST-10"},
+		{"dest_nacks_under_load", "", "DST-11"},
+		{"source_ack_blocks_read", "", "SRC-01"},
+		{"source_emits_dups", "", "SRC-02"},
 		{"source_gap", "", "SRC-03"},
+		{"source_ignores_position", "", "SRC-03"},
+		{"source_dups_on_resume", "exact", "SRC-03"},
+		{"source_reorders", "ordering", "SRC-04"},
+		{"source_drops_new_field", "", "SRC-05"},
+		{"source_truncates_large", "", "SRC-06"},
+		{"source_leaks_goroutine", "", "SRC-07"},
 		{"source_ignores_ctx", "", "SRC-08"},
+		{"source_stalls", "", "SRC-09"},
+		// claims the suite cannot verify must fail, not skip
+		{"none", "idempotent,writeonly", "DST-05"},
+		{"none", "idempotent,noreadall", "DST-05"},
+		{"none", "rawdata", "DST-07"},
+		{"none", "rawdata", "SRC-05"},
 	}
 	for _, m := range mutants {
-		t.Run(m.mutant, func(t *testing.T) {
+		t.Run(m.mutant+"/"+m.failing+"/"+m.claims, func(t *testing.T) {
 			t.Parallel()
 			cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestAcceptanceV2_Reference$/^V2$/^"+m.failing+"$", "-test.v=true")
 			cmd.Env = append(os.Environ(), refMutantEnv+"="+m.mutant, refClaimsEnv+"="+m.claims)

@@ -151,6 +151,19 @@ type ConfigurableAcceptanceTestDriverConfig struct {
 	// GoleakOptions will be applied to goleak.VerifyNone. Can be used to
 	// suppress false positive goroutine leaks.
 	GoleakOptions []goleak.Option
+	// GoleakIgnoreFunctions is like GoleakOptions with goleak.IgnoreAnyFunction
+	// for each name, and the names are written to the acceptance report. Prefer
+	// it over GoleakOptions: goleak options are opaque, so a registry can only
+	// see that they exist, not what they hide.
+	GoleakIgnoreFunctions []string
+
+	// ReadAllFromSource makes the driver implement reading everything stored in
+	// the destination (duplicates included) by opening the source and reading
+	// until it has been quiet for ReadTimeout. It is an explicit opt-in used by
+	// AcceptanceTestV2 and is only right if the source reads exactly what the
+	// destination wrote. A driver that overrides ReadFromDestination must
+	// implement AcceptanceReadAllDriver itself instead.
+	ReadAllFromSource bool
 
 	// Skip is a slice of regular expressions used to identify tests that should
 	// be skipped. The full test name will be matched against all regular
@@ -230,7 +243,22 @@ func (d ConfigurableAcceptanceTestDriver) Skip(t *testing.T) {
 }
 
 func (d ConfigurableAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.Option {
-	return d.Config.GoleakOptions
+	opts := append([]goleak.Option(nil), d.Config.GoleakOptions...)
+	for _, f := range d.Config.GoleakIgnoreFunctions {
+		opts = append(opts, goleak.IgnoreAnyFunction(f))
+	}
+	return opts
+}
+
+// GoleakIgnoredFunctions returns the names in Config.GoleakIgnoreFunctions.
+func (d ConfigurableAcceptanceTestDriver) GoleakIgnoredFunctions() []string {
+	return d.Config.GoleakIgnoreFunctions
+}
+
+// GoleakOtherOptionCount returns the number of opaque options in
+// Config.GoleakOptions.
+func (d ConfigurableAcceptanceTestDriver) GoleakOtherOptionCount() int {
+	return len(d.Config.GoleakOptions)
 }
 
 func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T, op opencdc.Operation) opencdc.Record {
@@ -386,7 +414,7 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []
 	is := is.New(t)
 	rootCtx := d.Context()
 	if rootCtx == nil {
-		logger := zerolog.New(zerolog.NewTestWriter(t))
+		logger := newTestLogger(t)
 		rootCtx = logger.WithContext(context.Background())
 	}
 	ctx, cancel := context.WithCancel(rootCtx)
@@ -425,7 +453,7 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	is := is.New(t)
 	rootCtx := d.Context()
 	if rootCtx == nil {
-		logger := zerolog.New(zerolog.NewTestWriter(t))
+		logger := newTestLogger(t)
 		rootCtx = logger.WithContext(context.Background())
 	}
 	ctx, cancel := context.WithCancel(rootCtx)
@@ -492,18 +520,32 @@ func (d ConfigurableAcceptanceTestDriver) AcceptanceCapabilities() AcceptanceCap
 	return d.Config.Capabilities
 }
 
-// ReadAllFromDestination implements AcceptanceReadAllDriver. It opens the
-// source and reads until the source has been quiet for ReadTimeout, returning
-// everything including duplicates.
-func (d ConfigurableAcceptanceTestDriver) ReadAllFromDestination(t *testing.T) []opencdc.Record {
+// ReadAllFromSource returns everything the source reads, including
+// duplicates, if the driver opted in with Config.ReadAllFromSource; the second
+// result is false otherwise. It opens the source and reads until the source
+// has been quiet for ReadTimeout.
+//
+// It deliberately is not called ReadAllFromDestination: embedding this driver
+// must not satisfy AcceptanceReadAllDriver, because a driver that overrides
+// ReadFromDestination would then be read through the source behind its back.
+func (d ConfigurableAcceptanceTestDriver) ReadAllFromSource(t *testing.T) ([]opencdc.Record, bool) {
+	if !d.Config.ReadAllFromSource {
+		return nil, false
+	}
+	return d.readAllFromSource(t), true
+}
+
+func (d ConfigurableAcceptanceTestDriver) readAllOptedIn() bool { return d.Config.ReadAllFromSource }
+
+func (d ConfigurableAcceptanceTestDriver) readAllFromSource(t *testing.T) []opencdc.Record {
 	if d.Connector().NewSource == nil {
-		t.Fatal("connector is missing the field NewSource, either implement the source or overwrite the driver method ReadAllFromDestination")
+		t.Fatal("connector is missing the field NewSource, either implement the source or implement ReadAllFromDestination on the driver")
 	}
 
 	is := is.New(t)
 	rootCtx := d.Context()
 	if rootCtx == nil {
-		logger := zerolog.New(zerolog.NewTestWriter(t))
+		logger := newTestLogger(t)
 		rootCtx = logger.WithContext(context.Background())
 	}
 	ctx, cancel := context.WithCancel(rootCtx)
@@ -581,9 +623,20 @@ func (a acceptanceTest) Test(t *testing.T) {
 			continue
 		}
 		t.Run(testName, func(t *testing.T) {
+			skipReason := ""
+			if a.skip != nil {
+				skipReason = a.skip(testName)
+			}
 			if a.onResult != nil {
+				id, ok := coreTestIDs[testName]
+				if !ok {
+					t.Fatalf("v1 test %s has no stable ID, add it to coreTestIDs", testName)
+				}
 				start := time.Now()
-				res := AcceptanceCaseResult{ID: "CORE-" + strings.TrimPrefix(testName, "Test"), Name: testName}
+				res := AcceptanceCaseResult{ID: id, Name: testName}
+				if skipReason != "" {
+					res.SkipKind, res.Reason = SkipReplaced, skipReason
+				}
 				defer func() {
 					res.DurationSeconds = time.Since(start).Seconds()
 					switch {
@@ -596,14 +649,9 @@ func (a acceptanceTest) Test(t *testing.T) {
 					}
 					a.onResult(res)
 				}()
-				if a.skip != nil {
-					res.Reason = a.skip(testName)
-				}
 			}
-			if a.skip != nil {
-				if reason := a.skip(testName); reason != "" {
-					t.Skip(reason)
-				}
+			if skipReason != "" {
+				t.Skip(skipReason)
 			}
 			a.driver.BeforeTest(t)
 			defer a.driver.AfterTest(t)
@@ -704,6 +752,9 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 		}
 		// A wildcard parameter (e.g. collections.*.operations) is a pattern,
 		// not a key the config can contain, so it can't be removed from it.
+		if isRequired && strings.Contains(name, "*") {
+			t.Logf("not checking required parameter %q: it is a wildcard pattern, not a config key", name)
+		}
 		if isRequired && !strings.Contains(name, "*") {
 			// removing the required parameter from the config should provoke an error
 			t.Run(fmt.Sprintf("without required param: %s", name), func(t *testing.T) {
@@ -939,6 +990,9 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 		}
 		// A wildcard parameter (e.g. collections.*.operations) is a pattern,
 		// not a key the config can contain, so it can't be removed from it.
+		if isRequired && strings.Contains(name, "*") {
+			t.Logf("not checking required parameter %q: it is a wildcard pattern, not a config key", name)
+		}
 		if isRequired && !strings.Contains(name, "*") {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
@@ -1251,7 +1305,7 @@ func (a acceptanceTest) context(t *testing.T) context.Context {
 	ctx := a.driver.Context()
 	if ctx == nil {
 		// default is a context with a logger
-		logger := zerolog.New(zerolog.NewTestWriter(t))
+		logger := newTestLogger(t)
 		ctx = logger.WithContext(context.Background())
 	}
 	return ctx
@@ -1321,4 +1375,11 @@ func readOne(ctx context.Context, src Source) (opencdc.Record, error) {
 		return opencdc.Record{}, ErrBackoffRetry
 	}
 	return recs[0], nil
+}
+
+// newTestLogger returns a logger that writes to the test output at info level.
+// Trace and debug output of a busy connector can run to gigabytes in a test
+// log; set the Context of the driver for more.
+func newTestLogger(t *testing.T) zerolog.Logger {
+	return zerolog.New(zerolog.NewTestWriter(t)).Level(zerolog.InfoLevel)
 }

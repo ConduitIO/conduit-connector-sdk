@@ -48,6 +48,16 @@ func splitBatches(recs []opencdc.Record, size int) [][]opencdc.Record {
 	return out
 }
 
+// canReadAll reports whether the driver can return duplicates: it implements
+// AcceptanceReadAllDriver, or opted in through ReadAllFromSource.
+func (a *acceptanceV2) canReadAll() bool {
+	if _, ok := a.driver.(AcceptanceReadAllDriver); ok {
+		return true
+	}
+	c, ok := a.driver.(interface{ readAllOptedIn() bool })
+	return ok && c.readAllOptedIn()
+}
+
 // readAll returns everything stored in the destination. If the driver cannot
 // return duplicates it falls back to ReadFromDestination with the expected
 // records, which makes the caller's checks stricter.
@@ -55,6 +65,13 @@ func (a *acceptanceV2) readAll(t *testing.T, expected []opencdc.Record) []opencd
 	t.Helper()
 	if p, ok := a.driver.(AcceptanceReadAllDriver); ok {
 		return p.ReadAllFromDestination(t)
+	}
+	if p, ok := a.driver.(interface {
+		ReadAllFromSource(*testing.T) ([]opencdc.Record, bool)
+	}); ok {
+		if recs, ok := p.ReadAllFromSource(t); ok {
+			return recs
+		}
 	}
 	return a.driver.ReadFromDestination(t, expected)
 }
@@ -126,8 +143,11 @@ func (a *acceptanceV2) testDstPipelinedWrites(t *testing.T) {
 }
 
 // DST-02: the host receives acks slowly and the ack stream applies
-// backpressure to the plugin. A connector that holds a lock or blocks its
-// writer while the ack is delivered deadlocks here.
+// backpressure to the plugin. The acks are sent by the SDK's destination
+// adapter, not by the connector, so this case guards the adapter's ack path
+// (no deadlock, no lost or reordered ack under backpressure) together with the
+// connector's Write; a connector cannot block an ack, which is why no connector
+// mutant exists for it (see the design document).
 func (a *acceptanceV2) testDstSlowAcks(t *testing.T) {
 	d := a.openDest(t, v2DestOptions{respBuf: 0, ackDelay: 25 * time.Millisecond})
 
@@ -185,10 +205,30 @@ func (a *acceptanceV2) testDstBatchSizes(t *testing.T) {
 	}
 }
 
-// crashReplay writes a batch, kills the destination while writes are in flight,
-// checks that everything that was acked is stored, replays the whole batch on a
-// new instance and returns the number of duplicates after the replay.
-func (a *acceptanceV2) crashReplay(t *testing.T) (want []opencdc.Record, got []opencdc.Record) {
+// crashKillPoint is where in the stream the first destination instance is
+// killed.
+type crashKillPoint struct {
+	name string
+	// acked is how many batches must be acked before the kill. Negative means
+	// the kill follows the sends immediately, after a short random delay, which
+	// tends to land while the connector is inside Write.
+	acked int
+}
+
+var crashKillPoints = []crashKillPoint{
+	{"during_write", -1},
+	{"after_first_ack", 1},
+	{"after_half_acked", 10},
+}
+
+// crashReplay writes 200 records in 20 batches, kills the destination at the
+// given point, checks that everything acked is stored, replays the whole batch
+// on a new instance and returns what was written and what is stored.
+//
+// The durability check runs before Teardown. A connector that keeps acked
+// records in memory and flushes them in Teardown would otherwise be rescued by
+// the harness's own cleanup; a real kill -9 gives it no Teardown.
+func (a *acceptanceV2) crashReplay(t *testing.T, kp crashKillPoint) (want []opencdc.Record, got []opencdc.Record) {
 	want = a.generateRecords(t, opencdc.OperationCreate, 200)
 
 	d1 := a.openDest(t, v2DestOptions{})
@@ -198,17 +238,23 @@ func (a *acceptanceV2) crashReplay(t *testing.T) (want []opencdc.Record, got []o
 			t.Fatalf("send failed: %v", err)
 		}
 	}
-	// wait for the first ack so the crash happens mid-stream, not before it
-	if err := d1.waitAcks(batches[0], a.ackTimeout(10)); err != nil {
+	if kp.acked < 0 {
+		time.Sleep(time.Duration(rand.Intn(4000)) * time.Microsecond) //nolint:gosec // jitter
+	} else if err := d1.waitAcks(flatten(batches[:kp.acked]), a.ackTimeout(10*kp.acked)); err != nil {
 		t.Fatalf("%v", err)
 	}
-	d1.crash()
+	if !d1.abort() {
+		t.Errorf("Run did not return within %v after the context was cancelled", abortTimeout)
+	}
 
 	// Invariant 1: whatever the first instance acknowledged is durably stored,
-	// even though it never got to shut down.
+	// although it never got to shut down.
 	acked, _ := d1.ackedRecords()
-	t.Logf("first instance acked %d of %d records before it was killed", len(acked), len(want))
-	a.requireStored(t, acked, "after the destination was killed")
+	t.Logf("kill point %s: first instance acked %d of %d records before it was killed", kp.name, len(acked), len(want))
+	a.requireStored(t, acked, "after the destination was killed ("+kp.name+")")
+	if err := d1.teardown(); err != nil {
+		t.Logf("Teardown after the kill returned %v", err)
+	}
 
 	// The host does not know which records made it, it replays all of them.
 	d2 := a.openDest(t, v2DestOptions{})
@@ -223,30 +269,59 @@ func (a *acceptanceV2) crashReplay(t *testing.T) (want []opencdc.Record, got []o
 	return want, a.readAll(t, want)
 }
 
-// DST-04: at-least-once. After a crash and a replay nothing is missing;
-// duplicates are tolerated because the connector made no idempotence claim.
-func (a *acceptanceV2) testDstCrashReplay(t *testing.T) {
-	want, got := a.crashReplay(t)
-	missing, dups, unexpected := v2Diff(want, got)
-	if len(missing) > 0 {
-		t.Fatalf("%d of %d records are missing after crash and replay (first: %q), that is data loss", len(missing), len(want), missing[0])
+// resetBetween gives the second and later iterations of a case a clean
+// destination, the way the driver does between cases.
+func (a *acceptanceV2) resetBetween(t *testing.T, iteration int) {
+	t.Helper()
+	if iteration == 0 {
+		return
 	}
-	if unexpected > 0 {
-		t.Fatalf("%d records were stored that were never written", unexpected)
-	}
-	t.Logf("replay produced %d duplicates of %d records (allowed, idempotence is not claimed)", dups, len(want))
+	a.driver.AfterTest(t)
+	a.driver.BeforeTest(t)
 }
 
-// DST-05: same as DST-04 for connectors that claim IdempotentWrites, where
-// duplicates are not allowed.
-func (a *acceptanceV2) testDstCrashReplayIdempotent(t *testing.T) {
-	want, got := a.crashReplay(t)
-	missing, dups, unexpected := v2Diff(want, got)
-	if len(missing) > 0 {
-		t.Fatalf("%d of %d records are missing after crash and replay (first: %q), that is data loss", len(missing), len(want), missing[0])
+func flatten(batches [][]opencdc.Record) []opencdc.Record {
+	var out []opencdc.Record
+	for _, b := range batches {
+		out = append(out, b...)
 	}
-	if dups > 0 || unexpected > 0 {
-		t.Fatalf("destination claims IdempotentWrites but replay left %d duplicates and %d unexpected records", dups, unexpected)
+	return out
+}
+
+// DST-04: at-least-once. After a crash and a replay nothing is missing;
+// duplicates are tolerated unless the connector claimed idempotence.
+func (a *acceptanceV2) testDstCrashReplay(t *testing.T) {
+	for i, kp := range crashKillPoints {
+		a.resetBetween(t, i)
+		want, got := a.crashReplay(t, kp)
+		missing, dups, unexpected := v2Diff(want, got)
+		if len(missing) > 0 {
+			t.Fatalf("%s: %d of %d records are missing after crash and replay (first: %q), that is data loss", kp.name, len(missing), len(want), missing[0])
+		}
+		if unexpected > 0 {
+			t.Fatalf("%s: %d records were stored that were never written", kp.name, unexpected)
+		}
+		t.Logf("%s: replay produced %d duplicates of %d records (allowed unless idempotence is claimed)", kp.name, dups, len(want))
+	}
+}
+
+// DST-05: same as DST-04 for connectors that claim idempotence, where
+// duplicates are not allowed. The claim cannot be verified with a driver that
+// cannot return duplicates, which fails the case.
+func (a *acceptanceV2) testDstCrashReplayIdempotent(t *testing.T) {
+	if !a.canReadAll() {
+		t.Fatal("the connector claims idempotent writes, but the driver cannot return duplicates and so cannot verify it: implement AcceptanceReadAllDriver on the driver or set ReadAllFromSource in its config")
+	}
+	for i, kp := range crashKillPoints {
+		a.resetBetween(t, i)
+		want, got := a.crashReplay(t, kp)
+		missing, dups, unexpected := v2Diff(want, got)
+		if len(missing) > 0 {
+			t.Fatalf("%s: %d of %d records are missing after crash and replay (first: %q), that is data loss", kp.name, len(missing), len(want), missing[0])
+		}
+		if dups > 0 || unexpected > 0 {
+			t.Fatalf("%s: destination claims idempotent writes but replay left %d duplicates and %d unexpected records", kp.name, dups, unexpected)
+		}
 	}
 }
 
@@ -356,7 +431,7 @@ func withAddedField(recs []opencdc.Record) []opencdc.Record {
 func (a *acceptanceV2) testDstSchemaEvolution(t *testing.T) {
 	base, ok := a.structuredRecords(t, 10)
 	if !ok {
-		t.Skip("driver generates raw payloads, schema evolution needs structured data (use GenerateStructuredData)")
+		t.Fatal("the connector claims a schema evolution policy, but the driver generates raw payloads and the case needs structured data (use GenerateStructuredData)")
 	}
 	before := base[:5]
 	after := withAddedField(base[5:])
@@ -493,17 +568,22 @@ func (a *acceptanceV2) testDstContextCancel(t *testing.T) {
 	if err := d.waitAcks(want[:10], a.ackTimeout(10)); err != nil {
 		t.Fatalf("%v", err)
 	}
+	time.Sleep(50 * time.Millisecond) // let the connector get into the next writes
 
 	start := time.Now()
-	d.crash()
-	if !d.runEnded(a.ackTimeout(0)) {
-		t.Fatalf("Run did not end within %v after the context was cancelled", a.ackTimeout(0))
+	ended := d.abort()
+	if !ended {
+		t.Errorf("Run did not end within %v after the context was cancelled", abortTimeout)
 	}
 	t.Logf("plugin ended %v after cancellation", time.Since(start).Round(time.Millisecond))
 
+	// check what is durable before Teardown, see crashReplay
 	acked, _ := d.ackedRecords()
 	if !a.caps.Destination.WriteOnly {
 		a.requireStored(t, acked, "after context cancellation")
+	}
+	if err := d.teardown(); err != nil {
+		t.Logf("Teardown after cancellation returned %v", err)
 	}
 }
 

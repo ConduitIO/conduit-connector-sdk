@@ -36,14 +36,54 @@ func (a *acceptanceV2) readTimeoutFor(n int) time.Duration {
 	return d + time.Duration(n)*2*time.Millisecond
 }
 
-// requireRead reads exactly len(want) records from s (more than that is
-// reported by the caller if it cares) and fails if any of want is missing.
+// requireRead reads len(want) records from s, then keeps reading until the
+// source has been quiet for ReadTimeout, so that an extra record (a repeat of an
+// earlier one, a record nobody wrote) is seen instead of taking the place of a
+// missing one. It fails if any of want is missing or if records were delivered
+// that were never written. A record delivered twice is at-least-once and is
+// only logged; SRC-02 is the case that requires exactly one delivery, see
+// requireReadOnce. The failure message reports missing and unexpected records
+// separately, because they point at different bugs.
 func (a *acceptanceV2) requireRead(t *testing.T, s *v2Src, want []opencdc.Record) []opencdc.Record {
 	t.Helper()
+	return a.readAndCheck(t, s, want, false)
+}
+
+// requireReadOnce is requireRead that also fails on a record delivered twice.
+func (a *acceptanceV2) requireReadOnce(t *testing.T, s *v2Src, want []opencdc.Record) []opencdc.Record {
+	t.Helper()
+	return a.readAndCheck(t, s, want, true)
+}
+
+func (a *acceptanceV2) readAndCheck(t *testing.T, s *v2Src, want []opencdc.Record, once bool) []opencdc.Record {
+	t.Helper()
 	got := s.next(len(want), a.readTimeoutFor(len(want)))
-	missing, _, _ := v2Diff(want, got)
-	if len(missing) > 0 {
-		t.Fatalf("source returned %d of %d records, %d are missing (first: %q)", len(got), len(want), len(missing), missing[0])
+	got = append(got, s.drain(len(want), a.driver.ReadTimeout())...)
+	// A repeat of a record this session delivered in an earlier read is a
+	// duplicate, not a record nobody wrote.
+	fresh := make([]opencdc.Record, 0, len(got))
+	repeats := 0
+	for _, r := range got {
+		if _, ok := s.known[v2ID(r)]; ok {
+			repeats++
+			continue
+		}
+		fresh = append(fresh, r)
+	}
+	missing, dups, unexpected := v2Diff(want, fresh)
+	dups += repeats
+	for _, r := range fresh {
+		s.known[v2ID(r)] = struct{}{}
+	}
+	if len(missing) > 0 || unexpected > 0 || (once && dups > 0) {
+		first := ""
+		if len(missing) > 0 {
+			first = fmt.Sprintf(" (first missing: %q)", missing[0])
+		}
+		t.Fatalf("source returned %d records for %d written: %d missing, %d duplicated, %d unexpected%s", len(got), len(want), len(missing), dups, unexpected, first)
+	}
+	if dups > 0 {
+		t.Logf("source delivered %d records twice (allowed, SRC-02 requires exactly one delivery)", dups)
 	}
 	return got
 }
@@ -54,7 +94,17 @@ func (a *acceptanceV2) requireRead(t *testing.T, s *v2Src, want []opencdc.Record
 // withhold acks on purpose must send them.
 func (a *acceptanceV2) requireReadAck(t *testing.T, s *v2Src, want []opencdc.Record) []opencdc.Record {
 	t.Helper()
-	got := a.requireRead(t, s, want)
+	return a.ackAfter(t, s, a.requireRead(t, s, want))
+}
+
+// requireReadOnceAck is requireReadOnce followed by acking what was read.
+func (a *acceptanceV2) requireReadOnceAck(t *testing.T, s *v2Src, want []opencdc.Record) []opencdc.Record {
+	t.Helper()
+	return a.ackAfter(t, s, a.requireReadOnce(t, s, want))
+}
+
+func (a *acceptanceV2) ackAfter(t *testing.T, s *v2Src, got []opencdc.Record) []opencdc.Record {
+	t.Helper()
 	if err := s.ack(got...); err != nil {
 		t.Fatalf("ack failed: %v", err)
 	}
@@ -155,10 +205,10 @@ func (a *acceptanceV2) testSrcBatchSizes(t *testing.T) {
 		}
 	}
 
-	checkPositions(a.requireReadAck(t, s, first))
+	checkPositions(a.requireReadOnceAck(t, s, first))
 	for _, n := range []int{100, a.caps.maxBatchSize()} {
 		want := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationCreate, n))
-		got := a.requireReadAck(t, s, want)
+		got := a.requireReadOnceAck(t, s, want)
 		checkPositions(got)
 		if _, dups, unexpected := v2Diff(want, got); dups > 0 || unexpected > 0 {
 			t.Fatalf("batch of %d: %d duplicates and %d unexpected records", n, dups, unexpected)
@@ -171,17 +221,35 @@ func (a *acceptanceV2) testSrcBatchSizes(t *testing.T) {
 
 // SRC-03: the source is killed several times at different points, with some
 // records acked and some only delivered. After each kill it resumes from the
-// last acked position. Across all runs every record must be delivered at least
-// once (no gap). Redelivery is allowed (at-least-once).
+// last acked position. Two things are checked:
+//
+//   - no gap: every record is either acked in some run or delivered by the
+//     final run. Records that were merely delivered before a kill do not count,
+//     the host never handled them;
+//   - bounded redelivery: a restart delivers at most MaxRedelivery records that
+//     were already acked (none with ExactResume). A source that ignores the
+//     position and starts over fails this even though it has no gap.
 func (a *acceptanceV2) testSrcCrashResume(t *testing.T) {
-	want := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationSnapshot, 40))
+	want := a.driver.WriteToSource(t, a.generateRecords(t, opencdc.OperationSnapshot, 100))
+	bound := a.caps.maxRedelivery()
 
 	var (
-		seen     []opencdc.Record
+		acked    []opencdc.Record // acked by some run, in order of first ack
+		ackedSet = map[string]struct{}{}
 		resumeAt opencdc.Position
 	)
+	countAcked := func(recs []opencdc.Record) int {
+		n := 0
+		for _, r := range recs {
+			if _, ok := ackedSet[v2ID(r)]; ok {
+				n++
+			}
+		}
+		return n
+	}
+
 	// read, ack, kill: (read this many, ack this many)
-	cycles := [][2]int{{10, 4}, {7, 7}, {15, 1}, {3, 0}}
+	cycles := [][2]int{{30, 25}, {30, 20}, {20, 5}, {5, 0}}
 	for i, c := range cycles {
 		s := a.openSrc(t, resumeAt)
 		if i == len(cycles)-1 {
@@ -190,27 +258,42 @@ func (a *acceptanceV2) testSrcCrashResume(t *testing.T) {
 			want = append(want, cdc...)
 		}
 		got := s.next(c[0], a.readTimeoutFor(c[0]))
-		seen = append(seen, got...)
+
+		if redelivered := countAcked(got); redelivered > bound {
+			t.Fatalf("cycle %d: after resuming from the last acked position the source delivered %d records that were already acked (allowed: %d, ExactResume=%v); a source that restarts from the beginning does this",
+				i, redelivered, bound, a.caps.Source.ExactResume)
+		}
+
 		if c[1] > 0 && len(got) >= c[1] {
 			if err := s.ack(got[:c[1]]...); err != nil {
 				t.Fatalf("cycle %d: ack failed: %v", i, err)
 			}
 			resumeAt = got[c[1]-1].Position
-			// give the connector the chance to process the ack, the kill is
-			// meant to land after it
-			time.Sleep(100 * time.Millisecond)
+			// the kill must land after the connector processed the ack, not
+			// while it is still in the stream
+			if err := s.waitAckProcessed(resumeAt, a.readTimeoutFor(0)); err != nil {
+				t.Fatalf("cycle %d: %v", i, err)
+			}
+			for _, r := range got[:c[1]] {
+				if _, ok := ackedSet[v2ID(r)]; !ok {
+					ackedSet[v2ID(r)] = struct{}{}
+					acked = append(acked, r)
+				}
+			}
 		}
 		t.Logf("cycle %d: read %d, acked %d, killing source", i, len(got), c[1])
 		s.crash()
 	}
 
 	s := a.openSrc(t, resumeAt)
-	rest := s.drainAck(len(want)*2, a.driver.ReadTimeout())
-	seen = append(seen, rest...)
+	final := s.drainAck(len(want)*2, a.driver.ReadTimeout())
 	if err := s.stopGraceful(); err != nil {
 		t.Fatalf("graceful shutdown failed: %v", err)
 	}
-	requireNoGap(t, want, seen, "after repeated kill and resume")
+	requireNoGap(t, want, append(append([]opencdc.Record{}, acked...), final...), "after repeated kill and resume")
+	if redelivered := countAcked(final); redelivered > bound {
+		t.Fatalf("final run: the source delivered %d records that were already acked (allowed: %d)", redelivered, bound)
+	}
 }
 
 // SRC-04: records of one key are delivered in the order they were written.
@@ -230,7 +313,7 @@ func (a *acceptanceV2) testSrcOrdering(t *testing.T) {
 func (a *acceptanceV2) testSrcSchemaEvolution(t *testing.T) {
 	base, ok := a.structuredRecords(t, 10)
 	if !ok {
-		t.Skip("driver generates raw payloads, schema evolution needs structured data (use GenerateStructuredData)")
+		t.Fatal("the connector claims schema evolution, but the driver generates raw payloads and the case needs structured data (use GenerateStructuredData)")
 	}
 	before := a.driver.WriteToSource(t, base[:5])
 
