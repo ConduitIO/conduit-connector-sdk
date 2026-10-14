@@ -348,7 +348,11 @@ func (d *refDestination) Write(_ context.Context, recs []opencdc.Record) (int, e
 	if refMutant() == "dest_ignores_ctx" && call >= 2 {
 		time.Sleep(25 * time.Second) // a Write that never looks at its context
 	}
-	if refMutant() == "dest_nacks_under_load" && refWritten.Add(int64(len(recs))) > 1000 {
+	// The threshold is one batch of DST-11 (100 records), not a count that
+	// depends on how fast the machine is: with 1000 a slow run (-race, the
+	// mutants in parallel) sent fewer records in the throughput window and the
+	// mutant passed.
+	if refMutant() == "dest_nacks_under_load" && refWritten.Add(int64(len(recs))) > 100 {
 		return 0, errors.New("overloaded")
 	}
 
