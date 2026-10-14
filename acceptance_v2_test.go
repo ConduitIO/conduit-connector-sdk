@@ -37,9 +37,14 @@ import (
 // suite must fail it on the case that is meant to catch it. A suite that passes
 // broken connectors is worse than none.
 //
-// Mutants run in a subprocess (the test binary itself), because a failing
-// suite cannot be observed from inside the process that runs it. Each
-// subprocess runs only the case that is supposed to catch the mutant.
+// Every run of the suite happens in a subprocess (the test binary itself,
+// running only TestAcceptanceV2_Reference). For mutants that is because a
+// failing suite cannot be observed from inside the process that runs it, and
+// each subprocess runs only the case that is supposed to catch the mutant. For
+// the runs that must pass it is because the suite checks for leaked goroutines:
+// in the parent process it would see goroutines left behind by the other tests
+// of this package, so the result would depend on test order (-shuffle,
+// -count). The parent checks the report the subprocess writes.
 
 func refDriver(t *testing.T, caps AcceptanceCapabilities) AcceptanceTestDriver {
 	store := strings.ReplaceAll(t.Name(), "/", "_")
@@ -96,9 +101,57 @@ func refCapabilities() AcceptanceCapabilities {
 	return caps
 }
 
-// TestAcceptanceV2_Reference is the entry point for the mutant subprocesses.
+const (
+	// refChildEnv marks the subprocess. TestAcceptanceV2_Reference runs only
+	// there, never in the parent test process.
+	refChildEnv = "ACCEPTANCE_V2_REF_CHILD"
+	// refScenarioEnv selects the driver setup of a run that must pass.
+	refScenarioEnv = "ACCEPTANCE_V2_REF_SCENARIO"
+)
+
+// TestAcceptanceV2_Reference is the entry point for the subprocesses. The
+// claims, the mutant and the scenario come from the environment.
 func TestAcceptanceV2_Reference(t *testing.T) {
-	AcceptanceTestV2(t, refDriver(t, refCapabilities()))
+	if os.Getenv(refChildEnv) != "1" {
+		t.Skip("runs only as a subprocess of the other TestAcceptanceV2_* tests")
+	}
+	switch sc := os.Getenv(refScenarioEnv); sc {
+	case "":
+		AcceptanceTestV2(t, refDriver(t, refCapabilities()))
+	case "reject":
+		caps := refCapabilities()
+		caps.Source.SchemaEvolution = SchemaEvolutionNone
+		AcceptanceTestV2(t, refDriver(t, caps))
+	case "unclaimed":
+		AcceptanceTestV2(t, refDriver(t, AcceptanceCapabilities{ThroughputDuration: 200 * time.Millisecond, MaxBatchSize: 200}))
+	case "driver_skip_dst01":
+		d := refDriver(t, AcceptanceCapabilities{ThroughputDuration: 100 * time.Millisecond, MaxBatchSize: 100}).(ConfigurableAcceptanceTestDriver)
+		d.Config.Skip = []string{`DST-01`}
+		AcceptanceTestV2(t, d)
+	default:
+		t.Fatalf("unknown %s %q", refScenarioEnv, sc)
+	}
+}
+
+// refChild returns a command that runs the test binary as a subprocess with
+// the given -test.run pattern and extra environment.
+func refChild(run string, env ...string) *exec.Cmd {
+	cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run="+run, "-test.v=true")
+	cmd.Env = append(append(os.Environ(), refChildEnv+"=1"), env...)
+	return cmd
+}
+
+// runRefSuite runs the full suite in a subprocess, fails the test if the run
+// fails, and returns the report it wrote.
+func runRefSuite(t *testing.T, scenario, claims string) *AcceptanceReport {
+	t.Helper()
+	report := filepath.Join(t.TempDir(), "report.json")
+	cmd := refChild("^TestAcceptanceV2_Reference$",
+		refScenarioEnv+"="+scenario, refClaimsEnv+"="+claims, refMutantEnv+"=", AcceptanceReportEnv+"="+report)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("the suite failed on the reference connector: %v\n%s", err, tail(string(out), 8000))
+	}
+	return readReport(t, report)
 }
 
 func readReport(t *testing.T, path string) *AcceptanceReport {
@@ -115,14 +168,9 @@ func readReport(t *testing.T, path string) *AcceptanceReport {
 }
 
 func TestAcceptanceV2_ReferencePasses(t *testing.T) {
-	t.Setenv(refClaimsEnv, "idempotent,ordering,exact")
-	report := filepath.Join(t.TempDir(), "report.json")
-	t.Setenv(AcceptanceReportEnv, report)
-
-	// registered first so that it runs after the report was written
-	t.Cleanup(func() {
+	rep := runRefSuite(t, "", "idempotent,ordering,exact")
+	{
 		is := is.New(t)
-		rep := readReport(t, report)
 		is.Equal(rep.ReportSchemaVersion, ReportSchemaVersion)
 		is.Equal(rep.SuiteVersion, 2)
 		is.Equal(rep.SuiteRevision, AcceptanceSuiteV2Revision)
@@ -159,25 +207,20 @@ func TestAcceptanceV2_ReferencePasses(t *testing.T) {
 		is.Equal(v2, len(v2Cases()))
 		is.Equal(core, len(coreTestIDs))
 		is.Equal(len(rep.Metrics), 2) // both throughput checks recorded a number
-	})
-
-	AcceptanceTestV2(t, refDriver(t, refCapabilities()))
+	}
 }
 
 func TestAcceptanceV2_ReferenceRejectPolicyPasses(t *testing.T) {
-	t.Setenv(refClaimsEnv, "reject")
-	caps := refCapabilities()
-	caps.Source.SchemaEvolution = SchemaEvolutionNone
-	AcceptanceTestV2(t, refDriver(t, caps))
+	rep := runRefSuite(t, "reject", "reject")
+	if !rep.Finished || !rep.Passed {
+		t.Fatalf("report: finished=%v passed=%v", rep.Finished, rep.Passed)
+	}
 }
 
 func TestAcceptanceV2_UnclaimedCapabilitiesAreSkipped(t *testing.T) {
-	report := filepath.Join(t.TempDir(), "report.json")
-	t.Setenv(AcceptanceReportEnv, report)
-
-	t.Cleanup(func() {
+	rep := runRefSuite(t, "unclaimed", "")
+	{
 		is := is.New(t)
-		rep := readReport(t, report)
 		skipped := map[string]AcceptanceCaseResult{}
 		for _, c := range rep.Cases {
 			if c.Outcome == AcceptanceOutcomeSkipped && !strings.HasPrefix(c.ID, "CORE-") {
@@ -198,9 +241,7 @@ func TestAcceptanceV2_UnclaimedCapabilitiesAreSkipped(t *testing.T) {
 				is.Equal(c.SkipKind, SkipReplaced)
 			}
 		}
-	})
-
-	AcceptanceTestV2(t, refDriver(t, AcceptanceCapabilities{ThroughputDuration: 200 * time.Millisecond, MaxBatchSize: 200}))
+	}
 }
 
 func TestAcceptanceV2_SDKVersionFromPath(t *testing.T) {
@@ -235,12 +276,9 @@ func TestAcceptanceV2_SDKVersionFromPath(t *testing.T) {
 
 // A BeforeTest skip by the driver must not produce a passing report.
 func TestAcceptanceV2_DriverSkipIsUnexplained(t *testing.T) {
-	report := filepath.Join(t.TempDir(), "report.json")
-	t.Setenv(AcceptanceReportEnv, report)
-
-	t.Cleanup(func() {
+	rep := runRefSuite(t, "driver_skip_dst01", "")
+	{
 		is := is.New(t)
-		rep := readReport(t, report)
 		var found bool
 		for _, c := range rep.Cases {
 			if c.ID == "DST-01" {
@@ -252,11 +290,7 @@ func TestAcceptanceV2_DriverSkipIsUnexplained(t *testing.T) {
 		is.True(found)
 		is.True(rep.UnexplainedSkips >= 1)
 		is.True(!rep.Passed) // skipped by the driver, nothing failed
-	})
-
-	d := refDriver(t, AcceptanceCapabilities{ThroughputDuration: 100 * time.Millisecond, MaxBatchSize: 100}).(ConfigurableAcceptanceTestDriver)
-	d.Config.Skip = []string{`DST-01`}
-	AcceptanceTestV2(t, d)
+	}
 }
 
 // A case that skips itself has its reason recorded, and the skip counts as
@@ -299,8 +333,7 @@ func TestAcceptanceV2_ReportIsWrittenAtStart(t *testing.T) {
 // A filtered run must be reported as incomplete.
 func TestAcceptanceV2_FilteredRunIsIncomplete(t *testing.T) {
 	report := filepath.Join(t.TempDir(), "report.json")
-	cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestAcceptanceV2_Reference$/^V2$/^DST-01$")
-	cmd.Env = append(os.Environ(), AcceptanceReportEnv+"="+report)
+	cmd := refChild("^TestAcceptanceV2_Reference$/^V2$/^DST-01$", refClaimsEnv+"=", refMutantEnv+"=", AcceptanceReportEnv+"="+report)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("the filtered run itself should pass: %v\n%s", err, tail(string(out), 2000))
 	}
@@ -499,8 +532,7 @@ func TestAcceptanceV2_Mutants(t *testing.T) {
 	for _, m := range mutants {
 		t.Run(m.mutant+"/"+m.failing+"/"+m.claims, func(t *testing.T) {
 			t.Parallel()
-			cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestAcceptanceV2_Reference$/^V2$/^"+m.failing+"$", "-test.v=true")
-			cmd.Env = append(os.Environ(), refMutantEnv+"="+m.mutant, refClaimsEnv+"="+m.claims)
+			cmd := refChild("^TestAcceptanceV2_Reference$/^V2$/^"+m.failing+"$", refMutantEnv+"="+m.mutant, refClaimsEnv+"="+m.claims)
 			var out bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &out, &out
 			err := cmd.Run()
@@ -518,8 +550,7 @@ func TestAcceptanceV2_Mutants(t *testing.T) {
 // returns whether it passed, with the output.
 func runRefCase(t *testing.T, mutant, claims, redeliver, caseID string) (bool, string) {
 	t.Helper()
-	cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestAcceptanceV2_Reference$/^V2$/^"+caseID+"$", "-test.v=true")
-	cmd.Env = append(os.Environ(), refMutantEnv+"="+mutant, refClaimsEnv+"="+claims, "ACCEPTANCE_V2_REF_REDELIVER="+redeliver)
+	cmd := refChild("^TestAcceptanceV2_Reference$/^V2$/^"+caseID+"$", refMutantEnv+"="+mutant, refClaimsEnv+"="+claims, "ACCEPTANCE_V2_REF_REDELIVER="+redeliver)
 	out, err := cmd.CombinedOutput()
 	return err == nil, string(out)
 }
