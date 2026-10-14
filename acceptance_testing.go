@@ -124,7 +124,6 @@ type AcceptanceTestDriver interface {
 // without the need of implementing a custom driver from scratch.
 type ConfigurableAcceptanceTestDriver struct {
 	Config ConfigurableAcceptanceTestDriverConfig
-	rand   *rand.Rand
 }
 
 // ConfigurableAcceptanceTestDriverConfig contains the configuration for
@@ -152,6 +151,19 @@ type ConfigurableAcceptanceTestDriverConfig struct {
 	// GoleakOptions will be applied to goleak.VerifyNone. Can be used to
 	// suppress false positive goroutine leaks.
 	GoleakOptions []goleak.Option
+	// GoleakIgnoreFunctions is like GoleakOptions with goleak.IgnoreAnyFunction
+	// for each name, and the names are written to the acceptance report. Prefer
+	// it over GoleakOptions: goleak options are opaque, so a registry can only
+	// see that they exist, not what they hide.
+	GoleakIgnoreFunctions []string
+
+	// ReadAllFromSource makes the driver implement reading everything stored in
+	// the destination (duplicates included) by opening the source and reading
+	// until it has been quiet for ReadTimeout. It is an explicit opt-in used by
+	// AcceptanceTestV2 and is only right if the source reads exactly what the
+	// destination wrote. A driver that overrides ReadFromDestination must
+	// implement AcceptanceReadAllDriver itself instead.
+	ReadAllFromSource bool
 
 	// Skip is a slice of regular expressions used to identify tests that should
 	// be skipped. The full test name will be matched against all regular
@@ -174,6 +186,10 @@ type ConfigurableAcceptanceTestDriverConfig struct {
 	// default timeout is 5 seconds. This value should be changed only if there
 	// is a good reason (uncontrollable limitations of the 3rd party system).
 	WriteTimeout time.Duration
+
+	// Capabilities declares the optional claims of the connector. It is only
+	// used by AcceptanceTestV2, AcceptanceTest ignores it.
+	Capabilities AcceptanceCapabilities
 }
 
 // GenerateDataType is used in acceptance tests to control what data type will
@@ -227,7 +243,22 @@ func (d ConfigurableAcceptanceTestDriver) Skip(t *testing.T) {
 }
 
 func (d ConfigurableAcceptanceTestDriver) GoleakOptions(_ *testing.T) []goleak.Option {
-	return d.Config.GoleakOptions
+	opts := append([]goleak.Option(nil), d.Config.GoleakOptions...)
+	for _, f := range d.Config.GoleakIgnoreFunctions {
+		opts = append(opts, goleak.IgnoreAnyFunction(f))
+	}
+	return opts
+}
+
+// GoleakIgnoredFunctions returns the names in Config.GoleakIgnoreFunctions.
+func (d ConfigurableAcceptanceTestDriver) GoleakIgnoredFunctions() []string {
+	return d.Config.GoleakIgnoreFunctions
+}
+
+// GoleakOtherOptionCount returns the number of opaque options in
+// Config.GoleakOptions.
+func (d ConfigurableAcceptanceTestDriver) GoleakOtherOptionCount() int {
+	return len(d.Config.GoleakOptions)
 }
 
 func (d ConfigurableAcceptanceTestDriver) GenerateRecord(t *testing.T, op opencdc.Operation) opencdc.Record {
@@ -316,14 +347,33 @@ func (d ConfigurableAcceptanceTestDriver) GenerateValue(t *testing.T) interface{
 	panic("bug in random value generation")
 }
 
-// getRand returns a new rand.Rand, with its seed set to current Unix time in nanoseconds.
-// The method exists so that users of ConfigurableAcceptanceTestDriver do not have to do it themselves.
-// (Most of the time, a custom configuration is not needed anyway.)
+// getRand returns a rand.Rand that is safe for concurrent use. The driver has
+// value receivers, so a per-driver generator can never be cached; creating and
+// seeding a new one on every call cost ~4ms per generated record, which made
+// generating the 10000 records of the v2 batch tests take over 40 seconds. All
+// drivers share one generator seeded at startup instead.
 func (d ConfigurableAcceptanceTestDriver) getRand() *rand.Rand {
-	if d.rand == nil {
-		d.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
-	}
-	return d.rand
+	return sharedAcceptanceRand
+}
+
+var sharedAcceptanceRand = rand.New(&lockedSource{src: rand.NewSource(time.Now().UnixNano())})
+
+// lockedSource makes a rand.Source safe for concurrent use.
+type lockedSource struct {
+	m   sync.Mutex
+	src rand.Source
+}
+
+func (s *lockedSource) Int63() int64 {
+	s.m.Lock()
+	defer s.m.Unlock()
+	return s.src.Int63()
+}
+
+func (s *lockedSource) Seed(seed int64) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.src.Seed(seed)
 }
 
 // randString generates a random string of length n.
@@ -364,7 +414,7 @@ func (d ConfigurableAcceptanceTestDriver) WriteToSource(t *testing.T, records []
 	is := is.New(t)
 	rootCtx := d.Context()
 	if rootCtx == nil {
-		logger := zerolog.New(zerolog.NewTestWriter(t))
+		logger := newTestLogger(t)
 		rootCtx = logger.WithContext(context.Background())
 	}
 	ctx, cancel := context.WithCancel(rootCtx)
@@ -403,7 +453,7 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	is := is.New(t)
 	rootCtx := d.Context()
 	if rootCtx == nil {
-		logger := zerolog.New(zerolog.NewTestWriter(t))
+		logger := newTestLogger(t)
 		rootCtx = logger.WithContext(context.Background())
 	}
 	ctx, cancel := context.WithCancel(rootCtx)
@@ -437,7 +487,7 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 		defer readCancel()
 
 		for {
-			r, err := src.Read(readCtx)
+			r, err := readOne(readCtx, src)
 			if errors.Is(err, ErrBackoffRetry) {
 				// the plugin wants us to retry reading later
 				t.Logf("source returned backoff retry error, backing off for %v", b.Duration())
@@ -458,11 +508,82 @@ func (d ConfigurableAcceptanceTestDriver) ReadFromDestination(t *testing.T, reco
 	// try another read, there should be nothing so timeout after 1 second
 	readCtx, readCancel := context.WithTimeout(ctx, d.ReadTimeout())
 	defer readCancel()
-	r, err := src.Read(readCtx)
+	r, err := readOne(readCtx, src)
 	is.Equal(opencdc.Record{}, r) // record should be empty
 	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
 
 	return output
+}
+
+// AcceptanceCapabilities implements AcceptanceCapabilitiesProvider.
+func (d ConfigurableAcceptanceTestDriver) AcceptanceCapabilities() AcceptanceCapabilities {
+	return d.Config.Capabilities
+}
+
+// ReadAllFromSource returns everything the source reads, including
+// duplicates, if the driver opted in with Config.ReadAllFromSource; the second
+// result is false otherwise. It opens the source and reads until the source
+// has been quiet for ReadTimeout.
+//
+// It deliberately is not called ReadAllFromDestination: embedding this driver
+// must not satisfy AcceptanceReadAllDriver, because a driver that overrides
+// ReadFromDestination would then be read through the source behind its back.
+func (d ConfigurableAcceptanceTestDriver) ReadAllFromSource(t *testing.T) ([]opencdc.Record, bool) {
+	if !d.Config.ReadAllFromSource {
+		return nil, false
+	}
+	return d.readAllFromSource(t), true
+}
+
+func (d ConfigurableAcceptanceTestDriver) readAllOptedIn() bool { return d.Config.ReadAllFromSource }
+
+func (d ConfigurableAcceptanceTestDriver) readAllFromSource(t *testing.T) []opencdc.Record {
+	if d.Connector().NewSource == nil {
+		t.Fatal("connector is missing the field NewSource, either implement the source or implement ReadAllFromDestination on the driver")
+	}
+
+	is := is.New(t)
+	rootCtx := d.Context()
+	if rootCtx == nil {
+		logger := newTestLogger(t)
+		rootCtx = logger.WithContext(context.Background())
+	}
+	ctx, cancel := context.WithCancel(rootCtx)
+	defer cancel()
+
+	src := d.Connector().NewSource()
+	err := configureSource(ctx, src, d.SourceConfig(t), d.Connector().NewSpecification().SourceParams)
+	is.NoErr(err)
+	is.NoErr(src.Open(ctx, nil))
+	defer func() {
+		cancel()
+		is.NoErr(src.Teardown(rootCtx))
+	}()
+
+	var out []opencdc.Record
+	quiet := time.Now().Add(d.ReadTimeout()) // the source is done when it stays quiet this long
+	for time.Now().Before(quiet) {
+		readCtx, readCancel := context.WithDeadline(ctx, quiet)
+		r, err := readOne(readCtx, src)
+		readCancel()
+		switch {
+		case err == nil:
+			out = append(out, r)
+			quiet = time.Now().Add(d.ReadTimeout())
+		case errors.Is(err, ErrBackoffRetry):
+			// no data right now, ask again shortly
+			select {
+			case <-time.After(50 * time.Millisecond):
+			case <-ctx.Done():
+				return out
+			}
+		case errors.Is(err, context.DeadlineExceeded):
+			return out
+		default:
+			is.NoErr(err) // could not read from the source
+		}
+	}
+	return out
 }
 
 func (d ConfigurableAcceptanceTestDriver) ReadTimeout() time.Duration {
@@ -481,6 +602,13 @@ func (d ConfigurableAcceptanceTestDriver) WriteTimeout() time.Duration {
 
 type acceptanceTest struct {
 	driver AcceptanceTestDriver
+	// skip optionally returns a reason to skip the test with the given name.
+	// It is nil for AcceptanceTest and set by AcceptanceTestV2, which runs only
+	// the v1 tests that don't depend on how the harness reads and acks.
+	skip func(testName string) string
+	// onResult optionally receives the outcome of every test. Nil for
+	// AcceptanceTest.
+	onResult func(AcceptanceCaseResult)
 }
 
 // Test runs all acceptance tests.
@@ -495,6 +623,36 @@ func (a acceptanceTest) Test(t *testing.T) {
 			continue
 		}
 		t.Run(testName, func(t *testing.T) {
+			skipReason := ""
+			if a.skip != nil {
+				skipReason = a.skip(testName)
+			}
+			if a.onResult != nil {
+				id, ok := coreTestIDs[testName]
+				if !ok {
+					t.Fatalf("v1 test %s has no stable ID, add it to coreTestIDs", testName)
+				}
+				start := time.Now()
+				res := AcceptanceCaseResult{ID: id, Name: testName}
+				if skipReason != "" {
+					res.SkipKind, res.Reason = SkipReplaced, skipReason
+				}
+				defer func() {
+					res.DurationSeconds = time.Since(start).Seconds()
+					switch {
+					case t.Failed():
+						res.Outcome = AcceptanceOutcomeFailed
+					case t.Skipped():
+						res.Outcome = AcceptanceOutcomeSkipped
+					default:
+						res.Outcome = AcceptanceOutcomePassed
+					}
+					a.onResult(res)
+				}()
+			}
+			if skipReason != "" {
+				t.Skip(skipReason)
+			}
 			a.driver.BeforeTest(t)
 			defer a.driver.AfterTest(t)
 
@@ -592,7 +750,12 @@ func (a acceptanceTest) TestSource_Configure_RequiredParams(t *testing.T) {
 				break
 			}
 		}
-		if isRequired {
+		// A wildcard parameter (e.g. collections.*.operations) is a pattern,
+		// not a key the config can contain, so it can't be removed from it.
+		if isRequired && strings.Contains(name, "*") {
+			t.Logf("not checking required parameter %q: it is a wildcard pattern, not a config key", name)
+		}
+		if isRequired && !strings.Contains(name, "*") {
 			// removing the required parameter from the config should provoke an error
 			t.Run(fmt.Sprintf("without required param: %s", name), func(t *testing.T) {
 				haveCfg := a.cloneConfig(origCfg)
@@ -675,7 +838,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 	// try to read something to make sure the source is initialized
 	readCtx, cancel := context.WithTimeout(ctx, a.driver.ReadTimeout())
 	defer cancel()
-	_, err := source.Read(readCtx)
+	_, err := readOne(readCtx, source)
 	is.True(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackoffRetry))
 
 	// Write expectations after source is open, this means the source is already
@@ -825,7 +988,12 @@ func (a acceptanceTest) TestDestination_Configure_RequiredParams(t *testing.T) {
 				break
 			}
 		}
-		if isRequired {
+		// A wildcard parameter (e.g. collections.*.operations) is a pattern,
+		// not a key the config can contain, so it can't be removed from it.
+		if isRequired && strings.Contains(name, "*") {
+			t.Logf("not checking required parameter %q: it is a wildcard pattern, not a config key", name)
+		}
+		if isRequired && !strings.Contains(name, "*") {
 			// removing the required parameter from the config should provoke an error
 			t.Run(name, func(t *testing.T) {
 				haveCfg := a.cloneConfig(origCfg)
@@ -1003,7 +1171,7 @@ func (a acceptanceTest) readWithBackoffRetry(ctx context.Context, t *testing.T, 
 		Max:    time.Second,
 	}
 	for {
-		got, err := source.Read(ctx)
+		got, err := readOne(ctx, source)
 		if errors.Is(err, ErrBackoffRetry) {
 			// the plugin wants us to retry reading later
 			t.Logf("source returned backoff retry error, backing off for %v", b.Duration())
@@ -1137,7 +1305,7 @@ func (a acceptanceTest) context(t *testing.T) context.Context {
 	ctx := a.driver.Context()
 	if ctx == nil {
 		// default is a context with a logger
-		logger := zerolog.New(zerolog.NewTestWriter(t))
+		logger := newTestLogger(t)
 		ctx = logger.WithContext(context.Background())
 	}
 	return ctx
@@ -1189,4 +1357,29 @@ func configureDestination(ctx context.Context, dest Destination, cfgMap config.C
 	}
 
 	return nil
+}
+
+// readOne reads a single record. A source that implements only ReadN (a batch
+// source) returns ErrUnimplemented from Read, in that case this falls back to
+// ReadN with a batch size of 1, like the plugin adapter does.
+func readOne(ctx context.Context, src Source) (opencdc.Record, error) {
+	r, err := src.Read(ctx)
+	if !errors.Is(err, ErrUnimplemented) {
+		return r, err
+	}
+	recs, err := src.ReadN(ctx, 1)
+	if err != nil {
+		return opencdc.Record{}, err
+	}
+	if len(recs) == 0 {
+		return opencdc.Record{}, ErrBackoffRetry
+	}
+	return recs[0], nil
+}
+
+// newTestLogger returns a logger that writes to the test output at info level.
+// Trace and debug output of a busy connector can run to gigabytes in a test
+// log; set the Context of the driver for more.
+func newTestLogger(t *testing.T) zerolog.Logger {
+	return zerolog.New(zerolog.NewTestWriter(t)).Level(zerolog.InfoLevel)
 }

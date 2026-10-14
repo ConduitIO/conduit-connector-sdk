@@ -224,6 +224,43 @@ Here is an example how to do that:
 For more information about what behavior can be customized please refer to
 the [AcceptanceTestDriver] interface.
 
+# Acceptance tests v2
+
+[AcceptanceTestV2] runs the v1 tests unchanged and then the v2 tests, which
+drive the connector the way Conduit does (pipelined batches, asynchronous
+acks, Stop, Teardown) and check what v1 cannot see: that acked records are
+stored, that a crash and replay loses nothing, that batches of 1, 100 and
+10000 records work, that large records survive, that cancellation and a
+graceful stop do not hang or leak. Passing both groups is what "passed suite
+v2" means; [AcceptanceSuiteV2Revision] says which revision of the suite that
+was.
+
+	func TestAcceptanceV2(t *testing.T) {
+	  sdk.AcceptanceTestV2(t, sdk.ConfigurableAcceptanceTestDriver{
+	    Config: sdk.ConfigurableAcceptanceTestDriverConfig{
+	      Connector: Connector,
+	      SourceConfig: map[string]string{ … },
+	      DestinationConfig: map[string]string{ … },
+	      Capabilities: sdk.AcceptanceCapabilities{
+	        Destination: sdk.DestinationCapabilities{Idempotence: sdk.IdempotenceYes},
+	      },
+	    },
+	  })
+	}
+
+Some tests only make sense if the connector has a property, for example
+idempotent writes, ordering per key, exact resume or a schema evolution policy.
+They run only if the connector claims the property in [AcceptanceCapabilities],
+and a claim that is made is verified; a claim the suite cannot verify (for
+example idempotence with a driver that cannot return duplicates) fails the case
+instead of skipping it. Without claims only the baseline runs, and the report
+lists what was skipped. Source-only and sink-only connectors declare
+[SourceCapabilities.Synthetic] and [DestinationCapabilities.WriteOnly].
+
+Set the environment variable [AcceptanceReportEnv] to a file path to get a JSON
+[AcceptanceReport] with the suite revision, the claims, every test's outcome and
+the recorded throughput numbers. The throughput checks never fail a test.
+
 ¹Acceptance tests are currently still experimental.
 */
 package sdk
