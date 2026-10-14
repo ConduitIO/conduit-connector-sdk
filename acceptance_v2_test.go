@@ -133,10 +133,16 @@ func TestAcceptanceV2_Reference(t *testing.T) {
 	}
 }
 
+// refChildTimeout bounds one subprocess. The slowest child (the full suite,
+// or a mutant with the scaled redelivery data set) takes well under a minute.
+const refChildTimeout = 5 * time.Minute
+
 // refChild returns a command that runs the test binary as a subprocess with
-// the given -test.run pattern and extra environment.
-func refChild(run string, env ...string) *exec.Cmd {
-	cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run="+run, "-test.v=true")
+// the given -test.run pattern and extra environment. The child is killed when
+// the test that started it ends, and has its own -test.timeout, so a parent
+// that times out does not leave it running.
+func refChild(t *testing.T, run string, env ...string) *exec.Cmd {
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run="+run, "-test.v=true", "-test.timeout="+refChildTimeout.String())
 	cmd.Env = append(append(os.Environ(), refChildEnv+"=1"), env...)
 	return cmd
 }
@@ -146,7 +152,7 @@ func refChild(run string, env ...string) *exec.Cmd {
 func runRefSuite(t *testing.T, scenario, claims string) *AcceptanceReport {
 	t.Helper()
 	report := filepath.Join(t.TempDir(), "report.json")
-	cmd := refChild("^TestAcceptanceV2_Reference$",
+	cmd := refChild(t, "^TestAcceptanceV2_Reference$",
 		refScenarioEnv+"="+scenario, refClaimsEnv+"="+claims, refMutantEnv+"=", AcceptanceReportEnv+"="+report)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("the suite failed on the reference connector: %v\n%s", err, tail(string(out), 8000))
@@ -333,7 +339,7 @@ func TestAcceptanceV2_ReportIsWrittenAtStart(t *testing.T) {
 // A filtered run must be reported as incomplete.
 func TestAcceptanceV2_FilteredRunIsIncomplete(t *testing.T) {
 	report := filepath.Join(t.TempDir(), "report.json")
-	cmd := refChild("^TestAcceptanceV2_Reference$/^V2$/^DST-01$", refClaimsEnv+"=", refMutantEnv+"=", AcceptanceReportEnv+"="+report)
+	cmd := refChild(t, "^TestAcceptanceV2_Reference$/^V2$/^DST-01$", refClaimsEnv+"=", refMutantEnv+"=", AcceptanceReportEnv+"="+report)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("the filtered run itself should pass: %v\n%s", err, tail(string(out), 2000))
 	}
@@ -532,7 +538,7 @@ func TestAcceptanceV2_Mutants(t *testing.T) {
 	for _, m := range mutants {
 		t.Run(m.mutant+"/"+m.failing+"/"+m.claims, func(t *testing.T) {
 			t.Parallel()
-			cmd := refChild("^TestAcceptanceV2_Reference$/^V2$/^"+m.failing+"$", refMutantEnv+"="+m.mutant, refClaimsEnv+"="+m.claims)
+			cmd := refChild(t, "^TestAcceptanceV2_Reference$/^V2$/^"+m.failing+"$", refMutantEnv+"="+m.mutant, refClaimsEnv+"="+m.claims)
 			var out bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &out, &out
 			err := cmd.Run()
@@ -550,7 +556,7 @@ func TestAcceptanceV2_Mutants(t *testing.T) {
 // returns whether it passed, with the output.
 func runRefCase(t *testing.T, mutant, claims, redeliver, caseID string) (bool, string) {
 	t.Helper()
-	cmd := refChild("^TestAcceptanceV2_Reference$/^V2$/^"+caseID+"$", refMutantEnv+"="+mutant, refClaimsEnv+"="+claims, "ACCEPTANCE_V2_REF_REDELIVER="+redeliver)
+	cmd := refChild(t, "^TestAcceptanceV2_Reference$/^V2$/^"+caseID+"$", refMutantEnv+"="+mutant, refClaimsEnv+"="+claims, "ACCEPTANCE_V2_REF_REDELIVER="+redeliver)
 	out, err := cmd.CombinedOutput()
 	return err == nil, string(out)
 }
