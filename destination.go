@@ -595,8 +595,32 @@ func (w *writeStrategyBatch) Write(ctx context.Context, recs []opencdc.Record) e
 	}
 }
 
+// Flush writes the cached records, if any, and reports the result of the last
+// batch written.
+//
+// When nothing is cached, no new result is coming, so Flush must not wait for
+// one (ConduitIO/conduit#3092). That is the normal state after a drain: the
+// last Write either filled a batch and consumed its result itself, or the
+// delay timer flushed it and left the result buffered. A buffered result is
+// still reported, without waiting.
 func (w *writeStrategyBatch) Flush(ctx context.Context) error {
-	w.batcher.Flush()
+	if !w.batcher.Flush() {
+		select {
+		case result := <-w.batcher.Results():
+			Logger(ctx).Debug().
+				Int("batchSize", result.Size).
+				Time("at", result.At).Err(result.Err).
+				Msg("last batch was flushed asynchronously")
+			if result.Err != nil {
+				return fmt.Errorf("last batch write failed: %w", result.Err)
+			}
+		default:
+			// The last result was already consumed by Write.
+		}
+		return nil
+	}
+	// Invariant 1: the cached records were just written; their acks were sent
+	// by the write itself, so we only collect the result here.
 	select {
 	case result := <-w.batcher.Results():
 		Logger(ctx).Debug().

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"io"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -470,6 +471,136 @@ func TestDestinationPluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	req := pconnector.DestinationLifecycleOnDeletedRequest{Config: want}
 	_, err := dstPlugin.LifecycleOnDeleted(ctx, req)
 	is.NoErr(err)
+}
+
+// TestDestinationPluginAdapter_Stop_BatchDrained is the regression test for
+// ConduitIO/conduit#3092: with batching, Stop after a drain blocked in Flush
+// until its 1 minute timeout whenever the last record had filled a batch,
+// because Flush waited for the result of a flush that never happened. Conduit's
+// graceful shutdown then took a minute and failed with "context deadline
+// exceeded".
+//
+// Stop gets a generous deadline instead of the default one, so a regression
+// fails in seconds with that error instead of passing slowly; nothing here
+// waits on time.
+func TestDestinationPluginAdapter_Stop_BatchDrained(t *testing.T) {
+	recs := func(from, to int) []opencdc.Record {
+		var out []opencdc.Record
+		for i := from; i <= to; i++ {
+			out = append(out, opencdc.Record{
+				Position: opencdc.Position(strconv.Itoa(i)),
+				Payload:  opencdc.Change{After: opencdc.RawData("x")},
+			})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name  string
+		batch DestinationWithBatch
+		// sends are the Run requests, in order
+		sends [][]opencdc.Record
+		// acksBeforeStop are received before Stop is called (the drain)
+		acksBeforeStop int
+		// acksDuringStop are flushed by Stop itself
+		acksDuringStop int
+	}{{
+		// the #3092 case: the last record fills the batch, Write flushes it
+		// synchronously and consumes the result
+		name:           "last record fills the batch",
+		batch:          DestinationWithBatch{BatchSize: 5},
+		sends:          [][]opencdc.Record{recs(1, 1), recs(2, 2), recs(3, 3), recs(4, 4), recs(5, 5)},
+		acksBeforeStop: 5,
+	}, {
+		name:           "one request fills the batch",
+		batch:          DestinationWithBatch{BatchSize: 5, BatchDelay: time.Hour},
+		sends:          [][]opencdc.Record{recs(1, 5)},
+		acksBeforeStop: 5,
+	}, {
+		name:           "several full batches",
+		batch:          DestinationWithBatch{BatchSize: 2},
+		sends:          [][]opencdc.Record{recs(1, 1), recs(2, 2), recs(3, 3), recs(4, 4)},
+		acksBeforeStop: 4,
+	}, {
+		// the delay timer flushed the last batch; its result is still buffered
+		// and must be collected without waiting
+		name:           "delay timer flushed the last batch",
+		batch:          DestinationWithBatch{BatchSize: 100, BatchDelay: time.Millisecond},
+		sends:          [][]opencdc.Record{recs(1, 1), recs(2, 2), recs(3, 3)},
+		acksBeforeStop: 3,
+	}, {
+		// unchanged behavior: cached records are written by Stop
+		name:           "records still cached",
+		batch:          DestinationWithBatch{BatchSize: 100, BatchDelay: time.Hour},
+		sends:          [][]opencdc.Record{recs(1, 1), recs(2, 2), recs(3, 3)},
+		acksDuringStop: 3,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			dst := NewMockDestination(gomock.NewController(t))
+			plugin := NewDestinationPlugin(dst, pconnector.PluginConfig{}, nil).(*destinationPluginAdapter)
+
+			dst.EXPECT().Config().Return(nil)
+			dst.EXPECT().Open(gomock.Any()).Return(nil)
+			dst.EXPECT().Write(gomock.Any(), gomock.Any()).DoAndReturn(
+				func(_ context.Context, recs []opencdc.Record) (int, error) {
+					return len(recs), nil
+				}).AnyTimes()
+
+			ctx := context.Background()
+			_, err := plugin.Configure(ctx, pconnector.DestinationConfigureRequest{Config: config.Config{}})
+			is.NoErr(err)
+			_, err = plugin.Open(ctx, pconnector.DestinationOpenRequest{})
+			is.NoErr(err)
+			plugin.configureWriteStrategy((&destinationWithBatch{}).setBatchConfig(ctx, tc.batch))
+
+			stream := NewInMemoryDestinationRunStream(ctx)
+			runDone := make(chan error, 1)
+			go func() { runDone <- plugin.Run(ctx, stream) }()
+			client := stream.Client()
+
+			acks := make(chan pconnector.DestinationRunResponseAck, 1000)
+			go func() { // the in-memory stream is unbuffered: keep draining acks
+				for {
+					resp, err := client.Recv()
+					if err != nil {
+						return
+					}
+					for _, a := range resp.Acks {
+						acks <- a
+					}
+				}
+			}()
+			recvAcks := func(n int) {
+				t.Helper()
+				for range n {
+					a := <-acks
+					is.Equal(a.Error, "")
+				}
+			}
+
+			var last opencdc.Position
+			for _, s := range tc.sends {
+				is.NoErr(client.Send(pconnector.DestinationRunRequest{Records: s}))
+				last = s[len(s)-1].Position
+			}
+			recvAcks(tc.acksBeforeStop) // drained: everything sent so far is acked
+
+			stopCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			_, err = plugin.Stop(stopCtx, pconnector.DestinationStopRequest{LastPosition: last})
+			is.NoErr(err) // before the fix: "context deadline exceeded" when a batch was full
+			recvAcks(tc.acksDuringStop)
+
+			select {
+			case a := <-acks:
+				t.Fatalf("unexpected extra ack %q", a.Position)
+			default:
+			}
+
+			stream.Close(io.EOF)
+			is.NoErr(<-runDone)
+		})
+	}
 }
 
 // teardownFixture is a destination adapter whose first Write blocks inside the
