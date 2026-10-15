@@ -382,7 +382,7 @@ var pinnedRevisions = []struct {
 	sourceHash string
 	released   bool
 }{
-	{"2.0.0", "fd548736d83163b3800c31d6c3e997a0e18431a2856381d327c10df47cec3982", "unreleased", false},
+	{"2.0.0", "fd548736d83163b3800c31d6c3e997a0e18431a2856381d327c10df47cec3982", "20e6ec70d203b633a5036db29e515ad215e7ee6b7394e4ba42b6d1befe4df234", true}, // released in v0.16.0
 }
 
 func TestAcceptanceV2_CaseSetIsPinned(t *testing.T) {
