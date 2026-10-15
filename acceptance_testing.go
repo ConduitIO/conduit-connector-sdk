@@ -299,7 +299,7 @@ func (d ConfigurableAcceptanceTestDriver) GenerateData(t *testing.T) opencdc.Dat
 	case GenerateStructuredData:
 		data := opencdc.StructuredData{}
 		for {
-			data[d.randString(rand.Intn(1024)+32)] = d.GenerateValue(t)
+			data[d.randFieldName(rand.Intn(1024)+32)] = d.GenerateValue(t)
 			if rand.Int63()%2 == 0 {
 				// 50% chance we stop adding fields
 				break
@@ -374,6 +374,30 @@ func (s *lockedSource) Seed(seed int64) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.src.Seed(seed)
+}
+
+// randFieldName generates a random field name of length n that is a valid
+// Avro name ([A-Za-z_][A-Za-z0-9_]*). Field names go through source schema
+// extraction, which is on by default and derives an Avro schema from the
+// record, so a name Avro rejects would fail the run for a reason that has
+// nothing to do with the connector (ConduitIO/conduit-connector-sdk#395).
+// Field values are still drawn from the full printable range by randString.
+func (d ConfigurableAcceptanceTestDriver) randFieldName(n int) string {
+	const (
+		first = "ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"
+		rest  = first + "0123456789"
+	)
+	if n < 1 {
+		n = 1
+	}
+	rand := d.getRand()
+	sb := strings.Builder{}
+	sb.Grow(n)
+	sb.WriteByte(first[rand.Intn(len(first))])
+	for i := 1; i < n; i++ {
+		sb.WriteByte(rest[rand.Intn(len(rest))])
+	}
+	return sb.String()
 }
 
 // randString generates a random string of length n.
@@ -823,7 +847,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionSnapshot(t *testing.T) {
 		got = gotRemaining
 	}
 	is.NoErr(err)
-	a.isEqualRecords(is, want, got)
+	a.isEqualRecords(ctx, is, want, got)
 }
 
 func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
@@ -871,7 +895,7 @@ func (a acceptanceTest) TestSource_Open_ResumeAtPositionCDC(t *testing.T) {
 	is.NoErr(err)
 
 	got = append(got, gotRemaining...)
-	a.isEqualRecords(is, want, got)
+	a.isEqualRecords(ctx, is, want, got)
 }
 
 func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
@@ -903,7 +927,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 		is.NoErr(err) // could not read records using the source
 
 		isUniquePositions(t, got)
-		a.isEqualRecords(is, want, got)
+		a.isEqualRecords(ctx, is, want, got)
 	})
 
 	// while connector is running write more data and make sure the connector
@@ -918,7 +942,7 @@ func (a acceptanceTest) TestSource_Read_Success(t *testing.T) {
 		is.NoErr(err) // could not read records using the source
 
 		isUniquePositions(t, got)
-		a.isEqualRecords(is, want, got)
+		a.isEqualRecords(ctx, is, want, got)
 	})
 }
 
@@ -1036,7 +1060,7 @@ func (a acceptanceTest) TestDestination_Write_Success(t *testing.T) {
 	is.Equal(n, len(want))
 
 	got := a.driver.ReadFromDestination(t, want)
-	a.isEqualRecords(is, want, got)
+	a.isEqualRecords(ctx, is, want, got)
 }
 
 // processLifetimeGoroutines are goroutines that the SDK's dependencies start
@@ -1188,7 +1212,17 @@ func (a acceptanceTest) readWithBackoffRetry(ctx context.Context, t *testing.T, 
 }
 
 // isEqualRecords compares two record slices and disregards their order.
-func (a acceptanceTest) isEqualRecords(is *is.I, want, got []opencdc.Record) {
+func (a acceptanceTest) isEqualRecords(ctx context.Context, is *is.I, want, got []opencdc.Record) {
+	// Source schema extraction (on by default) encodes structured keys and
+	// payloads with the schema it attached. Decode them the way the
+	// destination side of a pipeline does before comparing, see
+	// decodeSchemaEncoded.
+	for i := range got {
+		rec, err := decodeSchemaEncoded(ctx, got[i])
+		is.NoErr(err) // a record with an attached schema could not be decoded with it
+		got[i] = rec
+	}
+
 	is.Equal(len(want), len(got)) // record number did not match
 
 	if len(want) == 0 {
@@ -1290,8 +1324,13 @@ func (a acceptanceTest) isEqualData(is *is.I, want, got opencdc.Data) {
 	_, wantIsStructured := want.(opencdc.StructuredData)
 	_, gotIsStructured := got.(opencdc.StructuredData)
 
+	if wantIsStructured && gotIsStructured {
+		// Compare values, not Go types: data decoded with a schema has the
+		// schema's types (an Avro long is an int64), the generator uses int.
+		is.Equal(normalizeStructured(want), normalizeStructured(got)) // data did not match (want != got)
+		return
+	}
 	if (wantIsRaw && gotIsRaw) ||
-		(wantIsStructured && gotIsStructured) ||
 		(want == nil || got == nil) {
 		// types match or data is nil, compare them directly
 		is.Equal(want, got) // data did not match (want != got)
@@ -1299,6 +1338,75 @@ func (a acceptanceTest) isEqualData(is *is.I, want, got opencdc.Data) {
 		// we have different types, compare content
 		is.Equal(want.Bytes(), got.Bytes()) // data did not match (want != got)
 	}
+}
+
+// decodeSchemaEncoded returns a copy of rec with the key and payload decoded
+// with the schemas that source schema extraction attached to it, exactly as
+// the destination side of a pipeline decodes them (the same code,
+// destinationWithSchemaExtraction). A record without an attached schema is
+// returned unchanged. The harness compares what a pipeline would deliver, not
+// the encoding on the wire; positions and metadata are untouched, so acks are
+// not affected.
+func decodeSchemaEncoded(ctx context.Context, rec opencdc.Record) (opencdc.Record, error) {
+	_, keyErr := rec.Metadata.GetKeySchemaSubject()
+	_, payloadErr := rec.Metadata.GetPayloadSchemaSubject()
+	hasKeySchema, hasPayloadSchema := keyErr == nil, payloadErr == nil
+	if !hasKeySchema && !hasPayloadSchema {
+		return rec, nil
+	}
+	rec = rec.Clone()
+	d := &destinationWithSchemaExtraction{}
+	if hasKeySchema {
+		if err := d.decodeKey(ctx, &rec); err != nil {
+			return rec, err
+		}
+	}
+	if hasPayloadSchema {
+		if err := d.decodePayload(ctx, &rec); err != nil {
+			return rec, err
+		}
+	}
+	return rec, nil
+}
+
+// normalizeStructured maps integer and float values of any width to int64 and
+// float64, recursively, so that structured data can be compared by value.
+func normalizeStructured(d opencdc.Data) any {
+	sd, ok := d.(opencdc.StructuredData)
+	if !ok {
+		return d
+	}
+	return normalizeValue(map[string]any(sd))
+}
+
+func normalizeValue(v any) any {
+	switch v := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, e := range v {
+			out[k] = normalizeValue(e)
+		}
+		return out
+	case opencdc.StructuredData:
+		return normalizeValue(map[string]any(v))
+	case []any:
+		out := make([]any, len(v))
+		for i, e := range v {
+			out[i] = normalizeValue(e)
+		}
+		return out
+	case int:
+		return int64(v)
+	case int8:
+		return int64(v)
+	case int16:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case float32:
+		return float64(v)
+	}
+	return v
 }
 
 func (a acceptanceTest) context(t *testing.T) context.Context {

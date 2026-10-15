@@ -630,6 +630,12 @@ func TestDestinationPluginAdapter_Teardown_AbandonedWrite(t *testing.T) {
 	destinationTeardownTimeout = 100 * time.Millisecond
 	t.Cleanup(func() { destinationTeardownTimeout = old })
 
+	// Goroutines parked in these frames before the test (for example a
+	// source adapter's waitForRun left behind on purpose by a stuck-Run
+	// source test) are not this test's leak (#405).
+	parkedFrames := []string{"closeAndWait", "csync.Run", "sync.(*WaitGroup).Wait"}
+	before := parkedGoroutines(parkedFrames)
+
 	is := is.New(t)
 	f := newTeardownFixture(t, false)
 	f.allowTeardownDuringWrite.Store(true)
@@ -648,12 +654,35 @@ func TestDestinationPluginAdapter_Teardown_AbandonedWrite(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	is.Equal(len(f.ackSnapshot()), 0)
 
-	// Giving up on the Write left no goroutine parked in the wait.
-	buf := make([]byte, 1<<20)
-	buf = buf[:runtime.Stack(buf, true)]
-	for _, frame := range []string{"closeAndWait", "csync.Run", "sync.(*WaitGroup).Wait"} {
-		if strings.Contains(string(buf), frame) {
-			t.Fatalf("a goroutine is still parked in %s after Teardown gave up:\n%s", frame, buf)
+	// Giving up on the Write left no new goroutine parked in the wait.
+	for id, stack := range parkedGoroutines(parkedFrames) {
+		if _, ok := before[id]; !ok {
+			t.Fatalf("a goroutine is still parked after Teardown gave up:\n%s", stack)
 		}
 	}
+}
+
+// parkedGoroutines returns the stacks of all goroutines whose stack contains
+// one of frames, keyed by their "goroutine N" header.
+func parkedGoroutines(frames []string) map[string]string {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	out := map[string]string{}
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		header, _, _ := strings.Cut(g, " [")
+		for _, frame := range frames {
+			if strings.Contains(g, frame) {
+				out[header] = g
+				break
+			}
+		}
+	}
+	return out
 }

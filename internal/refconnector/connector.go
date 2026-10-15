@@ -18,8 +18,9 @@
 // turns the SDK's CI red, instead of being found later by whichever connector
 // first runs the suite against the new SDK.
 //
-// It uses the SDK's default middleware (source schema extraction is off, see
-// NewSource). Its source and destination parameters are not written down
+// It uses the SDK's default middleware unchanged, including source schema
+// extraction, so the suite runs against the configuration connectors ship
+// with (#395). Its source and destination parameters are not written down
 // anywhere: the acceptance test derives them from the config structs with
 // specgen, the same way a real connector's connector.yaml is generated. It is
 // not a supported connector.

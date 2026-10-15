@@ -464,11 +464,16 @@ type v2Src struct {
 	runDone chan error
 	recvEnd chan struct{}
 
-	mu      sync.Mutex
-	got     []opencdc.Record
-	taken   int
-	known   map[string]struct{} // identities delivered in earlier requireRead calls
-	changed chan struct{}
+	mu  sync.Mutex
+	got []opencdc.Record
+	// decodeErr is the first record that carried an attached schema but
+	// could not be decoded with it. collect cannot report it (it may outlive
+	// the test); next does.
+	decodeErr         error
+	decodeErrReported bool
+	taken             int
+	known             map[string]struct{} // identities delivered in earlier requireRead calls
+	changed           chan struct{}
 
 	tornDown bool
 }
@@ -523,13 +528,35 @@ func (a *acceptanceV2) openSrc(t *testing.T, pos opencdc.Position) *v2Src {
 func (s *v2Src) collect() {
 	defer close(s.recvEnd)
 	client := s.stream.Client()
+	// Not a.context(s.t): this goroutine can outlive the test, and a logger
+	// bound to a finished test panics when used.
+	ctx := s.a.driver.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	for {
 		resp, err := client.Recv()
 		if err != nil {
 			return
 		}
+		recs := cloneRecords(resp.Records)
+		for i := range recs {
+			// Compare what a pipeline delivers: undo source schema
+			// extraction's encoding (see decodeSchemaEncoded). The position
+			// is untouched, so acks are unaffected.
+			rec, err := decodeSchemaEncoded(ctx, recs[i])
+			if err != nil {
+				s.mu.Lock()
+				if s.decodeErr == nil {
+					s.decodeErr = fmt.Errorf("record at position %q has an attached schema but cannot be decoded with it: %w", recs[i].Position, err)
+				}
+				s.mu.Unlock()
+				continue // compared undecoded, so it cannot match
+			}
+			recs[i] = rec
+		}
 		s.mu.Lock()
-		s.got = append(s.got, cloneRecords(resp.Records)...)
+		s.got = append(s.got, recs...)
 		close(s.changed)
 		s.changed = make(chan struct{})
 		s.mu.Unlock()
@@ -542,6 +569,10 @@ func (s *v2Src) next(n int, timeout time.Duration) []opencdc.Record {
 	deadline := time.After(timeout)
 	for {
 		s.mu.Lock()
+		if s.decodeErr != nil && !s.decodeErrReported {
+			s.decodeErrReported = true
+			s.t.Error(s.decodeErr)
+		}
 		avail := len(s.got) - s.taken
 		ch := s.changed
 		if avail >= n {
