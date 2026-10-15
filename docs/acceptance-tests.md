@@ -1,5 +1,8 @@
 # Acceptance tests
 
+> This is the original design discussion for acceptance suite v1. For suite v2,
+> the bar for "Conduit Certified", see [acceptance-tests-v2.md](acceptance-tests-v2.md).
+
 This document describes one possible approach for writing acceptance tests for
 Conduit connectors. We discovered the need to revisit this when integrating the
 OpenCDC record into the SDK, since the new record format fully enables the
