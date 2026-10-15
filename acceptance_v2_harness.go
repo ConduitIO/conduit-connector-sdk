@@ -59,8 +59,15 @@ func newV2Stream[REQ, RES any](ctx context.Context, reqBuf, respBuf int) *v2Stre
 	}
 }
 
+// errV2StreamClosed is what the plugin side of a v2Stream returns once the host
+// closed the stream. It matches io.EOF, which is what a gRPC stream returns and
+// what the SDK adapters treat as the normal end of a stream. Being its own
+// value lets crash tell an end of stream the harness caused from an io.EOF the
+// connector returned on its own (#406).
+var errV2StreamClosed = fmt.Errorf("stream closed by the acceptance harness: %w", io.EOF)
+
 // Close closes the stream. The host side sees reason (nil is io.EOF), the
-// plugin side sees io.EOF.
+// plugin side sees errV2StreamClosed, which matches io.EOF.
 func (s *v2Stream[REQ, RES]) Close(reason error) {
 	s.m.Lock()
 	defer s.m.Unlock()
@@ -119,7 +126,7 @@ func (s *v2StreamServer[REQ, RES]) Send(resp RES) error {
 	case <-s.ctx.Done():
 		return s.ctx.Err()
 	case <-s.stop:
-		return io.EOF
+		return errV2StreamClosed
 	case s.resp <- resp:
 		return nil
 	}
@@ -138,7 +145,7 @@ func (s *v2StreamServer[REQ, RES]) Recv() (REQ, error) {
 			return r, nil
 		default:
 		}
-		return zero, io.EOF
+		return zero, errV2StreamClosed
 	}
 }
 
@@ -427,6 +434,10 @@ func (d *v2Dest) teardown() error {
 //
 // A real kill -9 needs the standalone harness.
 func (d *v2Dest) abort() (runEnded bool) {
+	// Unlike v2Src.kill, the order is left as it is: what Run returns is not
+	// checked here, so it cannot be misreported (#406). Closing first gives the
+	// ack collector the chance to take acks that are already buffered before it
+	// sees the cancellation, and every ack it takes is checked to be durable.
 	d.stream.Close(context.Canceled)
 	d.cancel()
 	return d.runEnded(abortTimeout)
@@ -616,6 +627,10 @@ func (s *v2Src) stop() (opencdc.Position, error) {
 // stopGraceful runs Stop, closes the stream and tears down.
 func (s *v2Src) stopGraceful() error {
 	_, stopErr := s.stop()
+	// Closing after Stop cannot cause #406: Stop returns only once the read
+	// loop has ended, so nothing sends on the stream when it closes, and the
+	// ack loop treats the end of stream as the normal end. If Stop failed, that
+	// error is the one reported.
 	s.stream.Close(nil)
 	runErr := s.waitRun(v2StopTimeout)
 	tdErr := s.teardown()
@@ -648,7 +663,9 @@ func (s *v2Src) teardown() error {
 	s.mu.Unlock()
 
 	// close the stream first, Teardown waits for Run, which ends when the
-	// stream does
+	// stream does. The order cannot cause #406 here: what Run returns is not
+	// checked, Teardown reports only the connector's Teardown error, or that
+	// Run did not return in time.
 	s.stream.Close(nil)
 	ctx, cancel := context.WithTimeout(s.ctx, v2StopTimeout)
 	defer cancel()
@@ -669,13 +686,8 @@ func (s *v2Src) teardown() error {
 // the test by the cleanup registered in openSrc. It reports an error if Run does
 // not return.
 func (s *v2Src) crash() {
-	s.stream.Close(context.Canceled)
-	s.cancel()
-	if !s.runEnded(abortTimeout) {
-		s.t.Errorf("source Run did not return within %v after the context was cancelled", abortTimeout)
-	} else if err := s.runError(); err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "context canceled") {
-		// Run ended for a reason of its own before or while it was cancelled
-		s.t.Errorf("source Run failed: %v", err)
+	if err := s.kill(); err != nil {
+		s.t.Error(err)
 	}
 	s.a.mu.Lock()
 	s.a.crashed = append(s.a.crashed, s)
@@ -689,6 +701,41 @@ func (s *v2Src) crash() {
 		s.a.report.ProcessDeathHookCalls++
 		s.a.report.mu.Unlock()
 	}
+}
+
+// kill is the part of crash that ends Run: it cancels the context of Run,
+// closes the stream and waits (bounded) for Run to return. It returns an error
+// if Run did not return, or if it returned an error the kill does not explain.
+func (s *v2Src) kill() error {
+	// Cancel before closing, so that Run can see the cancellation first, the
+	// way it does when the process dies. Closing first made the SDK adapter
+	// end with "read stream error: EOF", which was reported as a failure of the
+	// connector (#406).
+	s.cancel()
+	s.stream.Close(context.Canceled)
+	if !s.runEnded(abortTimeout) {
+		return fmt.Errorf("source Run did not return within %v after the context was cancelled", abortTimeout)
+	}
+	if err := s.runError(); !crashEndExpected(err) {
+		// Run ended for a reason of its own before or while it was killed
+		return fmt.Errorf("source Run failed: %w", err)
+	}
+	return nil
+}
+
+// crashEndExpected reports whether err is a way for Run to end that kill
+// explains. The order in kill does not settle the race on its own: a goroutine
+// of the adapter that is not blocked when the context is cancelled finds both
+// the cancellation and the closed stream ready, and Go picks either. So the
+// close the harness caused is expected too. It is recognised by
+// errV2StreamClosed, not by io.EOF, so that a connector returning io.EOF is
+// still reported.
+func crashEndExpected(err error) bool {
+	return err == nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, errV2StreamClosed) ||
+		// a context error that crossed a boundary that does not wrap
+		strings.Contains(err.Error(), "context canceled")
 }
 
 // reapCrashed tears down the sources that were killed. A killed process loses
