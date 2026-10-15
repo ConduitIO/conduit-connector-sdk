@@ -893,6 +893,30 @@ type teardownFixture struct {
 
 	acksMu sync.Mutex
 	acks   []pconnector.DestinationRunResponseAck // every ack/nack seen on the stream
+	// acksSent counts acks/nacks as the adapter sends them, on the adapter's
+	// goroutine. Unlike acks (filled by the draining goroutine, which may not
+	// have run yet) it is up to date as soon as Run takes its next request.
+	acksSent atomic.Int32
+}
+
+// countingRunStream counts the acks the adapter sends before passing them on.
+type countingRunStream struct {
+	*InMemoryDestinationRunStream
+	sent *atomic.Int32
+}
+
+func (s countingRunStream) Server() pconnector.DestinationRunStreamServer {
+	return countingRunStreamServer{DestinationRunStreamServer: s.InMemoryDestinationRunStream.Server(), sent: s.sent}
+}
+
+type countingRunStreamServer struct {
+	pconnector.DestinationRunStreamServer
+	sent *atomic.Int32
+}
+
+func (s countingRunStreamServer) Send(resp pconnector.DestinationRunResponse) error {
+	s.sent.Add(int32(len(resp.Acks)))
+	return s.DestinationRunStreamServer.Send(resp)
 }
 
 func (f *teardownFixture) ackSnapshot() []pconnector.DestinationRunResponseAck {
@@ -952,7 +976,9 @@ func newTeardownFixture(t *testing.T, batch bool) *teardownFixture {
 	}
 
 	stream := NewInMemoryDestinationRunStream(ctx)
-	go func() { _ = f.plugin.Run(ctx, stream) }()
+	go func() {
+		_ = f.plugin.Run(ctx, countingRunStream{InMemoryDestinationRunStream: stream, sent: &f.acksSent})
+	}()
 	f.client = stream.Client()
 	go func() { // the in-memory stream is unbuffered: keep draining acks
 		for {
@@ -1048,15 +1074,27 @@ func TestDestinationPluginAdapter_Teardown_AbandonedWrite(t *testing.T) {
 
 	// The abandoned Write returns, successfully. Nothing is acked.
 	close(f.releaseWrite)
-	time.Sleep(300 * time.Millisecond)
-	is.Equal(len(f.ackSnapshot()), 0)
+	// Run handles one request at a time and sends acks on its own goroutine,
+	// so once it takes the next request it is done with the abandoned Write,
+	// and acksSent includes any ack it sent (no sleep:
+	// ConduitIO/conduit-connector-sdk#417). The request is refused, since
+	// Teardown started, and is not acked either.
+	is.NoErr(f.client.Send(pconnector.DestinationRunRequest{Records: []opencdc.Record{f.rec}}))
+	is.Equal(f.acksSent.Load(), int32(0))
 
-	// Giving up on the Write left no goroutine parked in the wait.
+	// Giving up on the Write left no goroutine parked in the wait. Only
+	// goroutines running adapter code count: the stack dump covers the whole
+	// test binary, and other tests' goroutines may sit in the same frames.
 	buf := make([]byte, 1<<20)
 	buf = buf[:runtime.Stack(buf, true)]
-	for _, frame := range []string{"closeAndWait", "csync.Run", "sync.(*WaitGroup).Wait"} {
-		if strings.Contains(string(buf), frame) {
-			t.Fatalf("a goroutine is still parked in %s after Teardown gave up:\n%s", frame, buf)
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		if !strings.Contains(g, "(*destinationPluginAdapter)") && !strings.Contains(g, "(*writeStrategySingle)") {
+			continue
+		}
+		for _, frame := range []string{"closeAndWait", "csync.Run", "sync.(*WaitGroup).Wait"} {
+			if strings.Contains(g, frame) {
+				t.Fatalf("a goroutine is still parked in %s after Teardown gave up:\n%s", frame, g)
+			}
 		}
 	}
 }

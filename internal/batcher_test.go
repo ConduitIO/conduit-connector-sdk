@@ -156,7 +156,9 @@ func TestBatcher_Enqueue_Delay(t *testing.T) {
 		is.True(time.Since(start) >= wantDelay)
 		is.Equal(len(gotBatches), 1)
 		is.Equal(gotBatches[0], []int{1})
-	case <-time.After(wantDelay + time.Millisecond*5):
+	case <-time.After(5 * time.Second):
+		// only a deadline for a timer that never fires: the lower bound
+		// above is the assertion (ConduitIO/conduit-connector-sdk#417)
 		t.Fatal("expected the channel to contain a value after delay")
 	}
 
