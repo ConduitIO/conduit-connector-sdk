@@ -35,6 +35,10 @@ type sliceReusingSource struct {
 	perCall int
 	buf     []opencdc.Record
 	n       int
+
+	// filled receives one value after every ReadN call has written its
+	// records into buf, so a test can wait for the read-ahead without sleeping.
+	filled chan struct{}
 }
 
 func (s *sliceReusingSource) Open(context.Context, opencdc.Position) error { return nil }
@@ -49,6 +53,7 @@ func (s *sliceReusingSource) ReadN(ctx context.Context, n int) ([]opencdc.Record
 		s.n++
 		s.buf = append(s.buf, opencdc.Record{Position: opencdc.Position(fmt.Sprintf("p%04d", s.n))})
 	}
+	s.filled <- struct{}{}
 	return s.buf, nil
 }
 
@@ -60,14 +65,18 @@ func (s *sliceReusingSource) ReadN(ctx context.Context, n int) ([]opencdc.Record
 // See conduit-connector-sdk#421.
 func TestSourceWithBatch_ConnectorReusesReturnedSlice(t *testing.T) {
 	testCases := []struct {
-		name    string
-		size    int
-		delay   time.Duration
-		perCall int
+		name  string
+		size  int
+		delay time.Duration
+		// perCall is how many records each ReadN call returns, callsPerBatch
+		// how many calls make up one batch handed to the consumer.
+		perCall       int
+		callsPerBatch int
+		readAhead     bool
 	}{
-		{name: "batching off", size: 0, delay: 0, perCall: 2},
-		{name: "full batch returned as is", size: 2, delay: time.Second, perCall: 2},
-		{name: "batch assembled from several reads", size: 4, delay: time.Second, perCall: 2},
+		{name: "batching off", perCall: 2, callsPerBatch: 1},
+		{name: "full batch returned as is", size: 2, delay: time.Second, perCall: 2, callsPerBatch: 1, readAhead: true},
+		{name: "batch assembled from several reads", size: 4, delay: time.Second, perCall: 2, callsPerBatch: 2, readAhead: true},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,25 +84,41 @@ func TestSourceWithBatch_ConnectorReusesReturnedSlice(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
+			impl := &sliceReusingSource{
+				perCall: tc.perCall,
+				buf:     make([]opencdc.Record, 0, tc.perCall),
+				filled:  make(chan struct{}, 1024),
+			}
 			src := (&SourceWithBatch{
 				BatchSize:  lang.Ptr(tc.size),
 				BatchDelay: lang.Ptr(tc.delay),
-			}).Wrap(&sliceReusingSource{perCall: tc.perCall, buf: make([]opencdc.Record, 0, tc.perCall)})
+			}).Wrap(impl)
 			is.NoErr(src.Open(ctx, nil))
 
 			var seen []string
-			for range 8 {
+			filled := 0
+			for i := 1; i <= 8; i++ {
 				batch, err := src.ReadN(ctx, 1)
 				is.NoErr(err)
 				is.True(len(batch) > 0)
 
 				before := positions(batch)
-				// The consumer is busy sending; the read-ahead runs meanwhile.
-				time.Sleep(30 * time.Millisecond)
-				after := positions(batch)
-				is.Equal(before, after) // the batch we hold must not change under us
+				if tc.readAhead {
+					// The consumer is busy sending. Wait until the middleware
+					// has called the connector again, which rewrites the
+					// connector's buffer.
+					for filled < i*tc.callsPerBatch+1 {
+						select {
+						case <-impl.filled:
+							filled++
+						case <-time.After(5 * time.Second):
+							t.Fatal("read-ahead ReadN call did not happen")
+						}
+					}
+				}
+				is.Equal(before, positions(batch)) // the batch we hold must not change under us
 
-				seen = append(seen, after...)
+				seen = append(seen, before...)
 			}
 
 			for i, p := range seen {
