@@ -89,6 +89,16 @@ type Source interface {
 	// it should block until there are records available or the context is
 	// cancelled. If the context is cancelled while ReadN is running, it should
 	// return the context error.
+	//
+	// Ownership: once ReadN returns, the returned records belong to the SDK.
+	// The connector must not modify them, or the memory they reference
+	// (positions, metadata maps, key and payload bytes), in a later call or
+	// from another goroutine. The SDK may still be sending or processing a
+	// batch while it calls ReadN again, for example when batching is enabled
+	// (sdk.batch.size, sdk.batch.delay). The SDK copies the returned slice, so
+	// reusing the slice itself is safe, but it does not copy what the records
+	// point to: allocate a new position, metadata map and data buffers for
+	// every record instead of reusing them. The same applies to Read.
 	ReadN(context.Context, int) ([]opencdc.Record, error)
 
 	// Ack signals to the implementation that the record with the supplied
