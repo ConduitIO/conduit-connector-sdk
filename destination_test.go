@@ -15,10 +15,15 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"math/rand/v2"
+	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -743,6 +748,131 @@ func TestDestinationPluginAdapter_Stop_BatchDrained_TimerFlushError(t *testing.T
 
 	close(stream.reqs)
 	is.NoErr(<-runDone)
+}
+
+// TestDestinationPluginAdapter_Stop_BatchRandomized drives the batching
+// adapter through Run and Stop with random batch sizes, delays and request
+// shapes, Stop right after the last request. It catches ConduitIO/
+// conduit-connector-sdk#413: a delay-timer flush landing just before a request
+// that alone fills a batch wedged the adapter for good.
+//
+// For each iteration, when Stop returns: it took under a second and returned
+// no error, every record was written and acked once and in order, and nothing
+// is written afterwards. Set SDK_BATCH_RANDOM_SEED to replay a failing seed.
+func TestDestinationPluginAdapter_Stop_BatchRandomized(t *testing.T) {
+	seed := uint64(time.Now().UnixNano())
+	if v := os.Getenv("SDK_BATCH_RANDOM_SEED"); v != "" {
+		var err error
+		if seed, err = strconv.ParseUint(v, 10, 64); err != nil {
+			t.Fatalf("SDK_BATCH_RANDOM_SEED: %v", err)
+		}
+	}
+	t.Logf("seed %d", seed)
+	rnd := rand.New(rand.NewPCG(seed, 0))
+
+	for iter := range 300 {
+		in := newRandomBatchInput(rnd)
+		in.desc = fmt.Sprintf("seed %d, iteration %d: %s", seed, iter, in.desc)
+		runRandomBatchIteration(t, in)
+	}
+}
+
+type randomBatchInput struct {
+	batch DestinationWithBatch
+	reqs  []pconnector.DestinationRunRequest
+	want  []opencdc.Position // every record's position, in order
+	desc  string
+}
+
+// newRandomBatchInput draws batch size 1-7, delay 0-300µs and 1-20 requests of
+// 1-3 records. Half the delays are under 10µs: #413 needs the timer to fire
+// inside a window of a few instructions, which only short delays hit often.
+func newRandomBatchInput(rnd *rand.Rand) randomBatchInput {
+	delay := time.Duration(rnd.IntN(301)) * time.Microsecond
+	if rnd.IntN(2) == 0 {
+		delay = time.Duration(rnd.IntN(11)) * time.Microsecond
+	}
+	in := randomBatchInput{batch: DestinationWithBatch{BatchSize: 1 + rnd.IntN(7), BatchDelay: delay}}
+	n := 1 + rnd.IntN(20)
+	in.reqs = make([]pconnector.DestinationRunRequest, 0, n)
+	for range n {
+		recs := make([]opencdc.Record, 1+rnd.IntN(3))
+		for i := range recs {
+			pos := opencdc.Position(strconv.Itoa(len(in.want)))
+			in.want = append(in.want, pos)
+			recs[i] = opencdc.Record{Position: pos, Payload: opencdc.Change{After: opencdc.RawData("x")}}
+		}
+		in.reqs = append(in.reqs, pconnector.DestinationRunRequest{Records: recs})
+	}
+	in.desc = fmt.Sprintf("batch size %d, delay %s, %d requests, %d records",
+		in.batch.BatchSize, in.batch.BatchDelay, len(in.reqs), len(in.want))
+	return in
+}
+
+func runRandomBatchIteration(t *testing.T, in randomBatchInput) {
+	t.Helper()
+	posEqual := func(a, b opencdc.Position) bool { return bytes.Equal(a, b) }
+
+	dst := &recordingDestination{}
+	plugin := newBatchingAdapter(t, dst, in.batch)
+	// buffered, so a wedged Run cannot block the test; the Stop bound reports it
+	stream := newRecordingRunStream(len(in.reqs))
+	ctx := context.Background()
+	runDone := make(chan error, 1)
+	go func() { runDone <- plugin.Run(ctx, stream) }()
+	for _, r := range in.reqs {
+		stream.reqs <- r
+	}
+
+	// Stop's context bounds only its position watch: with #413 the wedged
+	// Write holds the batcher lock and Stop's flush waits for it forever, so
+	// Stop runs on its own goroutine with a hard bound.
+	stopCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	start := time.Now()
+	stopDone := make(chan error, 1)
+	go func() {
+		_, err := plugin.Stop(stopCtx, pconnector.DestinationStopRequest{LastPosition: in.want[len(in.want)-1]})
+		stopDone <- err
+	}()
+	var err error
+	select {
+	case err = <-stopDone:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s: Stop did not return (wedged, #413)", in.desc)
+	}
+	if elapsed := time.Since(start); err != nil || elapsed >= time.Second {
+		t.Fatalf("%s: Stop returned %v after %s", in.desc, err, elapsed)
+	}
+
+	// when Stop returns, everything is written and acked, in order
+	if written := dst.snapshot(); !slices.EqualFunc(written, in.want, posEqual) {
+		t.Fatalf("%s: written when Stop returned %q, want %q", in.desc, written, in.want)
+	}
+	acks := stream.ackSnapshot()
+	acked := make([]opencdc.Position, 0, len(acks))
+	for _, a := range acks {
+		if a.Error != "" {
+			t.Fatalf("%s: record %s nacked: %s", in.desc, a.Position, a.Error)
+		}
+		acked = append(acked, a.Position)
+	}
+	if !slices.EqualFunc(acked, in.want, posEqual) {
+		t.Fatalf("%s: acked when Stop returned %q, want %q", in.desc, acked, in.want)
+	}
+
+	close(stream.reqs)
+	select {
+	case err := <-runDone:
+		if err != nil {
+			t.Fatalf("%s: Run: %v", in.desc, err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("%s: Run did not return after the stream closed", in.desc)
+	}
+	if n := len(dst.snapshot()); n != len(in.want) {
+		t.Fatalf("%s: %d records written after Stop returned", in.desc, n-len(in.want))
+	}
 }
 
 // teardownFixture is a destination adapter whose first Write blocks inside the
