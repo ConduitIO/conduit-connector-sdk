@@ -485,6 +485,11 @@ func (d *destinationWithSchemaExtraction) decodeKey(ctx context.Context, rec *op
 		return nil
 	}
 
+	// Invariant 6: a zero-length key is decoded, not skipped. Zero bytes is a
+	// valid encoding of a real key (a zero-field record, or a "null"
+	// schema), and connectors emit one: postgres sends StructuredData{} keys
+	// for relations without a key. Skipping it would turn {} into an empty
+	// key and move the record to a different partition (invariant 4).
 	if rec.Key != nil {
 		decodedKey, err := d.decode(ctx, rec.Key, subject, version)
 		if err != nil {
@@ -513,14 +518,17 @@ func (d *destinationWithSchemaExtraction) decodePayload(ctx context.Context, rec
 		return nil
 	}
 
-	if rec.Payload.Before != nil {
+	// Invariant 6: an absent payload part stays absent. A zero-length
+	// RawData before or after means the part is missing, not a record whose
+	// fields are all null, so it is not decoded into one.
+	if !isAbsentData(rec.Payload.Before) {
 		decodedPayloadBefore, err := d.decode(ctx, rec.Payload.Before, subject, version)
 		if err != nil {
 			return fmt.Errorf("failed to decode payload.before: %w", err)
 		}
 		rec.Payload.Before = decodedPayloadBefore
 	}
-	if rec.Payload.After != nil {
+	if !isAbsentData(rec.Payload.After) {
 		decodedPayloadAfter, err := d.decode(ctx, rec.Payload.After, subject, version)
 		if err != nil {
 			return fmt.Errorf("failed to decode payload.after: %w", err)
@@ -529,6 +537,19 @@ func (d *destinationWithSchemaExtraction) decodePayload(ctx context.Context, rec
 	}
 
 	return nil
+}
+
+// isAbsentData reports whether a payload part (before or after) carries no
+// value: it is nil, or it is RawData of length zero. Both forms mean "absent",
+// so neither is decoded; decoding zero bytes with the payload schema would
+// invent an all-null record. Empty StructuredData is a value and is not
+// absent. This is deliberately not used for the key, see decodeKey.
+func isAbsentData(data opencdc.Data) bool {
+	if data == nil {
+		return true
+	}
+	raw, ok := data.(opencdc.RawData)
+	return ok && len(raw) == 0
 }
 
 func (d *destinationWithSchemaExtraction) decode(ctx context.Context, data opencdc.Data, subject string, version int) (opencdc.StructuredData, error) {
