@@ -253,9 +253,13 @@ func TestBatcher_Concurrent(t *testing.T) {
 	// flushes that land before the previous one is received are combined
 	// (#413). Every record has to be covered by exactly one result.
 	for total := 0; total < workers*batchSize; {
-		result := <-b.Results()
-		is.NoErr(result.Err)
-		total += result.Size
+		select {
+		case result := <-b.Results():
+			is.NoErr(result.Err)
+			total += result.Size
+		case <-time.After(10 * time.Second):
+			t.Fatalf("results cover %d of %d records; a result was lost", total, workers*batchSize)
+		}
 	}
 	wg.Wait()
 	select {
