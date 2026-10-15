@@ -249,14 +249,91 @@ func TestBatcher_Concurrent(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < workers; i++ {
-		result := <-b.Results()
-		is.NoErr(result.Err)
+	// A flush never waits for its result to be received, so results of
+	// flushes that land before the previous one is received are combined
+	// (#413). Every record has to be covered by exactly one result.
+	for total := 0; total < workers*batchSize; {
+		select {
+		case result := <-b.Results():
+			is.NoErr(result.Err)
+			total += result.Size
+		case <-time.After(10 * time.Second):
+			t.Fatalf("results cover %d of %d records; a result was lost", total, workers*batchSize)
+		}
 	}
 	wg.Wait()
+	select {
+	case r := <-b.Results():
+		t.Fatalf("unexpected extra result covering %d records", r.Size)
+	default:
+	}
 
 	is.Equal(len(gotBatches), workers)
 	for _, gotBatch := range gotBatches {
 		is.Equal(len(gotBatch), batchSize)
+	}
+}
+
+// TestBatcher_SyncFlushWithPendingResult is the regression test for
+// ConduitIO/conduit-connector-sdk#413. The delay timer flushes and leaves its
+// result pending; then an item that alone fills a batch is enqueued. The
+// synchronous flush used to block sending its result to the full channel
+// while holding the lock, and the only goroutine that would receive it was
+// the one blocked in Enqueue, so the destination stopped for good.
+func TestBatcher_SyncFlushWithPendingResult(t *testing.T) {
+	timerErr := errors.New("timer flush failed")
+	syncErr := errors.New("sync flush failed")
+	for _, tc := range []struct {
+		name     string
+		timerErr error
+		syncErr  error
+	}{
+		{"both succeed", nil, nil},
+		{"timer flush failed", timerErr, nil},
+		{"sync flush failed", nil, syncErr},
+		{"both failed", timerErr, syncErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			var flushes [][]int
+			b := NewBatcher(5, time.Hour, func(batch []int, _ int) error {
+				flushes = append(flushes, append([]int(nil), batch...))
+				if len(flushes) == 1 {
+					return tc.timerErr
+				}
+				return tc.syncErr
+			})
+
+			is.Equal(b.Enqueue(1, 1), Scheduled)
+			is.True(b.Flush()) // what the delay timer does; its result is pending
+
+			done := make(chan EnqueueStatus, 1)
+			go func() { done <- b.Enqueue(2, 5) }() // alone fills a batch
+			var status EnqueueStatus
+			select {
+			case status = <-done:
+			case <-time.After(10 * time.Second):
+				// a bound, not a wait: the fixed Enqueue returns at once
+				t.Fatal("Enqueue blocked: synchronous flush waited on a full results channel (#413)")
+			}
+			is.Equal(status, Flushed)
+			is.Equal(flushes, [][]int{{1}, {2}})
+
+			// one combined result covers both flushes and reports both errors
+			select {
+			case r := <-b.Results():
+				is.Equal(r.Size, 6)
+				is.Equal(errors.Is(r.Err, timerErr), tc.timerErr != nil)
+				is.Equal(errors.Is(r.Err, syncErr), tc.syncErr != nil)
+				is.Equal(r.Err == nil, tc.timerErr == nil && tc.syncErr == nil)
+			default:
+				t.Fatal("expected a result")
+			}
+			select {
+			case r := <-b.Results():
+				t.Fatalf("unexpected second result %+v", r)
+			default:
+			}
+		})
 	}
 }

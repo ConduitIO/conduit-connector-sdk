@@ -15,6 +15,7 @@
 package internal
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
@@ -55,6 +56,10 @@ func NewBatcher[T any](sizeThreshold int, delayThreshold time.Duration, fn Batch
 	}
 }
 
+// Results returns the channel that carries the result of each flush. It holds
+// one result. A flush never waits for it to be received: if the previous
+// result is still there, the two are combined into one (see deliver), so a
+// result can cover more than one flush.
 func (b *Batcher[T]) Results() <-chan BatchResult {
 	return b.results
 }
@@ -100,8 +105,36 @@ func (b *Batcher[T]) flushNow() bool {
 		Size: b.batchSize,
 		Err:  err,
 	}
-	b.results <- r
+	b.deliver(r)
 	b.batch = b.batch[:0]
 	b.batchSize = 0
 	return true
+}
+
+// deliver puts r on the results channel without blocking. It is called with
+// the lock held, and the goroutine that would receive the pending result may
+// be the one holding it (a synchronous flush in Enqueue right after the delay
+// timer flushed), so a blocking send could wait forever with the lock held
+// (ConduitIO/conduit-connector-sdk#413). If a result is still pending, the
+// two are combined: the earlier time, the summed size and both errors. Every
+// sender holds the lock, so once the pending result is taken the send cannot
+// fail; a receiver that takes it first just lets the next attempt through.
+func (b *Batcher[T]) deliver(r BatchResult) {
+	for {
+		select {
+		case b.results <- r:
+			return
+		default:
+		}
+		select {
+		case pending := <-b.results:
+			r = BatchResult{
+				At:   pending.At,
+				Size: pending.Size + r.Size,
+				Err:  errors.Join(pending.Err, r.Err),
+			}
+		default:
+			// a receiver took it in the meantime; the send will succeed
+		}
+	}
 }
