@@ -41,7 +41,7 @@ import (
 // number is bumped for fixes that do not change what a connector has to do.
 // The value is written into the report (see [AcceptanceReportEnv]) so that
 // whoever consumes the report knows which bar was passed.
-const AcceptanceSuiteV2Revision = "2.0.0"
+const AcceptanceSuiteV2Revision = "2.0.1"
 
 // AcceptanceReportEnv is the name of the environment variable that makes
 // [AcceptanceTestV2] write a machine-readable [AcceptanceReport] (JSON) to the
@@ -379,6 +379,7 @@ func AcceptanceTestV2(t *testing.T, driver AcceptanceTestDriver) {
 	}
 
 	rep := newAcceptanceReport(driver, caps)
+	rep.logStart(t)
 	// Write the report now, marked unfinished, so that a run that dies (a panic
 	// in the connector kills the test binary before any cleanup) never leaves
 	// the previous run's report behind as if it were this one.
@@ -784,6 +785,14 @@ func (r *AcceptanceReport) addMetric(m AcceptanceMetric) {
 	r.Metrics = append(r.Metrics, m)
 }
 
+// logStart writes the suite revision and the hashes that identify it to the
+// test log, so that a run without a report file still says which bar it
+// measured against.
+func (r *AcceptanceReport) logStart(t interface{ Logf(string, ...any) }) {
+	t.Logf("acceptance suite v2: revision %s, suite source hash %s, case set hash %s, %d cases, SDK %s",
+		r.SuiteRevision, r.SuiteSourceHash, r.CaseSetHash, r.ExpectedCaseCount, r.SDKVersion)
+}
+
 func (r *AcceptanceReport) writeUnfinished(t *testing.T) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1126,12 +1135,12 @@ func v2Cases() []v2Case {
 
 	return []v2Case{
 		// Destination
-		{id: caseDst01, name: "pipelined_writes", logic: 1, needs: dst, fn: (*acceptanceV2).testDstPipelinedWrites},
-		{id: caseDst02, name: "slow_acks", logic: 1, needs: dst, fn: (*acceptanceV2).testDstSlowAcks},
-		{id: caseDst03, name: "mixed_batch_sizes", logic: 1, needs: dst, fn: (*acceptanceV2).testDstBatchSizes},
-		{id: caseDst04, name: "crash_replay_at_least_once", logic: 2, needs: dstRead, fn: (*acceptanceV2).testDstCrashReplay},
+		{id: caseDst01, name: "pipelined_writes", logic: 2, needs: dst, fn: (*acceptanceV2).testDstPipelinedWrites},
+		{id: caseDst02, name: "slow_acks", logic: 2, needs: dst, fn: (*acceptanceV2).testDstSlowAcks},
+		{id: caseDst03, name: "mixed_batch_sizes", logic: 2, needs: dst, fn: (*acceptanceV2).testDstBatchSizes},
+		{id: caseDst04, name: "crash_replay_at_least_once", logic: 3, needs: dstRead, fn: (*acceptanceV2).testDstCrashReplay},
 		{
-			id: caseDst05, name: "crash_replay_idempotent", logic: 1,
+			id: caseDst05, name: "crash_replay_idempotent", logic: 2,
 			needs: all(dstRead, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(idem(a), "Destination.Idempotence=idempotent")
 			}),
@@ -1139,7 +1148,7 @@ func v2Cases() []v2Case {
 			fn:      (*acceptanceV2).testDstCrashReplayIdempotent,
 		},
 		{
-			id: caseDst06, name: "ordering_per_key", logic: 2,
+			id: caseDst06, name: "ordering_per_key", logic: 3,
 			needs: all(dstRead, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(dstOrder(a), "Destination.OrdersByKey")
 			}),
@@ -1147,23 +1156,23 @@ func v2Cases() []v2Case {
 			fn:      (*acceptanceV2).testDstOrdering,
 		},
 		{
-			id: caseDst07, name: "schema_evolution", logic: 1,
+			id: caseDst07, name: "schema_evolution", logic: 2,
 			needs: all(dst, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(dstEvo(a), "Destination.SchemaEvolution")
 			}),
 			claimed: claim(dstEvo, "Destination.SchemaEvolution"),
 			fn:      (*acceptanceV2).testDstSchemaEvolution,
 		},
-		{id: caseDst08, name: "large_record", logic: 1, needs: dst, fn: (*acceptanceV2).testDstLargeRecord},
-		{id: caseDst09, name: "graceful_stop_drains_in_flight", logic: 1, needs: dst, fn: (*acceptanceV2).testDstGracefulStop},
-		{id: caseDst10, name: "context_cancellation", logic: 1, needs: dst, fn: (*acceptanceV2).testDstContextCancel},
+		{id: caseDst08, name: "large_record", logic: 2, needs: dst, fn: (*acceptanceV2).testDstLargeRecord},
+		{id: caseDst09, name: "graceful_stop_drains_in_flight", logic: 2, needs: dst, fn: (*acceptanceV2).testDstGracefulStop},
+		{id: caseDst10, name: "context_cancellation", logic: 2, needs: dst, fn: (*acceptanceV2).testDstContextCancel},
 		{id: caseDst11, name: "throughput_smoke", logic: 1, needs: dst, fn: (*acceptanceV2).testDstThroughput},
 		// Source
-		{id: caseSrc01, name: "pipelined_and_lagging_acks", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcLaggingAcks},
-		{id: caseSrc02, name: "mixed_batch_sizes", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcBatchSizes},
-		{id: caseSrc03, name: "crash_resume_no_gap", logic: 2, needs: seeded, fn: (*acceptanceV2).testSrcCrashResume},
+		{id: caseSrc01, name: "pipelined_and_lagging_acks", logic: 2, needs: seeded, fn: (*acceptanceV2).testSrcLaggingAcks},
+		{id: caseSrc02, name: "mixed_batch_sizes", logic: 2, needs: seeded, fn: (*acceptanceV2).testSrcBatchSizes},
+		{id: caseSrc03, name: "crash_resume_no_gap", logic: 3, needs: seeded, fn: (*acceptanceV2).testSrcCrashResume},
 		{
-			id: caseSrc04, name: "ordering_per_key", logic: 2,
+			id: caseSrc04, name: "ordering_per_key", logic: 3,
 			needs: all(seeded, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(srcOrder(a), "Source.OrdersByKey")
 			}),
@@ -1171,17 +1180,17 @@ func v2Cases() []v2Case {
 			fn:      (*acceptanceV2).testSrcOrdering,
 		},
 		{
-			id: caseSrc05, name: "schema_evolution", logic: 1,
+			id: caseSrc05, name: "schema_evolution", logic: 2,
 			needs: all(seeded, func(a *acceptanceV2) v2Applicability {
 				return unclaimed(srcEvo(a), "Source.SchemaEvolution=evolve")
 			}),
 			claimed: claim(srcEvo, "Source.SchemaEvolution=evolve"),
 			fn:      (*acceptanceV2).testSrcSchemaEvolution,
 		},
-		{id: caseSrc06, name: "large_record", logic: 1, needs: seeded, fn: (*acceptanceV2).testSrcLargeRecord},
-		{id: caseSrc07, name: "graceful_stop_with_unacked", logic: 1, needs: src, fn: (*acceptanceV2).testSrcGracefulStop},
+		{id: caseSrc06, name: "large_record", logic: 2, needs: seeded, fn: (*acceptanceV2).testSrcLargeRecord},
+		{id: caseSrc07, name: "graceful_stop_with_unacked", logic: 2, needs: src, fn: (*acceptanceV2).testSrcGracefulStop},
 		{id: caseSrc08, name: "context_cancellation", logic: 1, needs: src, fn: (*acceptanceV2).testSrcContextCancel},
-		{id: caseSrc09, name: "throughput_smoke", logic: 1, needs: src, fn: (*acceptanceV2).testSrcThroughput},
+		{id: caseSrc09, name: "throughput_smoke", logic: 2, needs: src, fn: (*acceptanceV2).testSrcThroughput},
 	}
 }
 

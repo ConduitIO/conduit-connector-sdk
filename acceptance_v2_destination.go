@@ -63,6 +63,11 @@ func (a *acceptanceV2) canReadAll() bool {
 // records, which makes the caller's checks stricter.
 func (a *acceptanceV2) readAll(t *testing.T, expected []opencdc.Record) []opencdc.Record {
 	t.Helper()
+	return a.decodeAll(t, a.readAllRaw(t, expected))
+}
+
+func (a *acceptanceV2) readAllRaw(t *testing.T, expected []opencdc.Record) []opencdc.Record {
+	t.Helper()
 	if p, ok := a.driver.(AcceptanceReadAllDriver); ok {
 		return p.ReadAllFromDestination(t)
 	}
@@ -74,6 +79,22 @@ func (a *acceptanceV2) readAll(t *testing.T, expected []opencdc.Record) []opencd
 		}
 	}
 	return a.driver.ReadFromDestination(t, expected)
+}
+
+// decodeAll undoes source schema extraction on records read back through the
+// connector's source (the default ReadFromDestination does that), see
+// decodeSchemaEncoded.
+func (a *acceptanceV2) decodeAll(t *testing.T, recs []opencdc.Record) []opencdc.Record {
+	t.Helper()
+	ctx := a.context(t)
+	for i := range recs {
+		rec, err := decodeSchemaEncoded(ctx, recs[i])
+		if err != nil {
+			t.Fatalf("a record read back has an attached schema but cannot be decoded with it: %v", err)
+		}
+		recs[i] = rec
+	}
+	return recs
 }
 
 // requireStored fails the test if any of want is not stored in the destination.

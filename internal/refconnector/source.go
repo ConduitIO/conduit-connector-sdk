@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	sdk "github.com/conduitio/conduit-connector-sdk"
 )
@@ -42,21 +41,13 @@ type Source struct {
 	next   int
 }
 
-// NewSource creates the source with default middleware.
-// Source schema extraction is switched off, as in conduit-connector-file: the
-// acceptance suite generates structured records whose field names are random
-// byte strings, which are not valid Avro names, so extraction would reject
-// them. That is a property of the generated test data, not of the connector.
+// NewSource creates the source with the default middleware. Source schema
+// extraction is on, as it is by default for every connector: the acceptance
+// harness decodes what extraction encoded before comparing, the way the
+// destination side of a pipeline does (#395).
 func NewSource() sdk.Source {
 	return sdk.SourceWithMiddleware(&Source{
-		config: SourceConfig{
-			DefaultSourceMiddleware: sdk.DefaultSourceMiddleware{
-				SourceWithSchemaExtraction: sdk.SourceWithSchemaExtraction{
-					PayloadEnabled: lang.Ptr(false),
-					KeyEnabled:     lang.Ptr(false),
-				},
-			},
-		},
+		config: SourceConfig{},
 	})
 }
 

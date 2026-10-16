@@ -3,7 +3,8 @@
 Acceptance suite v2 is the bar a connector has to pass to be listed as
 "Conduit Certified" in the connector registry. It ships with the SDK: a
 connector tests against the suite revision contained in the SDK version it
-pins. This SDK release contains revision **2.0.0**.
+pins. SDK v0.16.0 contains revision 2.0.0; the next SDK release contains
+revision **2.0.1** (see [Revision history](#revision-history)).
 
 The design, with the reasoning behind every case, is
 [`20261013-acceptance-suite-v2.md`](https://github.com/ConduitIO/conduit/blob/main/docs/design-documents/20261013-acceptance-suite-v2.md)
@@ -28,7 +29,9 @@ func TestAcceptanceV2(t *testing.T) {
 }
 ```
 
-and run it with the race detector, writing the report to a fresh path:
+and run it with the race detector, writing the report to a fresh path. The
+first line the suite logs names the revision and the suite source hash, so a
+run without a report still says which bar it measured against:
 
 ```sh
 rm -f acceptance-report.json
@@ -126,7 +129,7 @@ With `CONDUIT_ACCEPTANCE_REPORT` set, the suite writes a JSON
 `AcceptanceReport`. It is written as unfinished when the run starts and
 rewritten when it ends. It contains, among others:
 
-- `suite_version` (2) and `suite_revision` (2.0.0);
+- `suite_version` (2) and `suite_revision` (for example 2.0.1);
 - `expected_case_ids`, `case_set_hash`, `case_content_hash` and
   `suite_source_hash`, which identify exactly which cases ran;
 - the claims, the floors (`certification_floor_met`, `below_floor`) and the
@@ -139,7 +142,8 @@ true. A missing report is a failed run.
 
 ## What "Conduit Certified" means today
 
-A connector version is Certified when its suite v2 report for revision 2.0.0 is
+A connector version is Certified when its suite v2 report for a supported 2.0.x
+revision is
 complete, every applicable case passed, the floors are met or waived by a
 maintainer, and the core delivery claims are stated (idempotence either way,
 bounded resume, ordering for ordered logs, a schema evolution policy for
@@ -159,7 +163,32 @@ The revision is `major.minor.patch`:
   that passed 2.0.x passes 2.1.x unchanged.
 - **patch** fixes the harness without changing what a connector has to do.
 
-Revision 2.0.0 is pinned in the SDK's tests: once released, any change to the
+Each revision is pinned in the SDK's tests: once released, any change to the
 cases or to the suite's source files fails the SDK build until the revision is
 bumped and a new entry is pinned. The registry keeps its own table of the
 hashes it accepts.
+
+## Schema extraction
+
+Source schema extraction is on by default, and the suite runs with whatever the
+connector's configuration says. Since 2.0.1 the suite decodes records that
+carry a schema attached by extraction before comparing them, the same way the
+destination side of a pipeline decodes them, and the generated test data uses
+field names that are valid Avro names. A connector no longer has to turn
+extraction off for the acceptance run, and should not: the run is meant to
+cover the configuration users get.
+
+## Revision history
+
+- **2.0.1** (unreleased):
+  - the suite logs its revision and source hash at the start of a run;
+  - records with a schema attached by source schema extraction are decoded
+    before comparison, and v1 compares structured values by value (an `int` and
+    an `int64` with the same value are equal);
+  - generated structured data uses Avro-valid field names
+    ([#395](https://github.com/ConduitIO/conduit-connector-sdk/issues/395)).
+  A connector that passed 2.0.0 passes 2.0.1 unchanged. The narrower field
+  names mean the generated data no longer contains field names with spaces or
+  punctuation; a destination that needs to handle such names should test them
+  in its own tests.
+- **2.0.0** (SDK v0.16.0): first release of suite v2.
