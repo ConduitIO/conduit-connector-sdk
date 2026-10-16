@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sync"
 	"time"
 
@@ -822,6 +823,16 @@ func (s *sourceWithBatch) runReadN(ctx context.Context) {
 				return
 			}
 		}
+
+		// Ownership: the slice the connector returned is the connector's again
+		// as soon as the next ReadN call starts, and this loop makes that call
+		// right after handing the batch over, while the consumer is still
+		// reading and sending it. A connector that reuses its returned slice
+		// (buf = buf[:0]; append(...)) would overwrite the batch in flight and
+		// records would be lost (invariant 3). Copy the slice before the next
+		// call. This copies the Record values only, see [Source.ReadN] for what
+		// the connector must not touch.
+		recs = slices.Clone(recs)
 
 		select {
 		case s.readNCh <- readNResponse{Records: recs}:
