@@ -5,13 +5,15 @@ go 1.26.9
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/conduitio/conduit-commons v0.9.0
-	github.com/conduitio/conduit-connector-protocol v0.10.0
+	github.com/conduitio/conduit-commons v0.10.0
+	github.com/conduitio/conduit-connector-protocol v0.11.0
 	github.com/conduitio/evolviconf v0.1.1
 	github.com/conduitio/evolviconf/evolviyaml v0.1.0
 	github.com/conduitio/yaml/v3 v3.3.0
 	github.com/goccy/go-json v0.11.2
 	github.com/google/go-cmp v0.7.0
+	github.com/hashicorp/go-hclog v1.6.3
+	github.com/hashicorp/go-plugin v1.8.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/matryer/is v1.4.1
 	github.com/rs/zerolog v1.35.1
@@ -35,8 +37,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/go-hclog v1.6.3 // indirect
-	github.com/hashicorp/go-plugin v1.8.0 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
