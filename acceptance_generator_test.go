@@ -52,7 +52,7 @@ func TestConfigurableAcceptanceTestDriver_GeneratedDataPassesSchemaExtraction(t 
 		if err != nil {
 			t.Fatalf("schema extraction rejects generated data (fields %v): %v", fieldNames(data), err)
 		}
-		if _, err := factory.Parse([]byte(srd.String())); err != nil {
+		if _, err := factory.Parse(context.Background(), schema.ParseInput{Bytes: []byte(srd.String())}, nil); err != nil {
 			t.Fatalf("the schema extracted from generated data does not parse (fields %v): %v", fieldNames(data), err)
 		}
 	}

@@ -12,8 +12,8 @@ github.com/Masterminds/sprig/v3 v3.3.0 h1:mQh0Yrg1XPo6vjYXgtf5OtijNAKJRNcTdOOGZe
 github.com/Masterminds/sprig/v3 v3.3.0/go.mod h1:Zy1iXRYNqNLUolqCpL4uhk6SHUMAOSCzdgBfDb35Lz0=
 github.com/bufbuild/protocompile v0.14.2-0.20260127163740-a85d2ef77713 h1:owghT7DcDTOr0HlXqpLSTvg8tKWIp8l2b4LOGlVbu0g=
 github.com/bufbuild/protocompile v0.14.2-0.20260127163740-a85d2ef77713/go.mod h1:cxhE8h+14t0Yxq2H9MV/UggzQ1L0gh0t2tJobITWsBE=
-github.com/conduitio/conduit-commons v0.8.0 h1:NLjtS018Kys1oe1wfuu4DTUE4zILhcKgEsbbWPq0X3k=
-github.com/conduitio/conduit-commons v0.8.0/go.mod h1:aeZE6tPtrw0eUw3yIs34WdeebPdDrbFYhsPUkBR+t/g=
+github.com/conduitio/conduit-commons v0.9.0 h1:mF9EQQumtrAr49P57RSbyWkYuO3jEYTIYrusCUcVhJo=
+github.com/conduitio/conduit-commons v0.9.0/go.mod h1:I5BjvJ7rZzNbELaqR2rbls4Tu2o88cOcSMewLKM8pQw=
 github.com/conduitio/conduit-connector-protocol v0.10.0 h1:CuwYiz30XR8PgRE2cRUBZX+9JIYEVseQXvt1KhdB7OA=
 github.com/conduitio/conduit-connector-protocol v0.10.0/go.mod h1:n0EmTGr0Us9OuBAMbexa44pUld5ZA+9aQy2V7RveWVg=
 github.com/conduitio/evolviconf v0.1.1 h1:IKacjKLc8r0h0Epi0Eo1O4/aoZLb4Z7JFb3xKd6gCTw=
@@ -127,6 +127,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/tidwall/btree v1.8.1 h1:27ehoXvm5AG/g+1VxLS1SD3vRhp/H7LuEfwNvddEdmA=
 github.com/tidwall/btree v1.8.1/go.mod h1:jBbTdUWhSZClZWoDg54VnvV7/54modSOzDN7VXftj1A=
+github.com/twmb/franz-go/pkg/sr v1.8.0 h1:50iiB5/p9fEntgzd5S/FCd6v3Kkt0D26OtjBxNKjZcs=
+github.com/twmb/franz-go/pkg/sr v1.8.0/go.mod h1:64CsHlsQnyFRq1sYPcCmlRrEG3PlLPb6cDddx2wGr28=
 github.com/twmb/go-cache v1.4.0 h1:GH5epdpUr/I6VXTFlDw07wrzxvZiXbPAmVXmnB4fjXI=
 github.com/twmb/go-cache v1.4.0/go.mod h1:JfqUPE/5cy+r8yZITIf/KDPSZdY2Gk4aJxvEh02lntg=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
@@ -168,3 +170,5 @@ gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637 h1:yiW+nvdHb9LVqSHQBXfZCieqV
 gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637/go.mod h1:BHsqpu/nsuzkT5BpiH1EMZPLyqSMM8JbIavyFACoFNk=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+pgregory.net/rapid v1.3.0 h1:vBvO0VSqti75J1jjYqpgPNBLKMd1+gxa9fYo7vk/Exc=
+pgregory.net/rapid v1.3.0/go.mod h1:dPlE4OBBxgXPqkP79flB6sJL1dx5azpI7HQ9MY9Z7uk=
