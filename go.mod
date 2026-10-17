@@ -5,7 +5,7 @@ go 1.26.9
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/conduitio/conduit-commons v0.8.0
+	github.com/conduitio/conduit-commons v0.9.0
 	github.com/conduitio/conduit-connector-protocol v0.10.0
 	github.com/conduitio/evolviconf v0.1.1
 	github.com/conduitio/evolviconf/evolviyaml v0.1.0
@@ -56,6 +56,7 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/twmb/franz-go/pkg/sr v1.8.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/net v0.61.0 // indirect
