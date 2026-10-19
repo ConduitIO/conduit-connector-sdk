@@ -175,11 +175,26 @@ func (a *destinationPluginAdapter) Open(ctx context.Context, _ pconnector.Destin
 	return pconnector.DestinationOpenResponse{}, err
 }
 
+// defaultMaxBatchSize bounds the destination write batch when only
+// sdk.batch.delay is set (no explicit sdk.batch.size), so the delay timer
+// coalesces records instead of flushing one per Write and a fast source cannot
+// grow the pending buffer without limit. It mirrors the arch-v2 engine's
+// defaultMaxBatchSize (pkg/lifecycle-poc/funnel/destination_batch.go).
+const defaultMaxBatchSize = 1000
+
 func (a *destinationPluginAdapter) configureWriteStrategy(ctx context.Context) {
 	writeSingle := &writeStrategySingle{impl: a.impl, ackFn: a.ack}
 	a.writeStrategy = writeSingle // by default we write single records
 
 	batchConfig := (&destinationWithBatch{}).getBatchConfig(ctx)
+	if batchConfig.BatchDelay > 0 && batchConfig.BatchSize <= 1 {
+		// Delay-only batching (sdk.batch.delay set, sdk.batch.size unset or 1):
+		// the batcher flushes when the size threshold is reached, and a
+		// threshold <= 1 would flush every record immediately, ignoring the
+		// delay entirely. Bound the buffer with a default max size so the delay
+		// actually coalesces records.
+		batchConfig.BatchSize = defaultMaxBatchSize
+	}
 	if batchConfig.BatchSize > 1 || batchConfig.BatchDelay > 0 {
 		a.writeStrategy = newWriteStrategyBatch(writeSingle, batchConfig.BatchSize, batchConfig.BatchDelay)
 	}
