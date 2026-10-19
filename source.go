@@ -252,13 +252,25 @@ func (a *sourcePluginAdapter) Run(ctx context.Context, stream pconnector.SourceR
 		a.readCancel = readCancel
 		a.readDone = make(chan struct{})
 
+		// runRead must not run before both goroutines are registered on the
+		// tomb. If the connector's first Read returns immediately with an error
+		// (e.g. a policy refusal or a configuration error), runRead can return
+		// before the t.Go(runAck) call below, dropping the tomb's alive count
+		// to 0 and closing its Dead channel; the t.Go(runAck) call then panics
+		// with "tomb.Go called after all goroutines terminated". Gating runRead
+		// on start — closed only after runAck is registered — guarantees
+		// alive >= 1 for the entire registration window, so the tomb cannot die
+		// in between the two t.Go calls.
+		start := make(chan struct{})
 		t.Go(func() error {
 			defer close(a.readDone)
+			<-start
 			return a.runRead(readCtx, stream.Server())
 		})
 		t.Go(func() error {
 			return a.runAck(ctx, stream.Server())
 		})
+		close(start)
 		return nil
 	})
 	if err != nil {

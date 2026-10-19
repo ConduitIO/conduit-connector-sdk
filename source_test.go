@@ -188,6 +188,57 @@ func TestSourcePluginAdapter_Run(t *testing.T) {
 	<-runDone
 }
 
+// failFastSource returns err from its very first ReadN call with no blocking or
+// backoff, mirroring a connector whose first Read fails immediately (a policy
+// refusal, a configuration error, ...).
+type failFastSource struct {
+	UnimplementedSource
+	err error
+}
+
+func (s failFastSource) Config() SourceConfig { return &struct{ UnimplementedSourceConfig }{} }
+func (s failFastSource) Open(context.Context, opencdc.Position) error {
+	return nil
+}
+
+func (s failFastSource) ReadN(context.Context, int) ([]opencdc.Record, error) {
+	return nil, s.err
+}
+
+// TestSourcePluginAdapter_Run_ReadFailsImmediately is a regression test for the
+// "tomb.Go called after all goroutines terminated" panic: when the connector's
+// first Read returns immediately with an error, runRead can return before Run's
+// second t.Go (runAck) is registered. That drops the tomb's alive count to 0
+// and closes its Dead channel, so the second t.Go panics. Run must instead
+// return the read error and must not panic.
+func TestSourcePluginAdapter_Run_ReadFailsImmediately(t *testing.T) {
+	is := is.New(t)
+	wantErr := errors.New("read failed immediately")
+
+	// Each iteration builds a fresh adapter and runs it to completion. The race
+	// is scheduling-dependent, so exercise it repeatedly to make the regression
+	// reproducible under -race.
+	for i := 0; i < 100; i++ {
+		src := failFastSource{err: wantErr}
+		srcPlugin := NewSourcePlugin(src, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
+		srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
+
+		ctx := context.Background()
+		stream := NewInMemorySourceRunStream(ctx)
+
+		_, err := srcPlugin.Open(ctx, pconnector.SourceOpenRequest{Position: nil})
+		is.NoErr(err)
+
+		// Run must return the read error, not panic.
+		err = srcPlugin.Run(ctx, stream)
+		is.True(errors.Is(err, wantErr))
+
+		// Close the stream so runAck drains and the tomb's remaining goroutine
+		// returns.
+		stream.Close(io.EOF)
+	}
+}
+
 func TestSourcePluginAdapter_Run_Stuck(t *testing.T) {
 	is := is.New(t)
 	ctrl := gomock.NewController(t)
