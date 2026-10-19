@@ -200,6 +200,7 @@ func (s failFastSource) Config() SourceConfig { return &struct{ UnimplementedSou
 func (s failFastSource) Open(context.Context, opencdc.Position) error {
 	return nil
 }
+
 func (s failFastSource) ReadN(context.Context, int) ([]opencdc.Record, error) {
 	return nil, s.err
 }
