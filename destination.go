@@ -276,7 +276,7 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req pconnector.Dest
 		},
 	)
 	if err != nil {
-		err = fmt.Errorf("did not encounter expected last position %q, actual last position %q: %w", req.LastPosition, actualLastPosition, err)
+		err = fmt.Errorf("did not encounter expected last position (hash %s), actual last position (hash %s): %w", positionHash(req.LastPosition), positionHash(actualLastPosition), err)
 		Logger(ctx).Warn().Err(err).Msg("proceeding to flush records that were received so far (other records won't be acked)")
 	}
 
@@ -492,7 +492,7 @@ func (w *writeStrategySingle) Write(ctx context.Context, batch []opencdc.Record)
 		if n < len(batch) {
 			pos = batch[n].Position
 		}
-		Logger(ctx).Err(err).Bytes("record_position", pos).Msg("error writing record")
+		Logger(ctx).Err(err).Str("record_position_hash", positionHash(pos)).Msg("error writing record")
 	}
 
 	if n == len(batch) && err != nil {
