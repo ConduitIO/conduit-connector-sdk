@@ -170,17 +170,23 @@ func TestDestinationPluginAdapter_Run_TeardownWithoutStop_AcksArePrefix(t *testi
 	dst := NewMockDestination(ctrl)
 	dst.EXPECT().Open(gomock.Any()).Return(nil)
 	dst.EXPECT().Teardown(gomock.Any()).Return(nil)
-	// only the first, full batch (10 records) reaches the connector
+	// Counted here and asserted on the test goroutine: a gomock failure inside
+	// Write would run on the batcher's goroutine and strand the in-flight
+	// counter, which makes Teardown wait for its full timeout.
+	var writes atomic.Int64
 	dst.EXPECT().Write(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, recs []opencdc.Record) (int, error) { return len(recs), nil }).
-		Times(1)
+		DoAndReturn(func(_ context.Context, recs []opencdc.Record) (int, error) {
+			writes.Add(1)
+			return len(recs), nil
+		}).AnyTimes()
 
 	a := NewDestinationPlugin(dst, pconnector.PluginConfig{}, nil).(*destinationPluginAdapter)
 	ctx := context.Background()
 	_, err := a.Open(ctx, pconnector.DestinationOpenRequest{})
 	is.NoErr(err)
-	const delay = time.Second // well above waitFor's linger, so the third request is still buffered at Teardown
-	a.writeStrategy = newWriteStrategyBatch(&writeStrategySingle{impl: dst, ackFn: a.ack}, 10, delay)
+	// No wall clock: the delay timer never fires in this test. The buffered
+	// batch is flushed explicitly after Teardown instead.
+	a.writeStrategy = newWriteStrategyBatch(&writeStrategySingle{impl: dst, ackFn: a.ack}, 10, time.Hour)
 
 	stream := NewInMemoryDestinationRunStream(ctx)
 	runDone := make(chan error, 1)
@@ -195,8 +201,13 @@ func TestDestinationPluginAdapter_Run_TeardownWithoutStop_AcksArePrefix(t *testi
 
 	_, err = a.Teardown(ctx, pconnector.DestinationTeardownRequest{})
 	is.NoErr(err)
-	time.Sleep(delay + 300*time.Millisecond) // the timer flushes the buffered batch into a closed strategy
+	// Flush the third request's records into the closed strategy, which is
+	// what the delay timer would do: they must not reach the connector or be
+	// acked.
+	is.NoErr(a.writeStrategy.Flush(ctx))
+	time.Sleep(100 * time.Millisecond) // let a wrongly sent ack arrive
 
+	is.Equal(writes.Load(), int64(1))    // only the first, full batch was written
 	is.Equal(acks.positions(), all[:10]) // an in-order prefix, nothing after Teardown
 
 	stream.Close(nil)
