@@ -18,6 +18,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,23 +43,74 @@ func TestDestinationPluginAdapter_Open_DeclaresOrderedAcks(t *testing.T) {
 	is.True(resp.OrderedAcks)
 }
 
+// ackCollector drains the ack side of a stream in the background, so the
+// adapter never blocks on an ack and trailing (extra) acks are seen.
+type ackCollector struct {
+	mu   sync.Mutex
+	acks []pconnector.DestinationRunResponseAck
+}
+
+func collectAcks(client pconnector.DestinationRunStreamClient) *ackCollector {
+	c := &ackCollector{}
+	go func() {
+		for {
+			resp, err := client.Recv()
+			if err != nil {
+				return
+			}
+			c.mu.Lock()
+			c.acks = append(c.acks, resp.Acks...)
+			c.mu.Unlock()
+		}
+	}()
+	return c
+}
+
+func (c *ackCollector) positions() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, len(c.acks))
+	for i, a := range c.acks {
+		out[i] = string(a.Position)
+	}
+	return out
+}
+
+// waitFor waits until n acks arrived, then lingers so a trailing extra ack
+// would be collected too.
+func (c *ackCollector) waitFor(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for len(c.positions()) < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("got %d of %d acks", len(c.positions()), n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+}
+
 // TestDestinationPluginAdapter_Run_AcksInReceiveOrder checks the guarantee the
 // SDK declares: acks leave in the order records were received, across several
-// requests, one per record, for the single and the batching write strategy and
-// when a write fails part way through a batch.
+// requests, exactly one per record (no trailing extra ack), for the single and
+// the batching write strategy, with partial-write failures in the middle of a
+// request, and with the delay timer racing Enqueue.
 func TestDestinationPluginAdapter_Run_AcksInReceiveOrder(t *testing.T) {
 	const requests, perRequest = 20, 5
 
 	testCases := []struct {
-		name  string
-		batch bool
+		name      string
+		batchSize int // 0: single strategy
+		delay     time.Duration
 		// failEvery makes Write report a partial write (n = len/2 and an
 		// error) for every failEvery-th call, 0 disables it.
 		failEvery int
 	}{
 		{name: "single"},
 		{name: "single with partial failures", failEvery: 3},
-		{name: "batch", batch: true},
+		{name: "batch", batchSize: 7, delay: 5 * time.Millisecond},
+		{name: "batch with partial failures", batchSize: 12, delay: 5 * time.Millisecond, failEvery: 2},
+		{name: "batch timer flush racing enqueue", batchSize: 1000, delay: time.Millisecond},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,12 +118,12 @@ func TestDestinationPluginAdapter_Run_AcksInReceiveOrder(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			dst := NewMockDestination(ctrl)
 
-			calls := 0
+			var calls atomic.Int64
 			dst.EXPECT().Open(gomock.Any()).Return(nil)
 			dst.EXPECT().Write(gomock.Any(), gomock.Any()).
 				DoAndReturn(func(_ context.Context, recs []opencdc.Record) (int, error) {
-					calls++
-					if tc.failEvery > 0 && calls%tc.failEvery == 0 {
+					c := calls.Add(1)
+					if tc.failEvery > 0 && c%int64(tc.failEvery) == 0 {
 						return len(recs) / 2, errors.New("boom")
 					}
 					return len(recs), nil
@@ -80,9 +133,9 @@ func TestDestinationPluginAdapter_Run_AcksInReceiveOrder(t *testing.T) {
 			ctx := context.Background()
 			_, err := a.Open(ctx, pconnector.DestinationOpenRequest{})
 			is.NoErr(err)
-			if tc.batch {
+			if tc.batchSize > 0 {
 				a.writeStrategy = newWriteStrategyBatch(
-					&writeStrategySingle{impl: dst, ackFn: a.ack}, 7, 5*time.Millisecond)
+					&writeStrategySingle{impl: dst, ackFn: a.ack}, tc.batchSize, tc.delay)
 			}
 
 			stream := NewInMemoryDestinationRunStream(ctx)
@@ -90,13 +143,127 @@ func TestDestinationPluginAdapter_Run_AcksInReceiveOrder(t *testing.T) {
 			go func() { runDone <- a.Run(ctx, stream) }()
 
 			want := ackOrderPositions(requests, perRequest)
+			acks := collectAcks(stream.Client())
 			go sendAckOrderRequests(stream.Client(), requests, perRequest)
-			got := recvAckPositions(is, stream.Client(), len(want))
-			is.Equal(got, want) // acks must be in receive order, exactly one per record
+			if tc.batchSize > 0 {
+				// the last batch is flushed by the timer; make sure it is
+				// before waiting, the wait itself is bounded anyway
+				time.Sleep(tc.delay)
+			}
+			acks.waitFor(t, len(want))
+
+			is.Equal(acks.positions(), want) // receive order, exactly one per record
 
 			stream.Close(nil)
+			<-runDone
 		})
 	}
+}
+
+// TestDestinationPluginAdapter_Run_TeardownWithoutStop_AcksArePrefix covers the
+// ordered_acks exception: Teardown arrives while records are buffered by the
+// batch strategy. The acks sent must be an in-order prefix of the received
+// records and none may arrive after Teardown.
+func TestDestinationPluginAdapter_Run_TeardownWithoutStop_AcksArePrefix(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+	dst.EXPECT().Open(gomock.Any()).Return(nil)
+	dst.EXPECT().Teardown(gomock.Any()).Return(nil)
+	// only the first, full batch (10 records) reaches the connector
+	dst.EXPECT().Write(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, recs []opencdc.Record) (int, error) { return len(recs), nil }).
+		Times(1)
+
+	a := NewDestinationPlugin(dst, pconnector.PluginConfig{}, nil).(*destinationPluginAdapter)
+	ctx := context.Background()
+	_, err := a.Open(ctx, pconnector.DestinationOpenRequest{})
+	is.NoErr(err)
+	const delay = time.Second // well above waitFor's linger, so the third request is still buffered at Teardown
+	a.writeStrategy = newWriteStrategyBatch(&writeStrategySingle{impl: dst, ackFn: a.ack}, 10, delay)
+
+	stream := NewInMemoryDestinationRunStream(ctx)
+	runDone := make(chan error, 1)
+	go func() { runDone <- a.Run(ctx, stream) }()
+	acks := collectAcks(stream.Client())
+
+	// 3 requests of 5: the first two fill the batch (flushed and acked), the
+	// third stays buffered.
+	sendAckOrderRequests(stream.Client(), 3, 5)
+	all := ackOrderPositions(3, 5)
+	acks.waitFor(t, 10)
+
+	_, err = a.Teardown(ctx, pconnector.DestinationTeardownRequest{})
+	is.NoErr(err)
+	time.Sleep(delay + 300*time.Millisecond) // the timer flushes the buffered batch into a closed strategy
+
+	is.Equal(acks.positions(), all[:10]) // an in-order prefix, nothing after Teardown
+
+	stream.Close(nil)
+	<-runDone
+}
+
+func TestDestinationPluginAdapter_Run_InvalidWriteCountIsNacked(t *testing.T) {
+	for _, n := range []int{-1, 4} { // batch has 3 records
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			is := is.New(t)
+			ctrl := gomock.NewController(t)
+			dst := NewMockDestination(ctrl)
+			dst.EXPECT().Open(gomock.Any()).Return(nil)
+			dst.EXPECT().Write(gomock.Any(), gomock.Any()).Return(n, nil).Times(1)
+
+			a := NewDestinationPlugin(dst, pconnector.PluginConfig{}, nil).(*destinationPluginAdapter)
+			ctx := context.Background()
+			_, err := a.Open(ctx, pconnector.DestinationOpenRequest{})
+			is.NoErr(err)
+
+			stream := NewInMemoryDestinationRunStream(ctx)
+			runDone := make(chan error, 1)
+			go func() { runDone <- a.Run(ctx, stream) }()
+			acks := collectAcks(stream.Client())
+
+			sendAckOrderRequests(stream.Client(), 1, 3)
+			acks.waitFor(t, 3)
+
+			acks.mu.Lock()
+			is.Equal(len(acks.acks), 3) // one ack per record, no panic
+			for _, ack := range acks.acks {
+				is.True(ack.Error != "") // all nacked
+			}
+			acks.mu.Unlock()
+
+			stream.Close(nil)
+			is.NoErr(<-runDone)
+		})
+	}
+}
+
+func TestDestinationPluginAdapter_Run_EmptyRequestIsIgnored(t *testing.T) {
+	is := is.New(t)
+	ctrl := gomock.NewController(t)
+	dst := NewMockDestination(ctrl)
+	dst.EXPECT().Open(gomock.Any()).Return(nil)
+	dst.EXPECT().Write(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, recs []opencdc.Record) (int, error) { return len(recs), nil }).
+		Times(1) // only for the non-empty request
+
+	a := NewDestinationPlugin(dst, pconnector.PluginConfig{}, nil).(*destinationPluginAdapter)
+	ctx := context.Background()
+	_, err := a.Open(ctx, pconnector.DestinationOpenRequest{})
+	is.NoErr(err)
+
+	stream := NewInMemoryDestinationRunStream(ctx)
+	runDone := make(chan error, 1)
+	go func() { runDone <- a.Run(ctx, stream) }()
+	acks := collectAcks(stream.Client())
+
+	is.NoErr(stream.Client().Send(pconnector.DestinationRunRequest{}))
+	sendAckOrderRequests(stream.Client(), 1, 2)
+	acks.waitFor(t, 2)
+	is.Equal(acks.positions(), ackOrderPositions(1, 2))
+
+	stream.Close(nil)
+	is.NoErr(<-runDone)
 }
 
 // ackOrderPositions lists the unique positions sendAckOrderRequests sends, in
@@ -122,18 +289,6 @@ func sendAckOrderRequests(client pconnector.DestinationRunStreamClient, requests
 		}
 		_ = client.Send(pconnector.DestinationRunRequest{Records: recs})
 	}
-}
-
-func recvAckPositions(is *is.I, client pconnector.DestinationRunStreamClient, n int) []string {
-	var got []string
-	for len(got) < n {
-		resp, err := client.Recv()
-		is.NoErr(err)
-		for _, ack := range resp.Acks {
-			got = append(got, string(ack.Position))
-		}
-	}
-	return got
 }
 
 func TestCheckAckOrder(t *testing.T) {
