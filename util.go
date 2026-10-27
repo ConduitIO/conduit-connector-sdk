@@ -80,7 +80,15 @@ func parseConfig(
 	logger := Logger(ctx)
 
 	logger.Debug().Msg("sanitizing configuration and applying defaults")
-	c := cfg.Sanitize().ApplyDefaults(params)
+	c := cfg.Sanitize()
+	// Which batch parameters the user set can only be told before defaults are
+	// applied.
+	batchMW := findSourceWithBatch(target)
+	var batchIn batchInputs
+	if batchMW != nil {
+		batchIn = captureBatchInputs(ctx, c, params)
+	}
+	c = c.ApplyDefaults(params)
 
 	logger.Debug().Msg("validating configuration according to the specifications")
 	err := c.Validate(params)
@@ -98,6 +106,10 @@ func parseConfig(
 		if err != nil {
 			return fmt.Errorf("config invalid: %w", err)
 		}
+	}
+
+	if batchMW != nil {
+		batchMW.resolve(ctx, batchIn)
 	}
 
 	return err

@@ -22,14 +22,16 @@ specification:
         default: ""
         validations: []
       - name: sdk.batch.delay
-        description: Maximum delay before an incomplete batch is read from the source.
+        description: |-
+          Maximum delay before an incomplete batch is read from the source. 0
+          returns what is already queued without waiting.
         type: duration
         default: "0"
         validations: []
       - name: sdk.batch.size
         description: Maximum size of batch before it gets read from the source.
         type: int
-        default: "0"
+        default: "100"
         validations:
           - type: greater-than
             value: "-1"
