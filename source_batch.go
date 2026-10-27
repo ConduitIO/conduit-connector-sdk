@@ -18,11 +18,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/conduitio/conduit-commons/cchan"
@@ -30,16 +29,6 @@ import (
 	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/jpillora/backoff"
 )
-
-// EnvBatchDefaultDelay overrides the default of sdk.batch.delay for sources
-// that inherit the SDK's batching default. It exists so the two candidate
-// default semantics can be measured, and so a release can be switched, without
-// a code change: unset or "0" gives the adaptive drain (size 100, delay 0), a
-// duration such as "10ms" gives the fixed window (size 100, delay 10ms).
-//
-// It never overrides a delay the user set in the pipeline, and it is ignored
-// for connectors that pin sdk.batch.size to 0 in their spec.
-const EnvBatchDefaultDelay = "CONDUIT_SDK_BATCH_DEFAULT_DELAY"
 
 const (
 	batchSizeParam  = "sdk.batch.size"
@@ -240,33 +229,19 @@ func derefDuration(p *time.Duration) time.Duration {
 
 // captureBatchInputs must be called on the sanitized config before defaults
 // are applied: afterwards a user-set value and a defaulted one look the same.
-// It also applies [EnvBatchDefaultDelay].
-func captureBatchInputs(ctx context.Context, cfg config.Config, params config.Parameters) batchInputs {
+func captureBatchInputs(cfg config.Config, params config.Parameters) batchInputs {
 	in := batchInputs{
 		sizeSet:  strings.TrimSpace(cfg[batchSizeParam]) != "",
 		delaySet: strings.TrimSpace(cfg[batchDelayParam]) != "",
 	}
 
-	// Specs of connectors from before this version have no entry or default 0.
-	specSize, _ := strconv.Atoi(params[batchSizeParam].Default)
+	// The default delay comes from the connector spec. Specs generated before
+	// this version have no entry or default 0. A spec with a non-zero default is
+	// the fixed-window variant.
 	if d, err := time.ParseDuration(params[batchDelayParam].Default); err == nil {
 		in.defaultDelay = d
 	}
 
-	if env := strings.TrimSpace(os.Getenv(EnvBatchDefaultDelay)); env != "" && (in.sizeSet || specSize > 0) {
-		d, err := time.ParseDuration(env)
-		if err != nil || d < 0 {
-			Logger(ctx).Warn().
-				Str("env", EnvBatchDefaultDelay).
-				Str("value", env).
-				Msg("ignoring invalid default batch delay override")
-		} else {
-			in.defaultDelay = d
-			if !in.delaySet {
-				cfg[batchDelayParam] = d.String() // ApplyDefaults leaves it alone
-			}
-		}
-	}
 	return in
 }
 
@@ -310,6 +285,8 @@ type sourceWithBatch struct {
 	readCh  chan readResponse
 	readNCh chan readNResponse
 	stop    chan struct{}
+	// stopOnce closes stop exactly once, from Teardown.
+	stopOnce sync.Once
 
 	collectFn func(context.Context, int) ([]opencdc.Record, error)
 
@@ -367,6 +344,18 @@ func (s *sourceWithBatch) Open(ctx context.Context, pos opencdc.Position) error 
 	}
 
 	return nil
+}
+
+// Teardown stops the reader goroutines, then tears the connector down. Closing
+// stop means they exit even if the Open context is still alive. It is safe to
+// call more than once.
+func (s *sourceWithBatch) Teardown(ctx context.Context) error {
+	s.stopOnce.Do(func() {
+		if s.stop != nil {
+			close(s.stop)
+		}
+	})
+	return s.Source.Teardown(ctx)
 }
 
 func (s *sourceWithBatch) runReadN(ctx context.Context) {

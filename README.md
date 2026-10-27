@@ -109,11 +109,6 @@ The SDK logs a warning with a stable `code` field for settings it normalizes:
 | `sdk.batch.drain_semantics_pending` | An explicit `sdk.batch.size` above 0 with `sdk.batch.delay` 0 waits for a full batch today and will mean "return what is queued" two minor releases from v0.18.0. | Set `sdk.batch.delay` above 0 to keep full batches. |
 | `sdk.batch.unbounded_wait` | A full batch is awaited with no deadline. | Set `sdk.batch.delay` above 0. |
 
-Setting the environment variable `CONDUIT_SDK_BATCH_DEFAULT_DELAY` (for example
-`10ms`) changes the delay used by pipelines that do not set one, which selects
-the fixed window as the default instead of the adaptive drain. It is meant for
-benchmarking and for switching a release without a rebuild.
-
 **Q: How to identify the source from which a record originated?**
 
 A connector can use whatever means available to associate a record with the

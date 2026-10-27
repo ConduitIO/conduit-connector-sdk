@@ -86,7 +86,7 @@ func parseConfig(
 	batchMW := findSourceWithBatch(target)
 	var batchIn batchInputs
 	if batchMW != nil {
-		batchIn = captureBatchInputs(ctx, c, params)
+		batchIn = captureBatchInputs(c, params)
 	}
 	c = c.ApplyDefaults(params)
 

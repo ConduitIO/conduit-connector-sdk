@@ -32,6 +32,7 @@ import (
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
+	"go.uber.org/goleak"
 )
 
 const testDeadline = 5 * time.Second
@@ -254,52 +255,39 @@ func TestParseConfig_BatchExplicitVersusDefaulted(t *testing.T) {
 	}
 }
 
-func TestParseConfig_BatchFixedWindowSelectedByEnv(t *testing.T) {
+func TestParseConfig_BatchFixedWindowSpecDefault(t *testing.T) {
 	const ms10 = 10 * time.Millisecond
-	t.Setenv(EnvBatchDefaultDelay, "10ms")
 
 	t.Run("nothing set is the fixed window", func(t *testing.T) {
 		is := is.New(t)
-		got, coded := parseBatchConfig(t, config.Config{}, batchParams("100", "0"))
+		got, coded := parseBatchConfig(t, config.Config{}, batchParams("100", "10ms"))
 		is.Equal(got, batchSettings{size: 100, delay: ms10, mode: batchModeWindow})
 		is.Equal(len(coded), 0)
 	})
-	t.Run("user delay wins over the env", func(t *testing.T) {
+	t.Run("user delay wins over the spec default", func(t *testing.T) {
 		is := is.New(t)
-		got, _ := parseBatchConfig(t, config.Config{"sdk.batch.delay": "3ms"}, batchParams("100", "0"))
+		got, _ := parseBatchConfig(t, config.Config{"sdk.batch.delay": "3ms"}, batchParams("100", "10ms"))
 		is.Equal(got, batchSettings{size: 100, delay: 3 * time.Millisecond, mode: batchModeWindow})
 	})
 	t.Run("delay 0 alone would wait forever, stays unbatched", func(t *testing.T) {
 		is := is.New(t)
-		got, coded := parseBatchConfig(t, config.Config{"sdk.batch.delay": "0"}, batchParams("100", "0"))
+		got, coded := parseBatchConfig(t, config.Config{"sdk.batch.delay": "0"}, batchParams("100", "10ms"))
 		is.Equal(got, batchSettings{mode: batchModePassthrough})
 		is.Equal(len(coded), 1)
 		is.Equal(coded[0].Code, CodeBatchUnboundedWait)
 	})
 	t.Run("explicit size and delay 0 is unbounded wait", func(t *testing.T) {
 		is := is.New(t)
-		got, coded := parseBatchConfig(t, config.Config{"sdk.batch.size": "5", "sdk.batch.delay": "0"}, batchParams("100", "0"))
+		got, coded := parseBatchConfig(t, config.Config{"sdk.batch.size": "5", "sdk.batch.delay": "0"}, batchParams("100", "10ms"))
 		is.Equal(got, batchSettings{size: 5, mode: batchModeUntilFull})
 		is.Equal(len(coded), 1)
 		is.Equal(coded[0].Code, CodeBatchUnboundedWait)
 	})
 	t.Run("explicit size alone gets the window", func(t *testing.T) {
 		is := is.New(t)
-		got, coded := parseBatchConfig(t, config.Config{"sdk.batch.size": "5"}, batchParams("100", "0"))
+		got, coded := parseBatchConfig(t, config.Config{"sdk.batch.size": "5"}, batchParams("100", "10ms"))
 		is.Equal(got, batchSettings{size: 5, delay: ms10, mode: batchModeWindow})
 		is.Equal(len(coded), 0)
-	})
-	t.Run("pinned 0/0 connectors ignore the env", func(t *testing.T) {
-		is := is.New(t)
-		got, coded := parseBatchConfig(t, config.Config{}, batchParams("0", "0"))
-		is.Equal(got, batchSettings{mode: batchModePassthrough})
-		is.Equal(len(coded), 0)
-	})
-	t.Run("invalid env is ignored", func(t *testing.T) {
-		is := is.New(t)
-		t.Setenv(EnvBatchDefaultDelay, "soon")
-		got, _ := parseBatchConfig(t, config.Config{}, batchParams("100", "0"))
-		is.Equal(got, batchSettings{size: 100, mode: batchModeAdaptive})
 	})
 }
 
@@ -849,4 +837,38 @@ func TestSourceWithBatch_ReadDoesNotRaceWithReader(t *testing.T) {
 		}
 		is.Equal(batchPositions(got), wantPositions(0, 50))
 	})
+}
+
+func TestSourceWithBatch_TeardownStopsReadersWithoutOpenContextCancel(t *testing.T) {
+	for _, path := range []string{"ReadN", "Read"} {
+		t.Run(path, func(t *testing.T) {
+			opts := goleak.IgnoreCurrent()
+			src := &scriptSource{}
+			if path == "ReadN" {
+				src.readN = func(context.Context, int) ([]opencdc.Record, error) { return mkRecs(0, 1), nil }
+			} else {
+				src.read = func(context.Context) (opencdc.Record, error) { return mkRecs(0, 1)[0], nil }
+			}
+			// The Open context is never cancelled: the reader fills the
+			// read-ahead and blocks sending. Only Teardown can release it.
+			s, _ := openBatch(t, src, batchSettings{size: 2, mode: batchModeAdaptive})
+			time.Sleep(50 * time.Millisecond)
+
+			_ = s.Teardown(context.Background())
+			_ = s.Teardown(context.Background()) // exactly-once close, no panic
+
+			withDeadline(t, "readers exit", func() {
+				if err := goleak.Find(opts); err != nil {
+					// give goroutines a moment to unwind
+					for range 100 {
+						time.Sleep(10 * time.Millisecond)
+						if goleak.Find(opts) == nil {
+							return
+						}
+					}
+					t.Errorf("goroutines still running: %v", goleak.Find(opts))
+				}
+			})
+		})
+	}
 }
