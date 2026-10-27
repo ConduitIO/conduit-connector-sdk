@@ -482,7 +482,9 @@ func TestAcceptanceV2_CoreIDsCoverV1(t *testing.T) {
 // Cases without a connector mutant, and why:
 //   - DST-02 (slow acks): the acks are sent by the SDK's destination adapter,
 //     a connector cannot block them. The case guards the adapter's ack path;
-//     it would be mutation tested by an SDK change.
+//     it would be mutation tested by an SDK change. DST-01 and DST-02 also
+//     assert the ack order; reversing the acks in destinationPluginAdapter.ack
+//     fails both (checked by hand when the order assertion was added).
 //   - CORE-*: the v1 specification and configuration tests are the v1 suite's
 //     own, it has no mutants here.
 func TestAcceptanceV2_Mutants(t *testing.T) {

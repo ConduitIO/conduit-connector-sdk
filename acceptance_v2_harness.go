@@ -209,11 +209,14 @@ type v2Dest struct {
 	runDone chan error
 	recvEnd chan struct{}
 
-	mu      sync.Mutex
-	sent    []opencdc.Record
-	acks    map[string]string // position -> ack error ("" is success)
-	dupAcks int
-	changed chan struct{} // closed and replaced on every change
+	mu   sync.Mutex
+	sent []opencdc.Record
+	acks map[string]string // position -> ack error ("" is success)
+	// ackOrder is every acked position in the order the acks arrived, across
+	// all ack messages on the stream (duplicates included).
+	ackOrder []string
+	dupAcks  int
+	changed  chan struct{} // closed and replaced on every change
 
 	tornDown bool
 }
@@ -281,6 +284,7 @@ func (d *v2Dest) collectAcks(delay time.Duration) {
 				d.dupAcks++
 			}
 			d.acks[string(ack.Position)] = ack.Error
+			d.ackOrder = append(d.ackOrder, string(ack.Position))
 		}
 		d.notifyLocked()
 		d.mu.Unlock()
@@ -354,6 +358,48 @@ func (d *v2Dest) ackedRecords() (ok, nacked []opencdc.Record) {
 		}
 	}
 	return ok, nacked
+}
+
+// ackOrderError checks the ack-order guarantee of the connector protocol
+// (Destination.Open.Response.ordered_acks, which the SDK declares): acks arrive
+// in the order the records were sent, across all batches on the stream. It
+// compares the sequence of acked positions of want with the order of want
+// itself, so the positions of want must be unique, otherwise a reorder cannot
+// be told apart and the check refuses to pass vacuously.
+func (d *v2Dest) ackOrderError(want []opencdc.Record) error {
+	return checkAckOrder(want, d.ackOrderSnapshot())
+}
+
+func (d *v2Dest) ackOrderSnapshot() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.ackOrder...)
+}
+
+// checkAckOrder is the pure part of ackOrderError.
+func checkAckOrder(want []opencdc.Record, acked []string) error {
+	idx := make(map[string]int, len(want))
+	for i, r := range want {
+		if _, dup := idx[string(r.Position)]; dup {
+			return fmt.Errorf("record positions are not unique (%q), the ack order cannot be verified; the driver's GenerateRecord must return unique positions", r.Position)
+		}
+		idx[string(r.Position)] = i
+	}
+	next := 0
+	for _, pos := range acked {
+		i, ok := idx[pos]
+		if !ok {
+			continue // not part of want
+		}
+		if i != next {
+			return fmt.Errorf("acks are out of order: the ack number %d (in want order) carries the record sent at index %d (position %q), expected the one sent at index %d (position %q); acks must be emitted in the order records were received, across all batches", next+1, i, pos, next, want[next].Position)
+		}
+		next++
+	}
+	if next != len(want) {
+		return fmt.Errorf("only %d of %d records were acked", next, len(want))
+	}
+	return nil
 }
 
 func (d *v2Dest) dupAckCount() int {

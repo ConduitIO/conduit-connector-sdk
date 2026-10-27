@@ -172,7 +172,14 @@ func (a *destinationPluginAdapter) Open(ctx context.Context, _ pconnector.Destin
 	err := a.impl.Open(ctxOpen)
 	a.configureWriteStrategy(ctxOpen)
 
-	return pconnector.DestinationOpenResponse{}, err
+	// Invariant 1 (ack correctness): declare the ack-order guarantee the engine
+	// relies on to run several writes in flight. It holds because Run handles
+	// requests sequentially and writeStrategySingle.Write acks a batch in
+	// record order (acks for batch[:n], then the nack for batch[n:]) before
+	// Run receives the next request; the batch strategy serializes its flushes
+	// under the Batcher mutex in enqueue order, so batching keeps the order too.
+	// See ConduitIO/conduit#3292 and the protocol field ordered_acks.
+	return pconnector.DestinationOpenResponse{OrderedAcks: true}, err
 }
 
 // defaultMaxBatchSize bounds the destination write batch when only
