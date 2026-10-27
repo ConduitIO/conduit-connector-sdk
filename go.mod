@@ -14,7 +14,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-plugin v1.8.0
-	github.com/jpillora/backoff v1.0.0
+	github.com/jpillora/backoff v1.1.0
 	github.com/matryer/is v1.4.1
 	github.com/rs/zerolog v1.35.1
 	github.com/samber/slog-zerolog/v2 v2.9.2

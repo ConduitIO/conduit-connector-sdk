@@ -57,8 +57,8 @@ github.com/iskorotkov/avro/v2 v2.34.0 h1:NSUmRFg8Gy51BuALFC6l6n0z1DFz6eAZT6XcjjI
 github.com/iskorotkov/avro/v2 v2.34.0/go.mod h1:euwnxvsKRkeD5nh0T7DLxBmJvRyycOyDBuDnTfDgwT8=
 github.com/jhump/protoreflect v1.17.0 h1:qOEr613fac2lOuTgWN4tPAtLL7fUSbuJL5X5XumQh94=
 github.com/jhump/protoreflect v1.17.0/go.mod h1:h9+vUUL38jiBzck8ck+6G/aeMX8Z4QUY/NiJPwPNi+8=
-github.com/jpillora/backoff v1.0.0 h1:uvFg412JmmHBHw7iwprIxkPMI+sGQ4kzOWsMeHnm2EA=
-github.com/jpillora/backoff v1.0.0/go.mod h1:J/6gKK9jxlEcS3zixgDgUAsiuZ7yrSoa/FX5e0EB2j4=
+github.com/jpillora/backoff v1.1.0 h1:9LWA6DCcU2qxTLK7iOxvuIQvuIe/twLJHryAcA3JFAs=
+github.com/jpillora/backoff v1.1.0/go.mod h1:InzEM6zwRZT3SOZRzyrihzVj4k8KKFicc+XgkyHOgNM=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
