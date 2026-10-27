@@ -160,30 +160,20 @@ func resolveBatch(size int, delay time.Duration, in batchInputs) (batchSettings,
 	case delay > 0:
 		return batchSettings{size: size, delay: delay, mode: batchModeWindow}, nil
 
-	case !in.sizeSet && windowDefault:
-		// The default is a window, and the user turned the window off by
-		// setting only delay 0. They would inherit a size with no deadline,
-		// a stall the upgrade itself would create, so keep them on passthrough.
-		return batchSettings{mode: batchModePassthrough}, []batchWarning{{
-			code: CodeBatchUnboundedWait,
-			path: batchDelayParam,
-			msg: fmt.Sprintf("%s is 0 and %s is not set, which would wait for a full batch with no deadline; batching is off",
-				batchDelayParam, batchSizeParam),
-			fix: "set " + batchDelayParam + " above 0, or set " + batchSizeParam + " explicitly",
-		}}
-
-	case !in.sizeSet:
+	case !in.sizeSet && !windowDefault:
 		// Defaults only (or a defaulted size with delay 0): adaptive drain.
 		return batchSettings{size: size, mode: batchModeAdaptive}, nil
 
 	case windowDefault:
-		// Explicit size with an explicit delay of 0 while the default is a
-		// window: wait-until-full with no deadline.
+		// The connector's default is a window and the user set delay 0 (with
+		// or without a size). That is what such a config meant before this
+		// version: wait for a full batch, no deadline. Keep it, per the
+		// deprecation policy, and warn.
 		return batchSettings{size: size, mode: batchModeUntilFull}, []batchWarning{{
 			code: CodeBatchUnboundedWait,
 			path: batchDelayParam,
-			msg: fmt.Sprintf("%s is set and %s is 0, so a batch waits until it is full with no deadline",
-				batchSizeParam, batchDelayParam),
+			msg: fmt.Sprintf("%s is 0 while the default is a window, so a batch waits until it is full with no deadline",
+				batchDelayParam),
 			fix: "set " + batchDelayParam + " above 0",
 		}}
 
@@ -477,6 +467,9 @@ func (s *sourceWithBatch) runRead(ctx context.Context) {
 // read methods, so forwarding the call would run two readers against the
 // connector at once and split the stream between them. Take the record from
 // the collector instead and keep the rest of its batch for the next call.
+//
+// Like ReadN, Read must be called from one goroutine at a time; Read and ReadN
+// may be interleaved and together return every record once, in order.
 func (s *sourceWithBatch) Read(ctx context.Context) (opencdc.Record, error) {
 	if s.mode == batchModePassthrough || s.collectFn == nil {
 		return s.Source.Read(ctx)
@@ -486,7 +479,10 @@ func (s *sourceWithBatch) Read(ctx context.Context) (opencdc.Record, error) {
 		if err != nil {
 			return opencdc.Record{}, err
 		}
-		s.carry = batch
+		// collect may have left an overshoot in s.carry (a ReadN connector that
+		// returned more than size). It follows the batch in order; assigning
+		// over it would drop those records (invariant 3).
+		s.carry = append(batch, s.carry...)
 	}
 	rec := s.carry[0]
 	s.carry = s.carry[1:]

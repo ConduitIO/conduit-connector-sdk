@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,6 +35,7 @@ import (
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
 	"go.uber.org/goleak"
+	"pgregory.net/rapid"
 )
 
 const testDeadline = 5 * time.Second
@@ -145,7 +148,7 @@ func TestResolveBatch(t *testing.T) {
 		{"explicit size equal to default", 100, 0, batchInputs{sizeSet: true}, batchSettings{size: 100, mode: batchModeUntilFull}, CodeBatchDrainSemanticsPending},
 		{"explicit size and delay 0", 5, 0, batchInputs{sizeSet: true, delaySet: true}, batchSettings{size: 5, mode: batchModeUntilFull}, CodeBatchDrainSemanticsPending},
 		{"explicit delay 0 only (adaptive default)", 100, 0, batchInputs{delaySet: true}, batchSettings{size: 100, mode: batchModeAdaptive}, ""},
-		{"window default: delay 0 only", 100, 0, batchInputs{delaySet: true, defaultDelay: ms10}, batchSettings{mode: batchModePassthrough}, CodeBatchUnboundedWait},
+		{"window default: delay 0 only keeps wait-until-full", 100, 0, batchInputs{delaySet: true, defaultDelay: ms10}, batchSettings{size: 100, mode: batchModeUntilFull}, CodeBatchUnboundedWait},
 		{"window default: size and delay 0", 5, 0, batchInputs{sizeSet: true, delaySet: true, defaultDelay: ms10}, batchSettings{size: 5, mode: batchModeUntilFull}, CodeBatchUnboundedWait},
 		{"window default: nothing set", 100, ms10, batchInputs{defaultDelay: ms10}, batchSettings{size: 100, delay: ms10, mode: batchModeWindow}, ""},
 		{"negative delay is 0", 100, -time.Second, batchInputs{}, batchSettings{size: 100, mode: batchModeAdaptive}, ""},
@@ -269,10 +272,10 @@ func TestParseConfig_BatchFixedWindowSpecDefault(t *testing.T) {
 		got, _ := parseBatchConfig(t, config.Config{"sdk.batch.delay": "3ms"}, batchParams("100", "10ms"))
 		is.Equal(got, batchSettings{size: 100, delay: 3 * time.Millisecond, mode: batchModeWindow})
 	})
-	t.Run("delay 0 alone would wait forever, stays unbatched", func(t *testing.T) {
+	t.Run("delay 0 alone keeps wait-until-full and warns", func(t *testing.T) {
 		is := is.New(t)
 		got, coded := parseBatchConfig(t, config.Config{"sdk.batch.delay": "0"}, batchParams("100", "10ms"))
-		is.Equal(got, batchSettings{mode: batchModePassthrough})
+		is.Equal(got, batchSettings{size: 100, mode: batchModeUntilFull})
 		is.Equal(len(coded), 1)
 		is.Equal(coded[0].Code, CodeBatchUnboundedWait)
 	})
@@ -292,13 +295,22 @@ func TestParseConfig_BatchFixedWindowSpecDefault(t *testing.T) {
 }
 
 func TestParseConfig_BatchSpecDefaultWindow(t *testing.T) {
-	// A spec that carries the fixed-window default (100/10ms), as generated
-	// when the tags are switched, behaves like the env override.
-	is := is.New(t)
-	got, coded := parseBatchConfig(t, config.Config{"sdk.batch.delay": "0"}, batchParams("100", "10ms"))
-	is.Equal(got, batchSettings{mode: batchModePassthrough})
-	is.Equal(len(coded), 1)
-	is.Equal(coded[0].Code, CodeBatchUnboundedWait)
+	// A spec that carries a window default keeps a user's delay-0 config on
+	// what it meant before: wait for a full batch, and warns. Spec defaults of
+	// 100/10ms (the fixed-window variant) and 10000/1s (a connector that pins
+	// its own window, such as MySQL).
+	for _, tc := range []struct {
+		size, delay string
+		want        int
+	}{{"100", "10ms", 100}, {"10000", "1s", 10000}} {
+		t.Run(tc.size+"/"+tc.delay, func(t *testing.T) {
+			is := is.New(t)
+			got, coded := parseBatchConfig(t, config.Config{"sdk.batch.delay": "0"}, batchParams(tc.size, tc.delay))
+			is.Equal(got, batchSettings{size: tc.want, mode: batchModeUntilFull})
+			is.Equal(len(coded), 1)
+			is.Equal(coded[0].Code, CodeBatchUnboundedWait)
+		})
+	}
 }
 
 func TestCodeFromMessage(t *testing.T) {
@@ -870,5 +882,169 @@ func TestSourceWithBatch_TeardownStopsReadersWithoutOpenContextCancel(t *testing
 				}
 			})
 		})
+	}
+}
+
+// overshootSource is a ReadN connector that ignores n and returns chunks of the
+// given sizes, then fails with errEnd.
+func overshootSource(chunks []int) *scriptSource {
+	var mu sync.Mutex
+	next := 0
+	return &scriptSource{readN: func(context.Context, int) ([]opencdc.Record, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(chunks) == 0 {
+			return nil, errEnd
+		}
+		c := chunks[0]
+		chunks = chunks[1:]
+		recs := mkRecs(next, next+c)
+		next += c
+		return recs, nil
+	}}
+}
+
+var errEnd = errors.New("end of stream")
+
+func TestSourceWithBatch_ReadKeepsOvershootFromReadNConnector(t *testing.T) {
+	// Regression: Read assigned the collected batch over the overshoot that
+	// collect had stored in the carry, dropping every record past size.
+	t.Run("Read only", func(t *testing.T) {
+		is := is.New(t)
+		s, _ := openBatch(t, overshootSource([]int{250}), adaptive(100))
+		withDeadline(t, "read", func() {
+			var got []opencdc.Record
+			for {
+				rec, err := s.Read(context.Background())
+				if err != nil {
+					is.True(errors.Is(err, errEnd))
+					break
+				}
+				got = append(got, rec)
+			}
+			is.Equal(batchPositions(got), wantPositions(0, 250))
+		})
+	})
+	t.Run("Read interleaved with ReadN, size 10, 30 records", func(t *testing.T) {
+		is := is.New(t)
+		s, _ := openBatch(t, overshootSource([]int{30}), adaptive(10))
+		withDeadline(t, "interleave", func() {
+			var got []opencdc.Record
+			rec, err := s.Read(context.Background())
+			is.NoErr(err)
+			got = append(got, rec)
+			for {
+				b, err := s.ReadN(context.Background(), 1)
+				if err != nil {
+					is.True(errors.Is(err, errEnd))
+					break
+				}
+				got = append(got, b...)
+				rec, err := s.Read(context.Background())
+				if err != nil {
+					is.True(errors.Is(err, errEnd))
+					break
+				}
+				got = append(got, rec)
+			}
+			is.Equal(batchPositions(got), wantPositions(0, 30))
+		})
+	})
+}
+
+// TestSourceWithBatch_Property drives the collector with random connector
+// overshoot sizes and random Read/ReadN interleavings, in every mode, and
+// asserts invariant 3 and 4: every record exactly once, in order, never more
+// than size per ReadN, never an empty batch with a nil error, and the error
+// last and sticky.
+func TestSourceWithBatch_Property(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		size := rapid.IntRange(1, 40).Draw(rt, "size")
+		chunks := rapid.SliceOfN(rapid.IntRange(1, 120), 0, 12).Draw(rt, "chunks")
+		useRead := rapid.Bool().Draw(rt, "connectorUsesRead")
+		mode := rapid.SampledFrom([]batchMode{batchModeAdaptive, batchModeWindow, batchModeUntilFull}).Draw(rt, "mode")
+		st := batchSettings{size: size, mode: mode}
+		if mode == batchModeWindow {
+			st.delay = time.Hour // only the stream's end flushes it
+		}
+
+		total := 0
+		for _, c := range chunks {
+			total += c
+		}
+		src := propertySource(useRead, chunks, total)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		s := (&SourceWithBatch{resolved: &st}).Wrap(src).(*sourceWithBatch)
+		if err := s.Open(ctx, nil); err != nil {
+			rt.Fatal(err)
+		}
+		defer func() { _ = s.Teardown(ctx) }()
+
+		got := drainRandomly(rt, ctx, s, size, total)
+
+		if g, w := batchPositions(got), wantPositions(0, total); !slices.Equal(g, w) {
+			rt.Fatalf("delivered %d records, want %d exactly once in order", len(g), len(w))
+		}
+		if _, err := s.ReadN(ctx, 1); !errors.Is(err, errEnd) {
+			rt.Fatalf("error not sticky: %v", err)
+		}
+	})
+}
+
+func propertySource(useRead bool, chunks []int, total int) *scriptSource {
+	if !useRead {
+		return overshootSource(append([]int(nil), chunks...))
+	}
+	var mu sync.Mutex
+	i := 0
+	return &scriptSource{read: func(context.Context) (opencdc.Record, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if i >= total {
+			return opencdc.Record{}, errEnd
+		}
+		i++
+		return mkRecs(i-1, i)[0], nil
+	}}
+}
+
+// drainRandomly reads s to the end of the stream, choosing Read or ReadN at
+// random for every call, and returns what it got.
+func drainRandomly(rt *rapid.T, ctx context.Context, s *sourceWithBatch, size, total int) []opencdc.Record {
+	var got []opencdc.Record
+	deadline := time.After(testDeadline)
+	for step := 0; ; step++ {
+		if step > total+100 {
+			rt.Fatalf("no end after %d steps", step)
+		}
+		select {
+		case <-deadline:
+			rt.Fatal("deadline: collector stuck")
+		default:
+		}
+		if rapid.Bool().Draw(rt, "useRead") {
+			rec, err := s.Read(ctx)
+			if err != nil {
+				if !errors.Is(err, errEnd) {
+					rt.Fatalf("Read error %v", err)
+				}
+				return got
+			}
+			got = append(got, rec)
+			continue
+		}
+		b, err := s.ReadN(ctx, 1)
+		if err != nil {
+			if !errors.Is(err, errEnd) || len(b) != 0 {
+				rt.Fatalf("ReadN error %v with %d records", err, len(b))
+			}
+			return got
+		}
+		if len(b) == 0 || len(b) > size {
+			rt.Fatalf("batch of %d records, size %d", len(b), size)
+		}
+		got = append(got, b...)
 	}
 }
