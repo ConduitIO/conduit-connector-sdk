@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -1046,5 +1047,32 @@ func drainRandomly(rt *rapid.T, ctx context.Context, s *sourceWithBatch, size, t
 			rt.Fatalf("batch of %d records, size %d", len(b), size)
 		}
 		got = append(got, b...)
+	}
+}
+
+// TestParseConfig_DoesNotMutateCallerConfig is a regression test: ParseConfig
+// used to write sanitized values and defaults back into the caller's map, so a
+// second parse of the same map saw the defaulted sdk.batch.size as an explicit
+// choice and resolved to wait-until-full, stalling sparse sources.
+func TestParseConfig_DoesNotMutateCallerConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.Config
+	}{
+		{"nothing set", config.Config{}},
+		{"explicit size with whitespace", config.Config{" sdk.batch.size ": " 100 "}},
+		{"explicit size", config.Config{"sdk.batch.size": "5"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
+			want := maps.Clone(tc.cfg)
+
+			first, _ := parseBatchConfig(t, tc.cfg, batchParams("100", "0"))
+			is.Equal(tc.cfg, want) // caller's map untouched
+			second, _ := parseBatchConfig(t, tc.cfg, batchParams("100", "0"))
+			is.Equal(tc.cfg, want)
+			is.Equal(first, second)
+		})
 	}
 }

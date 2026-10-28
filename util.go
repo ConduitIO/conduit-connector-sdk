@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -80,7 +81,10 @@ func parseConfig(
 	logger := Logger(ctx)
 
 	logger.Debug().Msg("sanitizing configuration and applying defaults")
-	c := cfg.Sanitize()
+	// Sanitize and ApplyDefaults write into the map they are given. Work on a
+	// copy so the caller's map is never mutated: a second parse of the same map
+	// would otherwise see defaulted values (e.g. sdk.batch.size) as explicit.
+	c := maps.Clone(cfg).Sanitize()
 	// Which batch parameters the user set can only be told before defaults are
 	// applied.
 	batchMW := findSourceWithBatch(target)
