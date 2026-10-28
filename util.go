@@ -43,6 +43,11 @@ var Util = struct {
 	// convenient function. It is intended to be used in the Configure method of a
 	// connector to parse the configuration map.
 	//
+	// ParseConfig never modifies the map it is given: sanitization and defaults
+	// are applied to a copy, so parsing the same map again gives the same result.
+	// Callers that relied on defaults being written back into their map must read
+	// them from the target object instead.
+	//
 	// The configuration parameters should be provided through NewSource().Parameters()
 	// or NewDestination().Parameters() so that parameters from SDK middlewares are
 	// included too.

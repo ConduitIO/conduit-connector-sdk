@@ -1058,10 +1058,13 @@ func TestParseConfig_DoesNotMutateCallerConfig(t *testing.T) {
 	tests := []struct {
 		name string
 		cfg  config.Config
+		want batchSettings
 	}{
-		{"nothing set", config.Config{}},
-		{"explicit size with whitespace", config.Config{" sdk.batch.size ": " 100 "}},
-		{"explicit size", config.Config{"sdk.batch.size": "5"}},
+		{"nil config", nil, batchSettings{size: 100, mode: batchModeAdaptive}},
+		{"nothing set", config.Config{}, batchSettings{size: 100, mode: batchModeAdaptive}},
+		{"explicit size equal to the default", config.Config{"sdk.batch.size": "100"}, batchSettings{size: 100, mode: batchModeUntilFull}},
+		{"explicit size with whitespace", config.Config{" sdk.batch.size ": " 100 "}, batchSettings{size: 100, mode: batchModeUntilFull}},
+		{"explicit size", config.Config{"sdk.batch.size": "5"}, batchSettings{size: 5, mode: batchModeUntilFull}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1072,7 +1075,8 @@ func TestParseConfig_DoesNotMutateCallerConfig(t *testing.T) {
 			is.Equal(tc.cfg, want) // caller's map untouched
 			second, _ := parseBatchConfig(t, tc.cfg, batchParams("100", "0"))
 			is.Equal(tc.cfg, want)
-			is.Equal(first, second)
+			is.Equal(first, tc.want)
+			is.Equal(second, tc.want) // the second parse resolves like the first
 		})
 	}
 }
