@@ -245,7 +245,7 @@ func (a *sourcePluginAdapter) Run(ctx context.Context, stream pconnector.SourceR
 		StateAfter:           internal.StateRunning,
 		WaitForExpectedState: false,
 	}, func(_ internal.ConnectorState) error {
-		t, ctx := tomb.WithContext(ctx)
+		t, ctx := newRunTomb(ctx)
 		readCtx, readCancel := context.WithCancel(ctx)
 
 		a.t = t
@@ -287,6 +287,32 @@ func (a *sourcePluginAdapter) Run(ctx context.Context, stream pconnector.SourceR
 
 	<-a.t.Dying() // stop as soon as it's dying
 	return a.t.Err()
+}
+
+// newRunTomb returns a tomb that is killed when parent is cancelled, and a
+// context derived from parent that is cancelled when either the parent is
+// cancelled or the tomb starts dying.
+//
+// It replaces tomb.WithContext, which has a data race: it starts a goroutine
+// that calls Kill when parent is done while the creating goroutine is still
+// running addChild, which reads the tomb's reason without holding its lock.
+// With an already (or concurrently) cancelled parent both run at once. Here
+// the tomb is never touched outside of Kill, which is synchronised.
+func newRunTomb(parent context.Context) (*tomb.Tomb, context.Context) {
+	t := new(tomb.Tomb)
+	ctx, cancel := context.WithCancel(parent)
+	// The goroutine is deliberately not registered with t.Go: it must not keep
+	// the tomb alive once the tracked goroutines are done. It exits as soon as
+	// the tomb is dying, which is also what happens when Kill is called here.
+	go func() {
+		defer cancel()
+		select {
+		case <-t.Dying():
+		case <-parent.Done():
+			t.Kill(parent.Err())
+		}
+	}()
+	return t, ctx
 }
 
 func (a *sourcePluginAdapter) runRead(ctx context.Context, stream pconnector.SourceRunStreamServer) error {

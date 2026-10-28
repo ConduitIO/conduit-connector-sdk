@@ -207,7 +207,6 @@ func TestProtocolV3LosslessRoundTrip(t *testing.T) {
 
 	src := &losslessSource{record: losslessRecord()}
 	rc, stopServer := startServer(t, "3,2,1", src)
-	t.Cleanup(stopServer)
 	is.Equal(v3.Version, rc.ProtocolVersion)
 
 	pluginClient, err := client.New(
@@ -230,6 +229,14 @@ func TestProtocolV3LosslessRoundTrip(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+
+	// Registered last so it runs first (cleanups are LIFO). pluginClient.Kill
+	// makes the server call GRPCServer.Stop from its Shutdown handler, and
+	// stopServer makes go-plugin call it again from the serve loop. go-plugin's
+	// Stop is not safe to call concurrently (it writes s.broker unguarded), and
+	// Kill can return before the handler's Stop has finished. Stopping the
+	// server first, and waiting for it, serialises the two.
+	t.Cleanup(stopServer)
 
 	_, err = srcClient.Configure(ctx, pconnector.SourceConfigureRequest{Config: config.Config{}})
 	is.NoErr(err)
