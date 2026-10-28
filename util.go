@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -41,6 +42,11 @@ var Util = struct {
 	// provided by github.com/conduitio/conduit-commons/config.Config into a single
 	// convenient function. It is intended to be used in the Configure method of a
 	// connector to parse the configuration map.
+	//
+	// ParseConfig never modifies the map it is given: sanitization and defaults
+	// are applied to a copy, so parsing the same map again gives the same result.
+	// Callers that relied on defaults being written back into their map must read
+	// them from the target object instead.
 	//
 	// The configuration parameters should be provided through NewSource().Parameters()
 	// or NewDestination().Parameters() so that parameters from SDK middlewares are
@@ -80,7 +86,10 @@ func parseConfig(
 	logger := Logger(ctx)
 
 	logger.Debug().Msg("sanitizing configuration and applying defaults")
-	c := cfg.Sanitize()
+	// Sanitize and ApplyDefaults write into the map they are given. Work on a
+	// copy so the caller's map is never mutated: a second parse of the same map
+	// would otherwise see defaulted values (e.g. sdk.batch.size) as explicit.
+	c := maps.Clone(cfg).Sanitize()
 	// Which batch parameters the user set can only be told before defaults are
 	// applied.
 	batchMW := findSourceWithBatch(target)
