@@ -1,0 +1,22 @@
+# 2026/10/27 15:36:31.979019 [TestSourceWithBatch_Property] [rapid] draw size: 1
+# 2026/10/27 15:36:31.979023 [TestSourceWithBatch_Property] [rapid] draw chunks: []int{2}
+# 2026/10/27 15:36:31.979028 [TestSourceWithBatch_Property] [rapid] draw connectorUsesRead: false
+# 2026/10/27 15:36:31.979029 [TestSourceWithBatch_Property] [rapid] draw mode: 1
+# 2026/10/27 15:36:31.979031 [TestSourceWithBatch_Property] [rapid] draw useRead: true
+# 2026/10/27 15:36:31.979035 [TestSourceWithBatch_Property] [rapid] draw useRead: false
+# 2026/10/27 15:36:31.979035 [TestSourceWithBatch_Property] delivered 1 records, want 2 exactly once in order
+# 
+v0.4.8#17836211416319887636
+0x0
+0x0
+0x0
+0x5555555555555
+0x0
+0x0
+0x1
+0x0
+0x0
+0x0
+0x0
+0x1
+0x0

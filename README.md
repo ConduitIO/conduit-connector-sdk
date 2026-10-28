@@ -81,6 +81,34 @@ Find out more information on building a connector in the [Go doc reference](http
 
 ## FAQ
 
+**Q: How does source batching work, and how do I change it?**
+
+A source hands Conduit up to 100 records per read by default
+(`sdk.batch.size: 100`, `sdk.batch.delay: 0`). With a delay of 0 the batch is
+adaptive: the SDK waits for the first record, takes whatever its read-ahead has
+already queued (up to the size) and returns, with no timer. A delay above 0 is a
+fixed window: the batch is returned when it is full or when the delay, started
+at the first record, expires. The SDK never returns more than `sdk.batch.size`
+records at once, even if the connector's `ReadN` ignores `n`.
+
+- Turn batching off: `sdk.batch.size: 0` and `sdk.batch.delay: 0`.
+- Keep different defaults in a connector (for example Postgres, which batches
+  internally): set non-nil `BatchSize` and `BatchDelay` in `NewSource()`, then
+  regenerate `connector.yaml`.
+- Records read but not yet sent, and records sent but not yet acked, replay
+  from the last persisted position after a crash or stop. Batching never acks
+  early.
+- A read error after some records were collected delivers those records first,
+  then the error.
+
+The SDK logs a warning with a stable `code` field for settings it normalizes:
+
+| Code | Meaning | Fix |
+| --- | --- | --- |
+| `sdk.batch.size_defaulted` | `sdk.batch.delay` is set while `sdk.batch.size` is 0; the SDK uses a batch size of 1000. | Set `sdk.batch.size`. |
+| `sdk.batch.drain_semantics_pending` | An explicit `sdk.batch.size` above 0 with `sdk.batch.delay` 0 waits for a full batch today and will mean "return what is queued" two minor releases from v0.18.0. | Set `sdk.batch.delay` above 0 to keep full batches. |
+| `sdk.batch.unbounded_wait` | A full batch is awaited with no deadline. | Set `sdk.batch.delay` above 0. |
+
 **Q: How to identify the source from which a record originated?**
 
 A connector can use whatever means available to associate a record with the

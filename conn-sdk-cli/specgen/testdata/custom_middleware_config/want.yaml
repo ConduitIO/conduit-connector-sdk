@@ -13,7 +13,9 @@ specification:
         default: ""
         validations: []
       - name: sdk.batch.delay
-        description: Maximum delay before an incomplete batch is read from the source.
+        description: |-
+          Maximum delay before an incomplete batch is read from the source. 0
+          returns what is already queued without waiting.
         type: duration
         default: "0"
         validations: []
