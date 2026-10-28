@@ -28,6 +28,7 @@ import (
 	"github.com/conduitio/conduit-connector-sdk/internal"
 	"github.com/matryer/is"
 	"github.com/rs/zerolog"
+	"go.uber.org/goleak"
 	"go.uber.org/mock/gomock"
 )
 
@@ -479,4 +480,72 @@ func TestSourcePluginAdapter_LifecycleOnDeleted(t *testing.T) {
 	req := pconnector.SourceLifecycleOnDeletedRequest{Config: want}
 	_, err := srcPlugin.LifecycleOnDeleted(ctx, req)
 	is.NoErr(err)
+}
+
+// blockingSource blocks in ReadN until its context is cancelled.
+type blockingSource struct {
+	UnimplementedSource
+}
+
+func (blockingSource) Config() SourceConfig { return &struct{ UnimplementedSourceConfig }{} }
+func (blockingSource) Open(context.Context, opencdc.Position) error {
+	return nil
+}
+
+func (blockingSource) ReadN(ctx context.Context, _ int) ([]opencdc.Record, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// TestSourcePluginAdapter_Run_ParentCancelRace is a regression test for a data
+// race in Run: tomb.WithContext starts a goroutine that kills the tomb when the
+// parent context is done while the creating goroutine is still registering the
+// derived context on the same tomb, unsynchronised. It triggers when the
+// parent is already cancelled, or cancels while Run starts. Run must return
+// once the parent context is cancelled, and must not race (run with -race).
+func TestSourcePluginAdapter_Run_ParentCancelRace(t *testing.T) {
+	run := func(t *testing.T, cancelBeforeRun bool) {
+		is := is.New(t)
+		srcPlugin := NewSourcePlugin(blockingSource{}, pconnector.PluginConfig{}, config.Parameters{}).(*sourcePluginAdapter)
+		srcPlugin.state.Set(internal.StateConfigured) // Open expects state Configured
+
+		_, err := srcPlugin.Open(context.Background(), pconnector.SourceOpenRequest{})
+		is.NoErr(err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stream := NewInMemorySourceRunStream(ctx)
+		defer stream.Close(io.EOF)
+
+		if cancelBeforeRun {
+			cancel()
+		} else {
+			go cancel() // cancel concurrently with Run starting up
+		}
+
+		done := make(chan error, 1)
+		go func() { done <- srcPlugin.Run(ctx, stream) }()
+
+		select {
+		case err := <-done:
+			is.True(err != nil) // cancelled run reports the cancellation
+		case <-time.After(5 * time.Second):
+			t.Fatal("Run did not return after the parent context was cancelled")
+		}
+	}
+
+	// No goroutine started by Run (including the tomb's cancellation watcher)
+	// may outlive it.
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	t.Run("already cancelled", func(t *testing.T) {
+		for i := 0; i < 200; i++ {
+			run(t, true)
+		}
+	})
+	t.Run("cancelled concurrently", func(t *testing.T) {
+		for i := 0; i < 200; i++ {
+			run(t, false)
+		}
+	})
 }
