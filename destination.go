@@ -172,7 +172,14 @@ func (a *destinationPluginAdapter) Open(ctx context.Context, _ pconnector.Destin
 	err := a.impl.Open(ctxOpen)
 	a.configureWriteStrategy(ctxOpen)
 
-	return pconnector.DestinationOpenResponse{}, err
+	// Invariant 1 (ack correctness): declare the ack-order guarantee the engine
+	// relies on to run several writes in flight. It holds because Run handles
+	// requests sequentially and writeStrategySingle.Write acks a batch in
+	// record order (acks for batch[:n], then the nack for batch[n:]) before
+	// Run receives the next request; the batch strategy serializes its flushes
+	// under the Batcher mutex in enqueue order, so batching keeps the order too.
+	// See ConduitIO/conduit#3292 and the protocol field ordered_acks.
+	return pconnector.DestinationOpenResponse{OrderedAcks: true}, err
 }
 
 // defaultMaxBatchSize bounds the destination write batch when only
@@ -212,6 +219,12 @@ func (a *destinationPluginAdapter) Run(ctx context.Context, stream pconnector.De
 				return nil
 			}
 			return fmt.Errorf("write stream error: %w", err)
+		}
+
+		if len(batch.Records) == 0 {
+			// Nothing to write and nothing to ack: an empty request must not
+			// reach the connector, nor index into Records below.
+			continue
 		}
 
 		err = a.writeStrategy.Write(ctx, batch.Records)
@@ -297,9 +310,14 @@ func (a *destinationPluginAdapter) Stop(ctx context.Context, req pconnector.Dest
 // Teardown waits for a running Write, refuses later ones and calls the
 // connector's Teardown.
 //
-// Records that reach the adapter after Teardown started are never written and
-// are left unanswered (neither acked nor nacked), so Conduit redelivers them
-// after a restart instead of routing them to a DLQ.
+// Once Teardown has begun (or the Run stream has ended) the adapter sends no
+// further acks, so the acks sent always form a prefix of the records received
+// (see the ordered_acks guarantee in the protocol). Every record not acked by
+// then stays unanswered, neither acked nor nacked: records that reach the
+// adapter after Teardown started, records still buffered by the batch write
+// strategy, and the records of a Write that Teardown gave up waiting for. They
+// are not durable; Conduit redelivers them after a restart instead of routing
+// them to a DLQ.
 //
 // The wait is bounded by min(ctx, destinationTeardownTimeout), 1 minute at
 // most, so a Teardown ctx that is already canceled abandons immediately. If a Write is
@@ -478,6 +496,7 @@ func (w *writeStrategySingle) Write(ctx context.Context, batch []opencdc.Record)
 		return nil
 	}
 	n, err := w.impl.Write(ctx, batch)
+	invalidN := n < 0 || n > len(batch)
 	if w.leave() {
 		// Teardown gave up waiting for this Write and already called the
 		// connector's Teardown. Whatever the connector reports now, the
@@ -486,6 +505,17 @@ func (w *writeStrategySingle) Write(ctx context.Context, batch []opencdc.Record)
 			Int("records", len(batch)).
 			Msg("Write returned after Teardown gave up waiting for it, not acknowledging its records")
 		return nil
+	}
+	if invalidN {
+		// Invariant 1: never ack more than the connector reported as written.
+		// An out-of-range n would panic when slicing the batch and leave the
+		// batch unanswered, so nack every record instead.
+		invalid := fmt.Errorf("connector reported %d written records for a batch of %d, this is probably a bug in the connector", n, len(batch))
+		if err != nil {
+			invalid = fmt.Errorf("%w (original error: %w)", invalid, err)
+		}
+		err = invalid
+		n = 0
 	}
 	if err != nil {
 		var pos []byte

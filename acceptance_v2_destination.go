@@ -133,6 +133,18 @@ func (a *acceptanceV2) requireAllAcked(t *testing.T, d *v2Dest, recs []opencdc.R
 	}
 }
 
+// requireAckOrder fails if the acks of recs did not arrive in the order the
+// records were sent. The SDK declares ordered_acks in the destination Open
+// response, and the engine relies on it to match acks to records when it keeps
+// several writes in flight (ConduitIO/conduit#3292), so a reordered ack is a
+// correctness bug, not a style issue. Call it after requireAllAcked.
+func (a *acceptanceV2) requireAckOrder(t *testing.T, d *v2Dest, recs []opencdc.Record) {
+	t.Helper()
+	if err := d.ackOrderError(recs); err != nil {
+		t.Fatalf("%v", err)
+	}
+}
+
 func (a *acceptanceV2) mustStopGraceful(t *testing.T, d *v2Dest) {
 	t.Helper()
 	if err := d.stopGraceful(); err != nil {
@@ -151,6 +163,7 @@ func (a *acceptanceV2) testDstPipelinedWrites(t *testing.T) {
 		}
 	}
 	a.requireAllAcked(t, d, want)
+	a.requireAckOrder(t, d, want)
 	a.mustStopGraceful(t, d)
 
 	if a.caps.Destination.WriteOnly {
@@ -185,6 +198,7 @@ func (a *acceptanceV2) testDstSlowAcks(t *testing.T) {
 	}()
 
 	a.requireAllAcked(t, d, want)
+	a.requireAckOrder(t, d, want)
 	if err := <-sendErr; err != nil {
 		t.Fatalf("send failed: %v", err)
 	}
