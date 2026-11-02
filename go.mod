@@ -10,7 +10,7 @@ require (
 	github.com/conduitio/evolviconf v0.1.1
 	github.com/conduitio/evolviconf/evolviyaml v0.1.0
 	github.com/conduitio/yaml/v3 v3.3.0
-	github.com/goccy/go-json v0.11.2
+	github.com/goccy/go-json v0.12.0
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-plugin v1.8.0
