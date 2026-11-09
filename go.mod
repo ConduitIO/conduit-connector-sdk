@@ -22,7 +22,7 @@ require (
 	github.com/twmb/go-cache v1.4.0
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.6.0
-	golang.org/x/sync v0.24.0
+	golang.org/x/sync v0.25.0
 	golang.org/x/time v0.16.0
 	google.golang.org/grpc v1.85.0
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637
