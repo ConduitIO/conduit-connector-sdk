@@ -1,6 +1,6 @@
 module github.com/conduitio/conduit-connector-sdk
 
-go 1.26.9
+go 1.26.11
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
