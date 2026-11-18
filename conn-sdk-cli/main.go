@@ -15,9 +15,9 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/lint"
 	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/readmegen"
 	"github.com/conduitio/conduit-connector-sdk/conn-sdk-cli/specgen"
 	"github.com/spf13/cobra"
@@ -34,8 +34,8 @@ func main() {
 		Short: "Generate README for connector",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			specifications := cmd.Flag("specifications").Value.String()
-			readme := cmd.Flag("readme").Value.String()
+			specifications, _ := cmd.Flags().GetString("specifications")
+			readme, _ := cmd.Flags().GetString("readme")
 			write, _ := cmd.Flags().GetBool("write")
 
 			return readmegen.NewCommand(specifications, readme, write).Execute(cmd.Context())
@@ -50,8 +50,8 @@ func main() {
 		Short: "Generate specification files for connector",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			output := cmd.Flag("output").Value.String()
-			path := cmd.Flag("path").Value.String()
+			output, _ := cmd.Flags().GetString("output")
+			path, _ := cmd.Flags().GetString("path")
 
 			return specgen.NewCommand(output, path).Execute(cmd.Context())
 		},
@@ -59,14 +59,28 @@ func main() {
 	cmdSpecgen.Flags().StringP("output", "o", "connector.yaml", "name of the output file")
 	cmdSpecgen.Flags().StringP("path", "p", ".", "path to the package that contains the Connector variable")
 
+	cmdLint := &cobra.Command{
+		Use:   "lint",
+		Short: "Lint the connector",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			fix, _ := cmd.Flags().GetBool("fix")
+			cmd.SilenceUsage = true
+			cmd.SetErrPrefix("Linter errors:\n")
+
+			return lint.NewCommand(fix).Execute(cmd.Context())
+		},
+	}
+	cmdLint.Flags().Bool("fix", false, "fix the linting errors if possible")
+
 	cmdRoot.AddCommand(
 		cmdReadmegen,
 		cmdSpecgen,
+		cmdLint,
 	)
 	cmdRoot.CompletionOptions.DisableDefaultCmd = true
 
 	if err := cmdRoot.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
 }
